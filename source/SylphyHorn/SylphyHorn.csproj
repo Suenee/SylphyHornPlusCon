@@ -147,7 +147,6 @@
     <EmbeddedResource Include=".licenses\MetroTrilithon.txt" />
     <EmbeddedResource Include=".licenses\MetroRadiance.txt" />
     <EmbeddedResource Include=".licenses\Livet.txt" />
-    <EmbeddedResource Include=".licenses\Open.WinKeyboardHook.txt" />
     <EmbeddedResource Include=".licenses\VirtualDesktop.txt" />
   </ItemGroup>
 
@@ -218,9 +217,6 @@
     </PackageReference>
     <PackageReference Include="Microsoft.Xaml.Behaviors.Wpf">
       <Version>1.1.135</Version>
-    </PackageReference>
-    <PackageReference Include="Open.WinKeyboardHook">
-      <Version>1.0.14</Version>
     </PackageReference>
     <PackageReference Include="System.Data.DataSetExtensions" Version="4.5.0" />
     <PackageReference Include="System.Diagnostics.DiagnosticSource">

@@ -1,8 +1,10 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Linq;
 using System.Threading.Tasks;
 using System.Windows.Forms;
+using System.Windows.Threading;
 using MetroTrilithon.Lifetime;
 
 namespace SylphyHorn.Services
@@ -12,25 +14,26 @@ namespace SylphyHorn.Services
 		private readonly ShortcutKeyDetector _detector = new ShortcutKeyDetector();
 		private readonly List<HookAction> _keyHookActions = new List<HookAction>();
 		private readonly List<HookAction> _mouseHookActions = new List<HookAction>();
+		private readonly Dispatcher _dispatcher;
 		private int _suspendRequestCount;
 		private Action _reloadAction;
+		private bool _disposeRequested;
+		private bool _disposed;
 
 		public Action Reload
 		{
 			get
 			{
-				return () =>
-				{
-					if (_reloadAction != null)
-					{
-						_keyHookActions.Clear();
-						_mouseHookActions.Clear();
-						_reloadAction();
-					}
-				};
+				return this.RequestReload;
 			}
 			set
 			{
+				if (!this._dispatcher.CheckAccess())
+				{
+					this._dispatcher.Invoke(() => this._reloadAction = value);
+					return;
+				}
+
 				_reloadAction = value;
 			}
 		}
@@ -42,6 +45,7 @@ namespace SylphyHorn.Services
 
 		public HookService()
 		{
+			this._dispatcher = Dispatcher.CurrentDispatcher;
 			this._detector.KeyPressed += this.KeyHookOnPressed;
 			this._detector.KeyUp += this.KeyHookOnUp;
 			this._detector.ButtonPressed += this.MouseHookOnPressed;
@@ -51,20 +55,99 @@ namespace SylphyHorn.Services
 
 		public IDisposable Suspend()
 		{
+			if (!this._dispatcher.CheckAccess())
+			{
+				return this._dispatcher.Invoke((Func<IDisposable>)this.SuspendCore);
+			}
+
+			return this.SuspendCore();
+		}
+
+		private IDisposable SuspendCore()
+		{
+			if (this._disposeRequested)
+			{
+				return Disposable.Create(() => { });
+			}
+
 			this._suspendRequestCount++;
 			this._detector.Stop();
 
 			this.Suspended?.Invoke();
 
-			return Disposable.Create(() =>
+			return Disposable.Create(this.RequestResume);
+		}
+
+		private void RequestResume()
+		{
+			if (this._dispatcher.CheckAccess())
 			{
-				this._suspendRequestCount--;
-				if (this._suspendRequestCount == 0)
-				{
-					this.Reload();
-					this._detector.Start();
-				}
-			});
+				this.ResumeCore();
+				return;
+			}
+
+			this.TryBeginInvoke(this.ResumeCore);
+		}
+
+		private void RequestReload()
+		{
+			if (this._dispatcher.CheckAccess())
+			{
+				this.ReloadCore();
+				return;
+			}
+
+			this.TryBeginInvoke(this.ReloadCore);
+		}
+
+		private void TryBeginInvoke(Action action)
+		{
+			if (this._dispatcher.HasShutdownStarted || this._dispatcher.HasShutdownFinished)
+			{
+				return;
+			}
+
+			try
+			{
+				this._dispatcher.BeginInvoke(action);
+			}
+			catch (InvalidOperationException ex)
+			{
+				// The dispatcher is shutting down. Lifecycle work must not continue.
+				Debug.WriteLine(ex);
+			}
+			catch (TaskCanceledException ex)
+			{
+				// The dispatcher is shutting down. Lifecycle work must not continue.
+				Debug.WriteLine(ex);
+			}
+		}
+
+		private void ResumeCore()
+		{
+			if (this._disposeRequested)
+			{
+				return;
+			}
+
+			this._suspendRequestCount--;
+			if (this._suspendRequestCount == 0)
+			{
+				this.ReloadCore();
+				this._detector.Start();
+			}
+		}
+
+		private void ReloadCore()
+		{
+			if (this._disposeRequested || this._reloadAction == null)
+			{
+				return;
+			}
+
+			this._keyHookActions.Clear();
+			this._mouseHookActions.Clear();
+			this._reloadAction();
 		}
 
 		public IDisposable RegisterKeyAction(Func<ShortcutKey> getShortcutKey, Action<IntPtr> action)
@@ -142,7 +225,25 @@ namespace SylphyHorn.Services
 
 		public void Dispose()
 		{
-			this._detector.Stop();
+			if (!this._dispatcher.CheckAccess())
+			{
+				this._dispatcher.Invoke((Action)this.DisposeCore);
+				return;
+			}
+
+			this.DisposeCore();
+		}
+
+		private void DisposeCore()
+		{
+			if (this._disposed)
+			{
+				return;
+			}
+
+			this._disposeRequested = true;
+			this._detector.Dispose();
+			this._disposed = true;
 		}
 
 		private class HookAction

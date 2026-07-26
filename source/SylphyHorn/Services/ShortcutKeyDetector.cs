@@ -1,8 +1,8 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Runtime.ExceptionServices;
 using System.Windows.Forms;
-using Open.WinKeyboardHook;
 using SylphyHorn.Services.Mouse;
 
 namespace SylphyHorn.Services
@@ -10,15 +10,16 @@ namespace SylphyHorn.Services
 	/// <summary>
 	/// Provides the function to detect a shortcut key ([modifier key(s)] + [key] style) by use of global key hook.
 	/// </summary>
-	public class ShortcutKeyDetector
+	public class ShortcutKeyDetector : IDisposable
 	{
 		private readonly HashSet<Keys> _pressedModifiers = new HashSet<Keys>();
 		private readonly HashSet<Keys> _pressedMouseButtons = new HashSet<Keys>();
-		private readonly IKeyboardInterceptor _keyInterceptor = new KeyboardInterceptor();
-		private readonly IMouseInterceptor _mouseInterceptor = new MouseInterceptor();
+		private readonly KeyboardInterceptor _keyInterceptor = new KeyboardInterceptor();
+		private readonly MouseInterceptor _mouseInterceptor = new MouseInterceptor();
 
 		private bool _started;
 		private bool _suspended;
+		private bool _disposed;
 
 		/// <summary>
 		/// Occurs when detects a shortcut key.
@@ -40,10 +41,39 @@ namespace SylphyHorn.Services
 
 		public void Start()
 		{
+			if (this._disposed)
+			{
+				throw new ObjectDisposedException(nameof(ShortcutKeyDetector));
+			}
+
 			if (!this._started)
 			{
 				this._keyInterceptor.StartCapturing();
-				this._mouseInterceptor.StartCapturing();
+				try
+				{
+					this._mouseInterceptor.StartCapturing();
+				}
+				catch (Exception startException)
+				{
+					try
+					{
+						this._keyInterceptor.StopCapturing();
+					}
+					catch (Exception rollbackException)
+					{
+						try
+						{
+							startException.Data["KeyboardHookRollbackException"] = rollbackException;
+						}
+						catch
+						{
+							// Never replace the original mouse hook failure.
+						}
+					}
+
+					throw;
+				}
+
 				this._started = true;
 			}
 
@@ -140,6 +170,47 @@ namespace SylphyHorn.Services
 			state.Handled = pressedEventArgs.Handled;
 
 			this._pressedMouseButtons.Add(keyCode);
+		}
+
+		public void Dispose()
+		{
+			if (this._disposed)
+			{
+				return;
+			}
+
+			Exception exception = null;
+			try
+			{
+				this._keyInterceptor.Dispose();
+			}
+			catch (Exception ex)
+			{
+				exception = ex;
+			}
+
+			try
+			{
+				this._mouseInterceptor.Dispose();
+			}
+			catch (Exception ex)
+			{
+				if (exception == null)
+				{
+					exception = ex;
+				}
+			}
+
+			if (exception != null)
+			{
+				ExceptionDispatchInfo.Capture(exception).Throw();
+			}
+
+			this._started = false;
+			this._suspended = true;
+			this._pressedModifiers.Clear();
+			this._pressedMouseButtons.Clear();
+			this._disposed = true;
 		}
 	}
 }
