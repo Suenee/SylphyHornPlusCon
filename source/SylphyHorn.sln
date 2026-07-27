@@ -32,6 +32,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "SylphyHorn.Debugging", "Syl
 EndProject
 Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "SylphyHorn.SchedulerManager", "SylphyHorn.SchedulerManager\SylphyHorn.SchedulerManager.csproj", "{9D920692-900D-4465-B6ED-A64D6A1899BF}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "SylphyHorn.Tests", "SylphyHorn.Tests\SylphyHorn.Tests.csproj", "{97B16D02-6427-4650-8A0B-23D655F7B2CD}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug (AppX)|Any CPU = Debug (AppX)|Any CPU
@@ -246,6 +248,30 @@ Global
 		{9D920692-900D-4465-B6ED-A64D6A1899BF}.Release|x64.Build.0 = Release|x64
 		{9D920692-900D-4465-B6ED-A64D6A1899BF}.Release|x86.ActiveCfg = Release|x86
 		{9D920692-900D-4465-B6ED-A64D6A1899BF}.Release|x86.Build.0 = Release|x86
+		{97B16D02-6427-4650-8A0B-23D655F7B2CD}.Debug (AppX)|Any CPU.ActiveCfg = Debug|Any CPU
+		{97B16D02-6427-4650-8A0B-23D655F7B2CD}.Debug (AppX)|ARM.ActiveCfg = Debug|Any CPU
+		{97B16D02-6427-4650-8A0B-23D655F7B2CD}.Debug (AppX)|x64.ActiveCfg = Debug|x64
+		{97B16D02-6427-4650-8A0B-23D655F7B2CD}.Debug (AppX)|x86.ActiveCfg = Debug|x86
+		{97B16D02-6427-4650-8A0B-23D655F7B2CD}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{97B16D02-6427-4650-8A0B-23D655F7B2CD}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{97B16D02-6427-4650-8A0B-23D655F7B2CD}.Debug|ARM.ActiveCfg = Debug|Any CPU
+		{97B16D02-6427-4650-8A0B-23D655F7B2CD}.Debug|ARM.Build.0 = Debug|Any CPU
+		{97B16D02-6427-4650-8A0B-23D655F7B2CD}.Debug|x64.ActiveCfg = Debug|x64
+		{97B16D02-6427-4650-8A0B-23D655F7B2CD}.Debug|x64.Build.0 = Debug|x64
+		{97B16D02-6427-4650-8A0B-23D655F7B2CD}.Debug|x86.ActiveCfg = Debug|x86
+		{97B16D02-6427-4650-8A0B-23D655F7B2CD}.Debug|x86.Build.0 = Debug|x86
+		{97B16D02-6427-4650-8A0B-23D655F7B2CD}.Release (AppX)|Any CPU.ActiveCfg = Debug|Any CPU
+		{97B16D02-6427-4650-8A0B-23D655F7B2CD}.Release (AppX)|ARM.ActiveCfg = Debug|Any CPU
+		{97B16D02-6427-4650-8A0B-23D655F7B2CD}.Release (AppX)|x64.ActiveCfg = Debug|x64
+		{97B16D02-6427-4650-8A0B-23D655F7B2CD}.Release (AppX)|x86.ActiveCfg = Debug|x86
+		{97B16D02-6427-4650-8A0B-23D655F7B2CD}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{97B16D02-6427-4650-8A0B-23D655F7B2CD}.Release|Any CPU.Build.0 = Release|Any CPU
+		{97B16D02-6427-4650-8A0B-23D655F7B2CD}.Release|ARM.ActiveCfg = Release|Any CPU
+		{97B16D02-6427-4650-8A0B-23D655F7B2CD}.Release|ARM.Build.0 = Release|Any CPU
+		{97B16D02-6427-4650-8A0B-23D655F7B2CD}.Release|x64.ActiveCfg = Release|x64
+		{97B16D02-6427-4650-8A0B-23D655F7B2CD}.Release|x64.Build.0 = Release|x64
+		{97B16D02-6427-4650-8A0B-23D655F7B2CD}.Release|x86.ActiveCfg = Release|x86
+		{97B16D02-6427-4650-8A0B-23D655F7B2CD}.Release|x86.Build.0 = Release|x86
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE

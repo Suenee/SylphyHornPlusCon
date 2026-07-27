@@ -1,0 +1,23 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+	<PropertyGroup>
+		<TargetFramework>net48</TargetFramework>
+		<OutputType>Exe</OutputType>
+		<Platforms>AnyCPU;x64;x86</Platforms>
+		<IsPackable>false</IsPackable>
+	</PropertyGroup>
+
+	<ItemGroup>
+		<PackageReference Include="xunit.v3" Version="3.2.2" />
+		<PackageReference Include="xunit.runner.visualstudio" Version="3.1.5" />
+		<PackageReference Include="Microsoft.NET.Test.Sdk" Version="18.8.1" />
+	</ItemGroup>
+
+	<ItemGroup>
+		<ProjectReference Include="..\SylphyHorn.Core\SylphyHorn.Core.csproj" />
+		<Reference Include="MetroTrilithon">
+			<HintPath>..\libraries\MetroTrilithon.Desktop\$(TargetFramework)\MetroTrilithon.dll</HintPath>
+		</Reference>
+	</ItemGroup>
+
+</Project>
