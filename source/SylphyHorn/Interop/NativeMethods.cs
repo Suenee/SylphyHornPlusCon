@@ -64,6 +64,9 @@ namespace SylphyHorn.Interop
 			public const uint LLKHF_EXTENDED = 0x01;
 			public const uint LLKHF_INJECTED = 0x10;
 
+			[DllImport("kernel32.dll", CharSet = CharSet.Auto, SetLastError = true)]
+			public static extern IntPtr GetModuleHandle(string moduleName);
+
 			[DllImport("user32.dll", SetLastError = true)]
 			public static extern IntPtr SetWindowsHookEx(int idHook, HookDelegate lpfn, IntPtr hMod, uint dwThreadId);
 

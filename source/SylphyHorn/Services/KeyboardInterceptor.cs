@@ -34,10 +34,11 @@ namespace SylphyHorn.Services
 				return;
 			}
 
-			var hInstance = Marshal.GetHINSTANCE(typeof(KeyboardInterceptor).Assembly.GetModules()[0]);
-			if (hInstance == new IntPtr(-1))
+			var hInstance = NativeMethods.GetModuleHandle(null);
+			if (hInstance == IntPtr.Zero)
 			{
-				throw new InvalidOperationException("Failed to get the module handle for the keyboard hook.");
+				var error = Marshal.GetLastWin32Error();
+				throw new Win32Exception(error);
 			}
 
 			var handle = NativeMethods.SetWindowsHookEx(
@@ -74,27 +75,59 @@ namespace SylphyHorn.Services
 		{
 			try
 			{
-				if (nCode != NativeMethods.HC_ACTION)
+				if (TryClassify(nCode, wParam, out var isKeyDown) && lParam != IntPtr.Zero)
 				{
-					return CallNextHook(nCode, wParam, lParam);
+					var data = Marshal.PtrToStructure<KBDLLHOOKSTRUCT>(lParam);
+					if (this.ProcessKeyEvent(isKeyDown, in data))
+					{
+						return (IntPtr)1;
+					}
 				}
+			}
+			catch
+			{
+				// Fail open: managed exceptions must not cross the native callback boundary.
+			}
 
-				var message = (int)wParam;
-				var isDown = message == NativeMethods.WM_KEYDOWN || message == NativeMethods.WM_SYSKEYDOWN;
-				var isUp = message == NativeMethods.WM_KEYUP || message == NativeMethods.WM_SYSKEYUP;
-				if ((!isDown && !isUp) || lParam == IntPtr.Zero)
-				{
-					return CallNextHook(nCode, wParam, lParam);
-				}
+			try
+			{
+				return NativeMethods.CallNextHookEx(IntPtr.Zero, nCode, wParam, lParam);
+			}
+			catch
+			{
+				return IntPtr.Zero;
+			}
+		}
 
-				var data = Marshal.PtrToStructure<KBDLLHOOKSTRUCT>(lParam);
+		internal static bool TryClassify(int nCode, IntPtr wParam, out bool isKeyDown)
+		{
+			isKeyDown = false;
+			if (nCode != NativeMethods.HC_ACTION)
+			{
+				return false;
+			}
+
+			var message = (int)wParam;
+			if (message == NativeMethods.WM_KEYDOWN || message == NativeMethods.WM_SYSKEYDOWN)
+			{
+				isKeyDown = true;
+				return true;
+			}
+
+			return message == NativeMethods.WM_KEYUP || message == NativeMethods.WM_SYSKEYUP;
+		}
+
+		internal bool ProcessKeyEvent(bool isKeyDown, in KBDLLHOOKSTRUCT data)
+		{
+			try
+			{
 				if ((data.flags & NativeMethods.LLKHF_INJECTED) != 0)
 				{
-					return CallNextHook(nCode, wParam, lParam);
+					return false;
 				}
 
 				var args = new KeyEventArgs((Keys)data.vkCode);
-				if (isDown)
+				if (isKeyDown)
 				{
 					this.KeyDown?.Invoke(this, args);
 				}
@@ -103,28 +136,12 @@ namespace SylphyHorn.Services
 					this.KeyUp?.Invoke(this, args);
 				}
 
-				if (args.SuppressKeyPress)
-				{
-					return (IntPtr)1;
-				}
+				return args.SuppressKeyPress;
 			}
 			catch
 			{
-				// Fail open: managed exceptions must not cross the native callback boundary.
-			}
-
-			return CallNextHook(nCode, wParam, lParam);
-		}
-
-		private static IntPtr CallNextHook(int nCode, IntPtr wParam, IntPtr lParam)
-		{
-			try
-			{
-				return NativeMethods.CallNextHookEx(IntPtr.Zero, nCode, wParam, lParam);
-			}
-			catch
-			{
-				return IntPtr.Zero;
+				// Fail open: event-handler failures must not suppress input.
+				return false;
 			}
 		}
 

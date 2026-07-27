@@ -27,6 +27,15 @@
     <AssemblyMetadata Include="OriginalProduct" Value="SylphyHorn" />
   </ItemGroup>
 
+  <ItemGroup>
+    <AssemblyAttribute Include="System.Runtime.CompilerServices.InternalsVisibleToAttribute">
+      <_Parameter1>SylphyHorn.Tests</_Parameter1>
+    </AssemblyAttribute>
+    <AssemblyAttribute Include="System.Runtime.CompilerServices.InternalsVisibleToAttribute">
+      <_Parameter1>SylphyHorn.WindowsIntegrationTests</_Parameter1>
+    </AssemblyAttribute>
+  </ItemGroup>
+
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|AnyCPU'">
     <PlatformTarget>AnyCPU</PlatformTarget>
     <CodeAnalysisRuleSet>MinimumRecommendedRules.ruleset</CodeAnalysisRuleSet>
@@ -256,7 +265,7 @@
     </Compile>
   </ItemGroup>
 
-  <Target Name="PostBuild" AfterTargets="PostBuildEvent">
+  <Target Name="PostBuild" AfterTargets="PostBuildEvent" Condition="'$(RunSylphyHornPostBuild)' != 'false'">
     <Exec Command="powershell -ExecutionPolicy RemoteSigned -File &quot;$(ProjectDir).build\post-build.ps1&quot; &quot;$(TargetDir)" />
   </Target>
 

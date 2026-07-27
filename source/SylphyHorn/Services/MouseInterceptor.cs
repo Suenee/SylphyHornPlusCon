@@ -60,10 +60,18 @@ namespace SylphyHorn.Services.Mouse
 			IsSuspended = false;
 
 			this._nativeMethodCallback = HookProcedure;
-			IntPtr h = Marshal.GetHINSTANCE(typeof(MouseInterceptor).Assembly.GetModules()[0]);
+			var hInstance = NativeMethods.GetModuleHandle(null);
+			if (hInstance == IntPtr.Zero)
+			{
+				IsHooking = false;
+				IsSuspended = true;
+
+				var error = Marshal.GetLastWin32Error();
+				throw new System.ComponentModel.Win32Exception(error);
+			}
 
 			// WH_MOUSE_LL = 14
-			this._handle = NativeMethods.SetWindowsHookEx(14, this._nativeMethodCallback, h, 0);
+			this._handle = NativeMethods.SetWindowsHookEx(14, this._nativeMethodCallback, hInstance, 0);
 
 			if (this._handle == IntPtr.Zero)
 			{
