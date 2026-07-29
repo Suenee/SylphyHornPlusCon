@@ -1,11 +1,23 @@
 ﻿# ビルド後に実行
-# - SylphyHorn.exe (とその関連ファイル) を除くすべてのファイルを lib フォルダーに移動
+# - .NET Framework: SylphyHorn.exe (とその関連ファイル) を除くすべてのファイルを lib フォルダーに移動
+# - .NET: SDK が生成する標準の実行レイアウトを維持
 
-Param ( $TargetDir )
+Param ( $TargetDir, $TargetFramework )
+
+if ( $TargetFramework -ne "net48" ) {
+    $requiredFiles = "SylphyHorn.exe", "SylphyHorn.dll", "SylphyHorn.deps.json", "SylphyHorn.runtimeconfig.json"
+    foreach ( $requiredFile in $requiredFiles ) {
+        if ( -not (Test-Path (Join-Path $TargetDir $requiredFile)) ) {
+            throw "Required .NET application host file was not found: $requiredFile"
+        }
+    }
+
+    return
+}
 
 $targets = $TargetDir
-$lib = ($TargetDir + "lib\")
-$excludes = ".assets", "AppxManifest.xml", "SylphyHorn.exe*", "SylphyHorn.pdb", "SchedulerManager.exe*", "SchedulerManager.pdb"
+$lib = Join-Path $TargetDir "lib"
+$excludes = ".assets", "AppxManifest.xml", "SylphyHorn.exe*", "SylphyHorn.pdb", "SchedulerManager.exe*", "SchedulerManager.pdb", "lib"
 
 if ( Test-Path $lib ) {
     Remove-Item $lib -Recurse

@@ -114,11 +114,13 @@ namespace SylphyHorn
 					WallpaperService.Instance.AddTo(this);
 
 #if !DEBUG
+#if NETFRAMEWORK
 					appInstance.CommandLineArgsReceived += (sender, message) =>
 					{
 						var args = new CommandLineArgs(message.CommandLineArgs);
 						if (args.Setup) this.SetupShortcut();
 					};
+#endif
 #endif
 
 					base.OnStartup(e);
@@ -132,7 +134,9 @@ namespace SylphyHorn
 #if !DEBUG
 			else
 			{
+#if NETFRAMEWORK
 				appInstance.SendCommandLineArgs(e.Args);
+#endif
 				this.Shutdown();
 			}
 #endif

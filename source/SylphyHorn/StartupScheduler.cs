@@ -24,7 +24,11 @@ namespace SylphyHorn
 		public bool IsAdministrator => _principal.IsInRole(WindowsBuiltInRole.Administrator);
 
 		public StartupScheduler()
+#if NETFRAMEWORK
 			: this(Assembly.GetExecutingAssembly().Location)
+#else
+			: this(Environment.ProcessPath)
+#endif
 		{
 		}
 

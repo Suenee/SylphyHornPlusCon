@@ -1,12 +1,12 @@
 ﻿using System;
 using System.Diagnostics;
 using System.IO;
+using System.Linq;
 using System.Reflection;
-using System.Runtime.InteropServices;
 using System.Security.Principal;
 using System.Text.RegularExpressions;
 using System.Threading;
-using TaskScheduler;
+using Microsoft.Win32.TaskScheduler;
 
 namespace SylphyHorn
 {
@@ -18,6 +18,7 @@ namespace SylphyHorn
 			{
 				Environment.Exit(-1);
 			}
+
 			var command = args[0];
 			var process = args.Length > 1 ? new SchedulerProcess(appPath: args[1]) : new SchedulerProcess();
 			switch (command)
@@ -44,24 +45,38 @@ namespace SylphyHorn
 					Environment.Exit(Convert.ToInt32(process.IsRunning));
 					break;
 			}
-
 		}
 	}
 
 	class SchedulerProcess
 	{
-		private const string _schedulerDir = "\\";
 		private const string _defaultAppName = "SylphyHorn";
 		private const string _defaultAppExtension = ".exe";
-		private readonly string _schedulerPath;
 		private readonly string _taskName;
 		private readonly string _appPath;
-		private readonly string _appName;
 		private readonly WindowsPrincipal _principal = new WindowsPrincipal(WindowsIdentity.GetCurrent());
 
-		public bool HasTask => this.FindStartupTask() != null;
+		public bool HasTask
+		{
+			get
+			{
+				using (var task = this.FindStartupTask())
+				{
+					return task != null;
+				}
+			}
+		}
 
-		public bool IsRunning => this.FindStartupTask()?.State == _TASK_STATE.TASK_STATE_RUNNING;
+		public bool IsRunning
+		{
+			get
+			{
+				using (var task = this.FindStartupTask())
+				{
+					return task?.State == TaskState.Running;
+				}
+			}
+		}
 
 		public bool IsAdministrator => _principal.IsInRole(WindowsBuiltInRole.Administrator);
 
@@ -76,10 +91,9 @@ namespace SylphyHorn
 			{
 				throw new ArgumentNullException($"Error: app path ({appPath}) is invalid.");
 			}
-			this._appPath = $"\"{appPath}\"";
-			this._appName = Path.GetFileNameWithoutExtension(appPath);
-			this._taskName = this._appName + " Startup";
-			this._schedulerPath = _schedulerDir + this._taskName;
+
+			this._appPath = appPath;
+			this._taskName = Path.GetFileNameWithoutExtension(appPath) + " Startup";
 		}
 
 		public int Register()
@@ -89,48 +103,29 @@ namespace SylphyHorn
 				return -1;
 			}
 
-			ITaskService taskService = null;
 			try
 			{
-				taskService = new TaskScheduler.TaskScheduler();
-				taskService.Connect(null, null, null, null);
-				ITaskFolder rootfolder = null;
-				try
+				using (var taskService = new TaskService())
+				using (var taskDefinition = this.CreateTaskDefinition(taskService))
 				{
-					rootfolder = taskService.GetFolder(_schedulerDir);
-					var taskDefinition = this.CreateTaskDefinition(taskService);
-					try
-					{
-						rootfolder.RegisterTaskDefinition(
-							this._schedulerPath,
-							taskDefinition,
-							(int)_TASK_CREATION.TASK_CREATE_OR_UPDATE,
-							null,
-							null,
-							_TASK_LOGON_TYPE.TASK_LOGON_NONE,
-							null
-						);
-					}
-					catch (UnauthorizedAccessException)
-					{
-						return -1;
-					}
-					catch (Exception e)
-					{
-						return e.HResult;
-					}
+					taskService.RootFolder.RegisterTaskDefinition(
+						this._taskName,
+						taskDefinition,
+						TaskCreation.CreateOrUpdate,
+						null,
+						null,
+						TaskLogonType.InteractiveToken);
 				}
-				finally
-				{
-					if (rootfolder != null) Marshal.ReleaseComObject(rootfolder);
-				}
+				return 0;
 			}
-			finally
+			catch (UnauthorizedAccessException)
 			{
-				if (taskService != null) Marshal.ReleaseComObject(taskService);
+				return -1;
 			}
-
-			return 0;
+			catch (Exception e)
+			{
+				return e.HResult;
+			}
 		}
 
 		public int Unregister()
@@ -139,190 +134,136 @@ namespace SylphyHorn
 			{
 				return -1;
 			}
-			else if (!this.HasTask)
+			if (!this.HasTask)
 			{
 				return 0;
 			}
 
-			ITaskService taskService = null;
 			try
 			{
-				taskService = new TaskScheduler.TaskScheduler();
-				taskService.Connect(null, null, null, null);
-				ITaskFolder rootfolder = null;
-				try
+				using (var taskService = new TaskService())
 				{
-					rootfolder = taskService.GetFolder(_schedulerDir);
-					try
-					{
-						rootfolder.DeleteTask(this._taskName, 0);
-					}
-					catch (UnauthorizedAccessException)
-					{
-						return -1;
-					}
-					catch (Exception e)
-					{
-						return e.HResult;
-					}
+					taskService.RootFolder.DeleteTask(this._taskName);
 				}
-				finally
-				{
-					if (rootfolder != null) Marshal.ReleaseComObject(rootfolder);
-				}
+				return 0;
 			}
-			finally
+			catch (UnauthorizedAccessException)
 			{
-				if (taskService != null) Marshal.ReleaseComObject(taskService);
+				return -1;
 			}
-
-			return 0;
+			catch (Exception e)
+			{
+				return e.HResult;
+			}
 		}
 
 		public int Start()
 		{
-			var task = this.FindStartupTask();
-			if (task == null)
+			using (var task = this.FindStartupTask())
 			{
-				return -1;
+				if (task == null)
+				{
+					return -1;
+				}
+				task.Run();
+				return 0;
 			}
-			task.Run(null);
-			return 0;
 		}
 
 		public int Stop()
 		{
-			var task = this.FindStartupTask();
-			if (task == null)
+			using (var task = this.FindStartupTask())
 			{
-				return -1;
+				if (task == null)
+				{
+					return -1;
+				}
+				task.Stop();
+				return 0;
 			}
-			task.Stop(0);
-			return 0;
 		}
 
 		public int Restart()
 		{
-			var task = this.FindStartupTask();
-			if (task == null || task.State == _TASK_STATE.TASK_STATE_DISABLED)
+			using (var task = this.FindStartupTask())
 			{
-				return -1;
-			}
-
-			var taskActions = task.Definition.Actions;
-			var appPath = taskActions.Count > 0
-				? ((IExecAction)taskActions[1])?.Path ?? this._appPath
-				: this._appPath;
-			appPath = Regex.Replace(appPath, @"^""(.+)""$", "$1");
-			if (string.IsNullOrEmpty(appPath) || !File.Exists(appPath))
-			{
-				throw new FileNotFoundException($"Error: app path ({appPath}) is invalid.");
-			}
-			else if (task.State == _TASK_STATE.TASK_STATE_RUNNING)
-			{
-				task.Stop(0);
-			}
-
-			var appName = Path.GetFileNameWithoutExtension(appPath);
-			var totalTime = 0;
-			const int timeout = 30000;
-			const int interval = 100;
-			while (Process.GetProcessesByName(appName).Length > 0)
-			{
-				Thread.Sleep(interval);
-				totalTime += interval;
-				if (totalTime >= timeout)
+				if (task == null || task.State == TaskState.Disabled)
 				{
 					return -1;
 				}
-			}
 
-			task.Run(null);
-			return 0;
+				var appPath = task.Definition.Actions
+					.OfType<ExecAction>()
+					.FirstOrDefault()?.Path ?? this._appPath;
+				appPath = Regex.Replace(appPath, @"^""(.+)""$", "$1");
+				if (string.IsNullOrEmpty(appPath) || !File.Exists(appPath))
+				{
+					throw new FileNotFoundException($"Error: app path ({appPath}) is invalid.");
+				}
+				if (task.State == TaskState.Running)
+				{
+					task.Stop();
+				}
+
+				var appName = Path.GetFileNameWithoutExtension(appPath);
+				var totalTime = 0;
+				const int timeout = 30000;
+				const int interval = 100;
+				while (Process.GetProcessesByName(appName).Length > 0)
+				{
+					Thread.Sleep(interval);
+					totalTime += interval;
+					if (totalTime >= timeout)
+					{
+						return -1;
+					}
+				}
+
+				task.Run();
+				return 0;
+			}
 		}
 
-		private ITaskDefinition CreateTaskDefinition(ITaskService taskService)
+		private TaskDefinition CreateTaskDefinition(TaskService taskService)
 		{
-			var taskDefinition = taskService.NewTask(0);
-			var registrationInfo = taskDefinition.RegistrationInfo;
-
-			// Actions Property
-			var actionCollection = taskDefinition.Actions;
-			var execAction = (IExecAction)actionCollection.Create(_TASK_ACTION_TYPE.TASK_ACTION_EXEC);
-
-			// Triggers Property
-			var triggerCollection = taskDefinition.Triggers;
-			var trigger = (ILogonTrigger)triggerCollection.Create(_TASK_TRIGGER_TYPE2.TASK_TRIGGER_LOGON);
-
-			// Settings Property
-			var taskSettings = taskDefinition.Settings;
-
-			/* General Settings */
-			registrationInfo.Author = "";
-			registrationInfo.Description = "";
-			var principal = taskDefinition.Principal;
-			//principal.UserId = Environment.UserDomainName + "\\" + Environment.UserName;
-			principal.LogonType = _TASK_LOGON_TYPE.TASK_LOGON_INTERACTIVE_TOKEN;
-			principal.RunLevel = _TASK_RUNLEVEL.TASK_RUNLEVEL_HIGHEST;
-			taskSettings.DisallowStartIfOnBatteries = false;
-			taskSettings.ExecutionTimeLimit = "PT0S";
-			taskSettings.Compatibility = _TASK_COMPATIBILITY.TASK_COMPATIBILITY_V2;
-			taskSettings.Hidden = false;
-			taskSettings.Priority = 6;
-
-			/* Trigger Settings */
-			trigger.Enabled = true;
-
-			/* Operation Settings */
-			execAction.Path = this._appPath;
-			//execAction.Arguments = "";
-
+			var taskDefinition = taskService.NewTask();
+			taskDefinition.RegistrationInfo.Author = "";
+			taskDefinition.RegistrationInfo.Description = "";
+			taskDefinition.Principal.LogonType = TaskLogonType.InteractiveToken;
+			taskDefinition.Principal.RunLevel = TaskRunLevel.Highest;
+			taskDefinition.Settings.DisallowStartIfOnBatteries = false;
+			taskDefinition.Settings.ExecutionTimeLimit = TimeSpan.Zero;
+			taskDefinition.Settings.Compatibility = TaskCompatibility.V2;
+			taskDefinition.Settings.Hidden = false;
+			taskDefinition.Settings.Priority = ProcessPriorityClass.Normal;
+			taskDefinition.Triggers.Add(new LogonTrigger { Enabled = true });
+			taskDefinition.Actions.Add(new ExecAction(this._appPath));
 			return taskDefinition;
 		}
 
-		private IRegisteredTask FindStartupTask()
+		private Microsoft.Win32.TaskScheduler.Task FindStartupTask()
 		{
-			ITaskService taskService = null;
 			try
 			{
-				taskService = new TaskScheduler.TaskScheduler();
-				taskService.Connect(null, null, null, null);
-				ITaskFolder rootfolder = null;
-				try
+				using (var taskService = new TaskService())
 				{
-					rootfolder = taskService.GetFolder(_schedulerDir);
-					try
-					{
-						return rootfolder.GetTask(this._schedulerPath);
-					}
-					catch (FileNotFoundException)
-					{
-						return null;
-					}
-					catch (UnauthorizedAccessException)
-					{
-						return null;
-					}
-					catch (Exception)
-					{
-						return null;
-					}
-				}
-				finally
-				{
-					if (rootfolder != null) Marshal.ReleaseComObject(rootfolder);
+					return taskService.GetTask(this._taskName);
 				}
 			}
-			finally
+			catch (UnauthorizedAccessException)
 			{
-				if (taskService != null) Marshal.ReleaseComObject(taskService);
+				return null;
+			}
+			catch (Exception)
+			{
+				return null;
 			}
 		}
 
 		private static string GetDefaultApplicationPath()
 		{
 			var appDir = Path.GetDirectoryName(Assembly.GetEntryAssembly().Location);
-			return Path.Combine(appDir, SchedulerProcess._defaultAppName + SchedulerProcess._defaultAppExtension);
+			return Path.Combine(appDir, _defaultAppName + _defaultAppExtension);
 		}
 	}
 }

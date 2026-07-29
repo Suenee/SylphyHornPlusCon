@@ -1,7 +1,8 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
-    <TargetFrameworks>net472;net48</TargetFrameworks>
+    <TargetFrameworks>net48;net10.0-windows10.0.26100.0</TargetFrameworks>
+    <SupportedOSPlatformVersion>10.0.17763.0</SupportedOSPlatformVersion>
     <OutputType>WinExe</OutputType>
     <Title>SylphyHornPlus</Title>
     <Product>SylphyHornPlus</Product>
@@ -19,6 +20,11 @@
     <ApplicationManifest>app.manifest</ApplicationManifest>
     <ApplicationIcon>.assets\app.green.ico</ApplicationIcon>
     <Platforms>AnyCPU;x64;x86</Platforms>
+  </PropertyGroup>
+
+  <PropertyGroup>
+    <MetroBinaryTfm Condition="'$(TargetFramework)' == 'net48'">net48</MetroBinaryTfm>
+    <MetroBinaryTfm Condition="'$(TargetFramework)' == 'net10.0-windows10.0.26100.0'">net10.0-windows</MetroBinaryTfm>
   </PropertyGroup>
 
   <ItemGroup>
@@ -105,21 +111,21 @@
 
   <ItemGroup>
     <Reference Include="MetroRadiance">
-      <HintPath>..\libraries\MetroTrilithon.Desktop\$(TargetFramework)\MetroRadiance.dll</HintPath>
+      <HintPath>..\libraries\MetroTrilithon.Desktop\$(MetroBinaryTfm)\MetroRadiance.dll</HintPath>
     </Reference>
     <Reference Include="MetroRadiance.Chrome">
-      <HintPath>..\libraries\MetroTrilithon.Desktop\$(TargetFramework)\MetroRadiance.Chrome.dll</HintPath>
+      <HintPath>..\libraries\MetroTrilithon.Desktop\$(MetroBinaryTfm)\MetroRadiance.Chrome.dll</HintPath>
     </Reference>
     <Reference Include="MetroRadiance.Core">
-      <HintPath>..\libraries\MetroTrilithon.Desktop\$(TargetFramework)\MetroRadiance.Core.dll</HintPath>
+      <HintPath>..\libraries\MetroTrilithon.Desktop\$(MetroBinaryTfm)\MetroRadiance.Core.dll</HintPath>
     </Reference>
     <Reference Include="MetroTrilithon">
-      <HintPath>..\libraries\MetroTrilithon.Desktop\$(TargetFramework)\MetroTrilithon.dll</HintPath>
+      <HintPath>..\libraries\MetroTrilithon.Desktop\$(MetroBinaryTfm)\MetroTrilithon.dll</HintPath>
     </Reference>
     <Reference Include="MetroTrilithon.Desktop">
-      <HintPath>..\libraries\MetroTrilithon.Desktop\$(TargetFramework)\MetroTrilithon.Desktop.dll</HintPath>
+      <HintPath>..\libraries\MetroTrilithon.Desktop\$(MetroBinaryTfm)\MetroTrilithon.Desktop.dll</HintPath>
     </Reference>
-    <Reference Include="System.Runtime" />
+    <Reference Include="System.Runtime" Condition="'$(TargetFramework)' == 'net48'" />
   </ItemGroup>
 
   <ItemGroup>
@@ -157,6 +163,7 @@
     <EmbeddedResource Include=".licenses\MetroRadiance.txt" />
     <EmbeddedResource Include=".licenses\Livet.txt" />
     <EmbeddedResource Include=".licenses\VirtualDesktop.txt" />
+    <EmbeddedResource Include=".licenses\TaskScheduler.txt" />
   </ItemGroup>
 
   <ItemGroup>
@@ -221,9 +228,10 @@
       <Version>2.22.0</Version>
     </PackageReference>
     <PackageReference Include="Microsoft.CSharp" Version="4.7.0" />
-    <PackageReference Include="Microsoft.Windows.SDK.Contracts">
+    <PackageReference Include="Microsoft.Windows.SDK.Contracts" Condition="'$(TargetFramework)' == 'net48'">
       <Version>10.0.26100.1742</Version>
     </PackageReference>
+    <PackageReference Include="Tavis.UriTemplates" Version="2.0.0" Condition="'$(TargetFramework)' == 'net10.0-windows10.0.26100.0'" />
     <PackageReference Include="Microsoft.Xaml.Behaviors.Wpf">
       <Version>1.1.135</Version>
     </PackageReference>
@@ -266,7 +274,7 @@
   </ItemGroup>
 
   <Target Name="PostBuild" AfterTargets="PostBuildEvent" Condition="'$(RunSylphyHornPostBuild)' != 'false'">
-    <Exec Command="powershell -ExecutionPolicy RemoteSigned -File &quot;$(ProjectDir).build\post-build.ps1&quot; &quot;$(TargetDir)" />
+    <Exec Command="powershell -ExecutionPolicy RemoteSigned -File &quot;$(ProjectDir).build\post-build.ps1&quot; &quot;$([System.IO.Path]::GetDirectoryName('$(TargetPath)'))&quot; &quot;$(TargetFramework)&quot;" />
   </Target>
 
 </Project>

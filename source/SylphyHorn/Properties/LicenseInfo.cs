@@ -15,6 +15,7 @@ namespace SylphyHorn.Properties
 			new LicenseInfo("Livet"),
 			new LicenseInfo("MetroRadiance"),
 			new LicenseInfo("MetroTrilithon"),
+			new LicenseInfo("TaskScheduler"),
 		};
 
 		public string ProductName { get; }

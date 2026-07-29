@@ -42,7 +42,7 @@ namespace SylphyHorn.UI
 
 			var menus = this._items
 				.Where(x => x.CanDisplay())
-				.Select(x => new MenuItem(x.Text, (sender, args) => x.ClickAction()))
+				.Select(x => new ToolStripMenuItem(x.Text, null, (sender, args) => x.ClickAction()))
 				.ToArray();
 
 			this._notifyIcon = new NotifyIcon()
@@ -50,8 +50,9 @@ namespace SylphyHorn.UI
 				Text = ProductInfo.Title,
 				Icon = this._icon,
 				Visible = true,
-				ContextMenu = new ContextMenu(menus),
+				ContextMenuStrip = new ContextMenuStrip(),
 			};
+			this._notifyIcon.ContextMenuStrip.Items.AddRange(menus);
 
 			this._notifyIcon.MouseClick += this.OnIconClick;
 		}
