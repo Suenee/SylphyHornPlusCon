@@ -30,6 +30,9 @@
 		                  Condition="'$(TargetFramework)' == 'net10.0-windows10.0.26100.0'">
 			<AdditionalProperties>RunSylphyHornPostBuild=false</AdditionalProperties>
 		</ProjectReference>
+		<ProjectReference Include="..\SylphyHorn.VirtualDesktopInteropTestHost\SylphyHorn.VirtualDesktopInteropTestHost.csproj"
+		                  ReferenceOutputAssembly="false"
+		                  Condition="'$(TargetFramework)' == 'net10.0-windows10.0.26100.0'" />
 		<Reference Include="MetroTrilithon">
 			<HintPath>..\libraries\MetroTrilithon.Desktop\$(MetroBinaryTfm)\MetroTrilithon.dll</HintPath>
 		</Reference>
@@ -45,6 +48,20 @@
 		</MSBuild>
 		<WriteLinesToFile File="$(TargetDir)SingleInstanceTestHost.path"
 		                  Lines="@(_SingleInstanceTestHostTarget)"
+		                  Overwrite="true"
+		                  Encoding="UTF-8" />
+	</Target>
+
+	<Target Name="WriteVirtualDesktopInteropTestHostPath"
+	        AfterTargets="Build"
+	        Condition="'$(TargetFramework)' == 'net10.0-windows10.0.26100.0'">
+		<MSBuild Projects="..\SylphyHorn.VirtualDesktopInteropTestHost\SylphyHorn.VirtualDesktopInteropTestHost.csproj"
+		         Targets="GetAppHostPath"
+		         Properties="Configuration=$(Configuration);Platform=$(Platform);TargetFramework=$(TargetFramework)">
+			<Output TaskParameter="TargetOutputs" ItemName="_VirtualDesktopInteropTestHostTarget" />
+		</MSBuild>
+		<WriteLinesToFile File="$(TargetDir)VirtualDesktopInteropTestHost.path"
+		                  Lines="@(_VirtualDesktopInteropTestHostTarget)"
 		                  Overwrite="true"
 		                  Encoding="UTF-8" />
 	</Target>
