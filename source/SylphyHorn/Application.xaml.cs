@@ -9,6 +9,7 @@ using Livet;
 using MetroRadiance.UI;
 using MetroTrilithon.Lifetime;
 using MetroTrilithon.Threading.Tasks;
+using SylphyHorn.Interop;
 using SylphyHorn.Properties;
 using SylphyHorn.Serialization;
 using SylphyHorn.Services;
@@ -48,98 +49,98 @@ namespace SylphyHorn
 			}
 
 #if !DEBUG
-			var appInstance = new MetroTrilithon.Desktop.ApplicationInstance().AddTo(this);
-			if (appInstance.IsFirst || Args.Restarted.HasValue)
-#endif
+			var acquireTimeout = Args.Restarted.HasValue ? TimeSpan.FromSeconds(5) : TimeSpan.Zero;
+			var appInstance = new SingleInstance(typeof(Application).Assembly, acquireTimeout).AddTo(this);
+			if (!appInstance.IsFirst)
 			{
-				if (ProductInfo.OSBuild >= 14393)
+				if (Args.Restarted.HasValue)
 				{
-					this.ShutdownMode = ShutdownMode.OnExplicitShutdown;
-					DispatcherHelper.UIDispatcher = this.Dispatcher;
-
-					this.DispatcherUnhandledException += this.HandleDispatcherUnhandledException;
-					TaskLog.Occured += (sender, log) => LoggingService.Instance.Register(log);
-
-					LocalSettingsProvider.Instance.LoadOrMigrateAsync().Wait();
-
-					Settings.General.Culture.Subscribe(x => ResourceService.Current.ChangeCulture(x)).AddTo(this);
-					ThemeService.Current.Register(this, Theme.Windows, Accent.Windows);
-
-					this.HookService = new HookService().AddTo(this);
-
-					var preparation = new ApplicationPreparation(this.HookService, this.Shutdown, this);
-					this.TaskTrayIcon = preparation.CreateTaskTrayIcon().AddTo(this);
-
-					if (Settings.General.FirstTime)
-					{
-						preparation.CreateFirstTimeBaloon().Show();
-
-						Settings.General.FirstTime.Value = false;
-						LocalSettingsProvider.Instance.SaveAsync().Forget();
-					}
-
-					preparation.VirtualDesktopInitialized += () =>
-					{
-						this.TaskTrayIcon.Show();
-						this.TaskTrayIcon.Reload();
-						if (Settings.General.AlwaysShowDesktopNotification)
-						{
-							NotificationService.Instance.ShowCurrentDesktop();
-						}
-					};
-					preparation.VirtualDesktopInitializationCanceled += () => this.Shutdown(); // ToDo
-					preparation.VirtualDesktopInitializationFailed += (ex, autoRestart) =>
-					{
-						this.TaskTrayIcon.Show();
-						LoggingService.Instance.Register(ex);
-
-						if ((Args.Restarted == null || Args.Restarted == 0) && autoRestart)
-						{
-							try
-							{
-								Restart();
-								this.Shutdown();
-								return;
-							}
-							catch (Exception ex2)
-							{
-								LoggingService.Instance.Register(ex2);
-							}
-						}
-						this.RestartOrShutdown("Virtual desktop initialization is failed.", "Virtual Desktop Initialization Failed");
-					};
-					preparation.PrepareVirtualDesktop();
-
-					NotificationService.Instance.AddTo(this);
-					WallpaperService.Instance.AddTo(this);
-
-#if !DEBUG
-#if NETFRAMEWORK
-					appInstance.CommandLineArgsReceived += (sender, message) =>
-					{
-						var args = new CommandLineArgs(message.CommandLineArgs);
-						if (args.Setup) this.SetupShortcut();
-					};
-#endif
-#endif
-
-					base.OnStartup(e);
+					var now = DateTimeOffset.Now;
+					ReportException(
+						"SingleInstance",
+						typeof(Application),
+						new TimeoutException($@"Failed to acquire the application Mutex within the restart timeout.
+Mutex name: {appInstance.MutexName}
+Wait time: {acquireTimeout}
+Restarted: {Args.Restarted.Value}
+PID: {Process.GetCurrentProcess().Id}
+Time: {now:O}"));
+					return;
 				}
-				else
-				{
-					MessageBox.Show("This application is supported on Windows 10 Anniversary Update (build 14393) or later.", "Not supported", MessageBoxButton.OK, MessageBoxImage.Stop);
-					this.Shutdown();
-				}
+
+				this.Shutdown();
+				return;
 			}
-#if !DEBUG
+#endif
+
+			if (ProductInfo.OSBuild >= 14393)
+			{
+				this.ShutdownMode = ShutdownMode.OnExplicitShutdown;
+				DispatcherHelper.UIDispatcher = this.Dispatcher;
+
+				this.DispatcherUnhandledException += this.HandleDispatcherUnhandledException;
+				TaskLog.Occured += (sender, log) => LoggingService.Instance.Register(log);
+
+				LocalSettingsProvider.Instance.LoadOrMigrateAsync().Wait();
+
+				Settings.General.Culture.Subscribe(x => ResourceService.Current.ChangeCulture(x)).AddTo(this);
+				ThemeService.Current.Register(this, Theme.Windows, Accent.Windows);
+
+				this.HookService = new HookService().AddTo(this);
+
+				var preparation = new ApplicationPreparation(this.HookService, this.Shutdown, this);
+				this.TaskTrayIcon = preparation.CreateTaskTrayIcon().AddTo(this);
+
+				if (Settings.General.FirstTime)
+				{
+					preparation.CreateFirstTimeBaloon().Show();
+
+					Settings.General.FirstTime.Value = false;
+					LocalSettingsProvider.Instance.SaveAsync().Forget();
+				}
+
+				preparation.VirtualDesktopInitialized += () =>
+				{
+					this.TaskTrayIcon.Show();
+					this.TaskTrayIcon.Reload();
+					if (Settings.General.AlwaysShowDesktopNotification)
+					{
+						NotificationService.Instance.ShowCurrentDesktop();
+					}
+				};
+				preparation.VirtualDesktopInitializationCanceled += () => this.Shutdown(); // ToDo
+				preparation.VirtualDesktopInitializationFailed += (ex, autoRestart) =>
+				{
+					this.TaskTrayIcon.Show();
+					LoggingService.Instance.Register(ex);
+
+					if ((Args.Restarted == null || Args.Restarted == 0) && autoRestart)
+					{
+						try
+						{
+							Restart();
+							this.Shutdown();
+							return;
+						}
+						catch (Exception ex2)
+						{
+							LoggingService.Instance.Register(ex2);
+						}
+					}
+					this.RestartOrShutdown("Virtual desktop initialization is failed.", "Virtual Desktop Initialization Failed");
+				};
+				preparation.PrepareVirtualDesktop();
+
+				NotificationService.Instance.AddTo(this);
+				WallpaperService.Instance.AddTo(this);
+
+				base.OnStartup(e);
+			}
 			else
 			{
-#if NETFRAMEWORK
-				appInstance.SendCommandLineArgs(e.Args);
-#endif
+				MessageBox.Show("This application is supported on Windows 10 Anniversary Update (build 14393) or later.", "Not supported", MessageBoxButton.OK, MessageBoxImage.Stop);
 				this.Shutdown();
 			}
-#endif
 		}
 
 		protected override void OnExit(ExitEventArgs e)

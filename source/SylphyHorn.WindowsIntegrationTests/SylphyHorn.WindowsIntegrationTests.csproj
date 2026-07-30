@@ -25,9 +25,28 @@
 		<ProjectReference Include="..\SylphyHorn\SylphyHorn.csproj">
 			<AdditionalProperties>RunSylphyHornPostBuild=false</AdditionalProperties>
 		</ProjectReference>
+		<ProjectReference Include="..\SylphyHorn.SingleInstanceTestHost\SylphyHorn.SingleInstanceTestHost.csproj"
+		                  ReferenceOutputAssembly="false"
+		                  Condition="'$(TargetFramework)' == 'net10.0-windows10.0.26100.0'">
+			<AdditionalProperties>RunSylphyHornPostBuild=false</AdditionalProperties>
+		</ProjectReference>
 		<Reference Include="MetroTrilithon">
 			<HintPath>..\libraries\MetroTrilithon.Desktop\$(MetroBinaryTfm)\MetroTrilithon.dll</HintPath>
 		</Reference>
 	</ItemGroup>
+
+	<Target Name="WriteSingleInstanceTestHostPath"
+	        AfterTargets="Build"
+	        Condition="'$(TargetFramework)' == 'net10.0-windows10.0.26100.0'">
+		<MSBuild Projects="..\SylphyHorn.SingleInstanceTestHost\SylphyHorn.SingleInstanceTestHost.csproj"
+		         Targets="GetTargetPath"
+		         Properties="Configuration=$(Configuration);Platform=$(Platform);TargetFramework=$(TargetFramework);RunSylphyHornPostBuild=false">
+			<Output TaskParameter="TargetOutputs" ItemName="_SingleInstanceTestHostTarget" />
+		</MSBuild>
+		<WriteLinesToFile File="$(TargetDir)SingleInstanceTestHost.path"
+		                  Lines="@(_SingleInstanceTestHostTarget)"
+		                  Overwrite="true"
+		                  Encoding="UTF-8" />
+	</Target>
 
 </Project>
