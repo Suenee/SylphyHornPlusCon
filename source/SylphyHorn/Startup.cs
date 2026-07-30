@@ -45,7 +45,11 @@ namespace SylphyHorn
 			}
 			else
 			{
+#if NETFRAMEWORK
 				ShellLink.Create(this._path);
+#else
+				ShellLink.Create(this._path, Environment.ProcessPath);
+#endif
 			}
 		}
 
