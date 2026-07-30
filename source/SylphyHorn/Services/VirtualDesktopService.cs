@@ -1,10 +1,9 @@
 ﻿using System;
 using System.Linq;
 using System.Media;
+using SylphyHorn.Interop;
 using SylphyHorn.Serialization;
 using WindowsDesktop;
-using GregsStack.InputSimulatorStandard;
-using GregsStack.InputSimulatorStandard.Native;
 
 namespace SylphyHorn.Services
 {
@@ -346,28 +345,17 @@ namespace SylphyHorn.Services
 
 		#region Task View
 
-		private static readonly InputSimulator Input = new InputSimulator();
-
 		public static void ShowTaskView()
 		{
-			Input.Keyboard
-				.KeyUp(VirtualKeyCode.CONTROL)
-				.KeyUp(VirtualKeyCode.SHIFT)
-				.KeyUp(VirtualKeyCode.MENU)
-				.KeyUp(VirtualKeyCode.LWIN)
-				.KeyUp(VirtualKeyCode.RWIN)
-				.ModifiedKeyStroke(VirtualKeyCode.LWIN, VirtualKeyCode.TAB);
+			InputInjector.ReleaseModifiersAndSendChord(InputInjector.VK_LWIN, InputInjector.VK_TAB);
 		}
 
 		public static void ShowWindowSwitch()
 		{
-			Input.Keyboard
-				.KeyUp(VirtualKeyCode.CONTROL)
-				.KeyUp(VirtualKeyCode.SHIFT)
-				.KeyUp(VirtualKeyCode.MENU)
-				.KeyUp(VirtualKeyCode.LWIN)
-				.KeyUp(VirtualKeyCode.RWIN)
-				.ModifiedKeyStroke(new[] {VirtualKeyCode.CONTROL, VirtualKeyCode.MENU}, VirtualKeyCode.TAB);
+			InputInjector.ReleaseModifiersAndSendChord(
+				InputInjector.VK_CONTROL,
+				InputInjector.VK_MENU,
+				InputInjector.VK_TAB);
 		}
 
 		#endregion
