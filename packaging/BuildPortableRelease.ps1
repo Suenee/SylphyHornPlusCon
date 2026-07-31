@@ -136,6 +136,7 @@ function Get-Sha256 {
 function Get-TextSha256 {
 	param(
 		[Parameter(Mandatory = $true)]
+		[AllowEmptyString()]
 		[string] $Text
 	)
 
