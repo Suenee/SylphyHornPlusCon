@@ -12,6 +12,9 @@ namespace SylphyHorn.WindowsIntegrationTests
 	public class StartupShortcutIntegrationTests
 	{
 		[Fact]
+		[Trait(
+			IntegrationTestExecutionEnvironment.TraitName,
+			IntegrationTestExecutionEnvironment.HostedCI)]
 		public void ShellLinkTargetsExplicitExecutablePath()
 		{
 			var directory = Path.Combine(

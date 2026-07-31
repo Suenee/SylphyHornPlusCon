@@ -1,0 +1,312 @@
+name: Publish to WinGet
+
+on:
+  release:
+    # "published" covers both stable releases and pre-releases, including drafts
+    # that are later published.
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Published release tag to submit (for example, v4.0.0-beta.14)
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: winget-${{ github.event.release.tag_name || inputs.tag }}
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    name: Submit WinGet manifest update
+    runs-on: windows-2025
+    env:
+      RELEASE_TAG: ${{ github.event.release.tag_name || inputs.tag }}
+
+    steps:
+      - name: Checkout the workflow source
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          ref: ${{ github.workflow_sha }}
+          persist-credentials: false
+          submodules: false
+
+      - name: Verify the published release and its assets
+        id: release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if ($env:RELEASE_TAG -notmatch '^v(?<Version>[0-9]+\.[0-9]+\.[0-9]+(?:-[0-9A-Za-z][0-9A-Za-z.-]*)?)$') {
+            throw "Invalid release tag: $env:RELEASE_TAG"
+          }
+          $version = $Matches.Version
+          $release = gh api "repos/$env:GITHUB_REPOSITORY/releases/tags/$env:RELEASE_TAG" |
+            ConvertFrom-Json
+          if ($LASTEXITCODE -ne 0 -or $null -eq $release) {
+            throw "Cannot read published release '$env:RELEASE_TAG'."
+          }
+          if ($release.draft) {
+            throw "Release '$env:RELEASE_TAG' is still a draft."
+          }
+
+          $expected = [ordered] @{
+            x86 = "SylphyHornPlus-v$version-x86.zip"
+            x64 = "SylphyHornPlus-v$version-x64.zip"
+            arm64 = "SylphyHornPlus-v$version-arm64.zip"
+          }
+          $zipAssetNames = @($release.assets |
+            Where-Object { $_.name.EndsWith('.zip', [StringComparison]::OrdinalIgnoreCase) } |
+            Select-Object -ExpandProperty name |
+            Sort-Object)
+          $expectedAssetNames = @($expected.Values | Sort-Object)
+          if (@(Compare-Object $expectedAssetNames $zipAssetNames).Count -ne 0) {
+            throw "Release ZIP assets must exactly match the three architecture packages. Expected: $($expectedAssetNames -join ', '); actual: $($zipAssetNames -join ', ')."
+          }
+          $matchingAssets = @($release.assets | Where-Object {
+            $expected.Values -ccontains $_.name
+          })
+          if ($matchingAssets.Count -ne 3) {
+            throw "The release must contain exactly the three expected architecture ZIPs."
+          }
+          foreach ($entry in $expected.GetEnumerator()) {
+            $asset = @($matchingAssets | Where-Object { $_.name -ceq $entry.Value })
+            if ($asset.Count -ne 1) {
+              throw "Expected exactly one release asset named '$($entry.Value)'."
+            }
+            "url_$($entry.Key)=$($asset[0].browser_download_url)" >> $env:GITHUB_OUTPUT
+          }
+
+          $releaseDate = ([DateTimeOffset] $release.published_at).UtcDateTime.ToString('yyyy-MM-dd')
+          "version=$version" >> $env:GITHUB_OUTPUT
+          "release_date=$releaseDate" >> $env:GITHUB_OUTPUT
+          "release_notes_url=$($release.html_url)" >> $env:GITHUB_OUTPUT
+
+      - name: Verify WinGet credentials are configured
+        shell: pwsh
+        env:
+          WINGET_CREATE_GITHUB_TOKEN: ${{ secrets.WINGET_TOKEN }}
+        run: |
+          if ([string]::IsNullOrWhiteSpace($env:WINGET_CREATE_GITHUB_TOKEN)) {
+            throw "Repository secret WINGET_TOKEN is not configured."
+          }
+
+      - name: Download pinned Microsoft WinGetCreate
+        id: wingetcreate
+        shell: pwsh
+        run: |
+          $toolPath = Join-Path $env:RUNNER_TEMP 'wingetcreate-1.12.13.0.exe'
+          Invoke-WebRequest `
+            'https://github.com/microsoft/winget-create/releases/download/v1.12.13.0/wingetcreate.exe' `
+            -OutFile $toolPath
+          $expectedHash = '24042BD37915805615E6CF969AC57C6439124C3FE85823327F5F3FB24BD9FFEA'
+          $actualHash = (Get-FileHash -LiteralPath $toolPath -Algorithm SHA256).Hash
+          if ($actualHash -cne $expectedHash) {
+            throw "WinGetCreate SHA-256 mismatch."
+          }
+          "tool_path=$toolPath" >> $env:GITHUB_OUTPUT
+
+      - name: Inspect current WinGet installer topology
+        id: current_manifest
+        shell: pwsh
+        env:
+          WINGETCREATE_PATH: ${{ steps.wingetcreate.outputs.tool_path }}
+        run: |
+          $showOutput = @(
+            & $env:WINGETCREATE_PATH show `
+              'hwtnb.SylphyHornPlus' `
+              --installer-manifest `
+              --format json
+          ) -join "`n"
+          if ($LASTEXITCODE -ne 0) {
+            throw "Cannot read the current WinGet installer manifest."
+          }
+          $jsonStart = $showOutput.IndexOf('{')
+          if ($jsonStart -lt 0) {
+            throw "WinGetCreate show did not return an installer manifest."
+          }
+          $manifest = $showOutput.Substring($jsonStart) | ConvertFrom-Json
+          if ($manifest.PackageIdentifier -cne 'hwtnb.SylphyHornPlus' -or
+              $manifest.InstallerType -cne 'zip' -or
+              $manifest.NestedInstallerType -cne 'portable' -or
+              $manifest.UpgradeBehavior -cne 'install') {
+            throw "The current WinGet manifest no longer matches the supported package contract."
+          }
+          $nestedFiles = @($manifest.NestedInstallerFiles)
+          if ($nestedFiles.Count -ne 1 -or
+              $nestedFiles[0].RelativeFilePath -cne 'SylphyHorn/SylphyHorn.exe' -or
+              $nestedFiles[0].PortableCommandAlias -cne 'SylphyHornPlus') {
+            throw "The current WinGet nested portable contract has changed."
+          }
+          $installerCount = @($manifest.Installers).Count
+          if ($installerCount -notin @(1, 3)) {
+            throw "Unsupported current WinGet installer count: $installerCount"
+          }
+          $actualArchitectures = @($manifest.Installers |
+            Select-Object -ExpandProperty Architecture |
+            Sort-Object)
+          $expectedArchitectures = if ($installerCount -eq 1) {
+            @('x86')
+          } else {
+            @('arm64', 'x64', 'x86')
+          }
+          if (@(Compare-Object $expectedArchitectures $actualArchitectures).Count -ne 0) {
+            throw "Unsupported current WinGet architecture set: $($actualArchitectures -join ', ')"
+          }
+
+          if ($installerCount -eq 1) {
+            $localeOutput = @(
+              & $env:WINGETCREATE_PATH show `
+                'hwtnb.SylphyHornPlus' `
+                --defaultlocale-manifest `
+                --format json
+            ) -join "`n"
+            if ($LASTEXITCODE -ne 0) {
+              throw "Cannot read the current WinGet default-locale manifest."
+            }
+            $localeJsonStart = $localeOutput.IndexOf('{')
+            if ($localeJsonStart -lt 0) {
+              throw "WinGetCreate show did not return a default-locale manifest."
+            }
+            $locale = $localeOutput.Substring($localeJsonStart) | ConvertFrom-Json
+            $expectedTags = @(
+              'desktop-app',
+              'hotkeys',
+              'rocker-gesture',
+              'tools',
+              'virtual-desktop',
+              'wheel-gesture',
+              'window-management',
+              'windows',
+              'windows-11',
+              'windows11'
+            )
+            $actualTags = @($locale.Tags | Sort-Object)
+            $localeContractMatches =
+              $locale.PackageIdentifier -ceq 'hwtnb.SylphyHornPlus' -and
+              $locale.PackageLocale -ceq 'en-US' -and
+              $locale.Publisher -ceq 'hwtnb' -and
+              $locale.PublisherUrl -ceq 'https://github.com/hwtnb' -and
+              $locale.PublisherSupportUrl -ceq 'https://github.com/hwtnb/SylphyHornPlusWin11/issues' -and
+              $locale.PackageName -ceq 'SylphyHornPlus' -and
+              $locale.PackageUrl -ceq 'https://github.com/hwtnb/SylphyHornPlusWin11' -and
+              $locale.License -ceq 'MIT' -and
+              $locale.LicenseUrl -ceq 'https://github.com/hwtnb/SylphyHornPlusWin11/blob/HEAD/LICENSE.txt' -and
+              $locale.ShortDescription -ceq 'Virtual Desktop Tools for Windows 11 and 10.' -and
+              @(Compare-Object $expectedTags $actualTags).Count -eq 0
+            if (-not $localeContractMatches) {
+              throw "The current WinGet package metadata differs from the reviewed bootstrap manifest. Update the generator explicitly before submitting."
+            }
+          }
+          "installer_count=$installerCount" >> $env:GITHUB_OUTPUT
+
+      - name: Reject duplicate open WinGet submissions
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PACKAGE_VERSION: ${{ steps.release.outputs.version }}
+        run: |
+          $pullRequestTitle = "New version: hwtnb.SylphyHornPlus version $env:PACKAGE_VERSION"
+          $query = [Uri]::EscapeDataString(
+            "repo:microsoft/winget-pkgs is:pr is:open in:title `"$pullRequestTitle`"")
+          $search = gh api "search/issues?q=$query" | ConvertFrom-Json
+          if ($LASTEXITCODE -ne 0) {
+            throw "Cannot check for an existing WinGet pull request."
+          }
+          if ($search.total_count -ne 0) {
+            throw "An open WinGet pull request already exists for $env:PACKAGE_VERSION."
+          }
+
+      - name: Submit normal WinGet update
+        if: steps.current_manifest.outputs.installer_count == '3'
+        shell: pwsh
+        env:
+          WINGET_CREATE_GITHUB_TOKEN: ${{ secrets.WINGET_TOKEN }}
+          WINGETCREATE_PATH: ${{ steps.wingetcreate.outputs.tool_path }}
+          PACKAGE_VERSION: ${{ steps.release.outputs.version }}
+          RELEASE_DATE: ${{ steps.release.outputs.release_date }}
+          RELEASE_NOTES_URL: ${{ steps.release.outputs.release_notes_url }}
+          URL_X86: ${{ steps.release.outputs.url_x86 }}
+          URL_X64: ${{ steps.release.outputs.url_x64 }}
+          URL_ARM64: ${{ steps.release.outputs.url_arm64 }}
+        run: |
+          $expectedHash = '24042BD37915805615E6CF969AC57C6439124C3FE85823327F5F3FB24BD9FFEA'
+          $actualHash = (Get-FileHash -LiteralPath $env:WINGETCREATE_PATH -Algorithm SHA256).Hash
+          if ($actualHash -cne $expectedHash) {
+            throw "WinGetCreate SHA-256 changed before normal submission."
+          }
+          $installerUrls = @(
+            "$env:URL_X86|x86",
+            "$env:URL_X64|x64",
+            "$env:URL_ARM64|arm64"
+          )
+          & $env:WINGETCREATE_PATH update 'hwtnb.SylphyHornPlus' `
+            --version $env:PACKAGE_VERSION `
+            --urls $installerUrls `
+            --release-notes-url $env:RELEASE_NOTES_URL `
+            --release-date $env:RELEASE_DATE `
+            --prtitle "New version: hwtnb.SylphyHornPlus version $env:PACKAGE_VERSION" `
+            --submit `
+            --no-open
+          if ($LASTEXITCODE -ne 0) {
+            throw "WinGetCreate submission failed with exit code $LASTEXITCODE."
+          }
+
+      - name: Generate initial three-architecture WinGet manifests
+        if: steps.current_manifest.outputs.installer_count == '1'
+        id: bootstrap
+        shell: pwsh
+        env:
+          PACKAGE_VERSION: ${{ steps.release.outputs.version }}
+          RELEASE_DATE: ${{ steps.release.outputs.release_date }}
+          RELEASE_NOTES_URL: ${{ steps.release.outputs.release_notes_url }}
+          URL_X86: ${{ steps.release.outputs.url_x86 }}
+          URL_X64: ${{ steps.release.outputs.url_x64 }}
+          URL_ARM64: ${{ steps.release.outputs.url_arm64 }}
+        run: |
+          $assetRoot = Join-Path $env:RUNNER_TEMP 'winget-assets'
+          $manifestRoot = Join-Path $env:RUNNER_TEMP 'winget-manifests'
+          New-Item -ItemType Directory -Path $assetRoot | Out-Null
+          $pathX86 = Join-Path $assetRoot 'x86.zip'
+          $pathX64 = Join-Path $assetRoot 'x64.zip'
+          $pathArm64 = Join-Path $assetRoot 'arm64.zip'
+          Invoke-WebRequest $env:URL_X86 -OutFile $pathX86
+          Invoke-WebRequest $env:URL_X64 -OutFile $pathX64
+          Invoke-WebRequest $env:URL_ARM64 -OutFile $pathArm64
+
+          & ".github\scripts\NewWinGetMultiArchitectureManifests.ps1" `
+            -Version $env:PACKAGE_VERSION `
+            -ReleaseDate $env:RELEASE_DATE `
+            -ReleaseNotesUrl $env:RELEASE_NOTES_URL `
+            -UrlX86 $env:URL_X86 `
+            -PathX86 $pathX86 `
+            -UrlX64 $env:URL_X64 `
+            -PathX64 $pathX64 `
+            -UrlArm64 $env:URL_ARM64 `
+            -PathArm64 $pathArm64 `
+            -OutputDirectory $manifestRoot
+          "manifest_path=$manifestRoot" >> $env:GITHUB_OUTPUT
+
+      - name: Submit initial three-architecture WinGet manifests
+        if: steps.current_manifest.outputs.installer_count == '1'
+        shell: pwsh
+        env:
+          WINGET_CREATE_GITHUB_TOKEN: ${{ secrets.WINGET_TOKEN }}
+          WINGETCREATE_PATH: ${{ steps.wingetcreate.outputs.tool_path }}
+          MANIFEST_PATH: ${{ steps.bootstrap.outputs.manifest_path }}
+          PACKAGE_VERSION: ${{ steps.release.outputs.version }}
+        run: |
+          $expectedHash = '24042BD37915805615E6CF969AC57C6439124C3FE85823327F5F3FB24BD9FFEA'
+          $actualHash = (Get-FileHash -LiteralPath $env:WINGETCREATE_PATH -Algorithm SHA256).Hash
+          if ($actualHash -cne $expectedHash) {
+            throw "WinGetCreate SHA-256 changed before initial submission."
+          }
+          & $env:WINGETCREATE_PATH submit $env:MANIFEST_PATH `
+            --prtitle "New version: hwtnb.SylphyHornPlus version $env:PACKAGE_VERSION" `
+            --no-open
+          if ($LASTEXITCODE -ne 0) {
+            throw "Initial WinGetCreate submission failed with exit code $LASTEXITCODE."
+          }

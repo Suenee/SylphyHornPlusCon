@@ -19,6 +19,9 @@ namespace SylphyHorn.WindowsIntegrationTests
 		private const int ProcessTimeoutMilliseconds = 30000;
 
 		[Fact(Timeout = 120000)]
+		[Trait(
+			IntegrationTestExecutionEnvironment.TraitName,
+			IntegrationTestExecutionEnvironment.InteractiveDesktop)]
 		public async Task GeneratedInterfaceAssemblyMissHitAndCorruptionRecoveryWorkAcrossProcesses()
 		{
 			var cacheDirectory = Path.Combine(
@@ -57,6 +60,9 @@ namespace SylphyHorn.WindowsIntegrationTests
 		}
 
 		[WpfFact(Timeout = 30000)]
+		[Trait(
+			IntegrationTestExecutionEnvironment.TraitName,
+			IntegrationTestExecutionEnvironment.InteractiveDesktop)]
 		public async Task IsPinnedWindowMarshalsApplicationView()
 		{
 			var cacheDirectory = Path.Combine(

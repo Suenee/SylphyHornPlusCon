@@ -17,6 +17,9 @@ namespace SylphyHorn.WindowsIntegrationTests
 		private const string TestHostGuid = "8F10182E-1C1B-4C65-9E8D-5C019E847B5E";
 
 		[Fact(Timeout = 30000)]
+		[Trait(
+			IntegrationTestExecutionEnvironment.TraitName,
+			IntegrationTestExecutionEnvironment.HostedCI)]
 		public async Task RestartWaitsForOwnershipAndNoNonOwnerRemainsResident()
 		{
 			var directory = Path.Combine(Path.GetTempPath(), $"SylphyHornPlus-SingleInstance-{Guid.NewGuid():N}");
@@ -62,6 +65,9 @@ namespace SylphyHorn.WindowsIntegrationTests
 		}
 
 		[Fact(Timeout = 30000)]
+		[Trait(
+			IntegrationTestExecutionEnvironment.TraitName,
+			IntegrationTestExecutionEnvironment.HostedCI)]
 		public async Task TimedOutWaiterExitsWithoutOwnership()
 		{
 			var directory = Path.Combine(Path.GetTempPath(), $"SylphyHornPlus-SingleInstance-{Guid.NewGuid():N}");

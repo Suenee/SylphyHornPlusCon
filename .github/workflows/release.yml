@@ -1,0 +1,299 @@
+name: Build and publish release
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing release tag to build and publish (for example, v4.0.0-beta.14)
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ inputs.tag }}
+  cancel-in-progress: false
+
+env:
+  DOTNET_NOLOGO: true
+  DOTNET_CLI_TELEMETRY_OPTOUT: true
+
+jobs:
+  metadata:
+    name: Validate release tag
+    runs-on: windows-2025
+    outputs:
+      commit: ${{ steps.metadata.outputs.commit }}
+      version: ${{ steps.metadata.outputs.version }}
+
+    steps:
+      - name: Checkout the tagged source
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          fetch-depth: 0
+          ref: ${{ inputs.tag }}
+          submodules: recursive
+
+      - name: Validate tag and source version
+        id: metadata
+        shell: pwsh
+        env:
+          RELEASE_TAG: ${{ inputs.tag }}
+        run: |
+          if ($env:RELEASE_TAG -notmatch '^v(?<Version>[0-9]+\.[0-9]+\.[0-9]+(?:-[0-9A-Za-z][0-9A-Za-z.-]*)?)$') {
+            throw "Release tag must use v{version}: $env:RELEASE_TAG"
+          }
+
+          $tagCommit = (git rev-parse "$($env:RELEASE_TAG)^{commit}").Trim()
+          $headCommit = (git rev-parse HEAD).Trim()
+          if ($LASTEXITCODE -ne 0 -or $tagCommit -cne $headCommit) {
+            throw "Checked-out commit '$headCommit' does not match tag '$env:RELEASE_TAG' ('$tagCommit')."
+          }
+
+          $version = $Matches.Version
+          [xml] $project = Get-Content "source\SylphyHorn\SylphyHorn.csproj" -Raw
+          $baseVersion = $project.Project.PropertyGroup.Version |
+            Where-Object { $_ } |
+            Select-Object -First 1
+          $extraVersion = $project.Project.ItemGroup.AssemblyMetadata |
+            Where-Object { $_.Include -eq 'ExtraVersion' } |
+            Select-Object -ExpandProperty Value -First 1
+          $expectedVersion = if ([string]::IsNullOrWhiteSpace($extraVersion)) {
+            [string] $baseVersion
+          }
+          else {
+            "${baseVersion}-${extraVersion}"
+          }
+          if ($version -cne $expectedVersion) {
+            throw "Tag version '$version' does not match project version '$expectedVersion'."
+          }
+
+          "commit=$headCommit" >> $env:GITHUB_OUTPUT
+          "version=$version" >> $env:GITHUB_OUTPUT
+
+  validation:
+    name: Run release regression tests
+    needs: metadata
+    runs-on: windows-2025
+
+    steps:
+      - name: Checkout the tagged source
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          ref: ${{ needs.metadata.outputs.commit }}
+          submodules: recursive
+
+      - name: Set up the pinned .NET SDK
+        uses: actions/setup-dotnet@26b0ec14cb23fa6904739307f278c14f94c95bf1 # v5
+        with:
+          dotnet-version: 10.0.302
+
+      - name: Run unit-test matrix
+        shell: pwsh
+        run: |
+          $solutionDirectory = Join-Path $env:GITHUB_WORKSPACE "source\"
+          $runtimeIdentifiers = '-p:RuntimeIdentifiers="win-x86;win-x64;win-arm64"'
+          foreach ($platform in @('x86', 'x64')) {
+            $runtimeIdentifier = "win-$platform"
+            dotnet restore "source\SylphyHorn.Tests\SylphyHorn.Tests.csproj" `
+              -p:Configuration=Release `
+              -p:Platform=$platform `
+              $runtimeIdentifiers `
+              -p:RuntimeIdentifier=$runtimeIdentifier `
+              -p:RunSylphyHornPostBuild=false `
+              -p:SolutionDir="$solutionDirectory" `
+              --locked-mode
+            if ($LASTEXITCODE -ne 0) {
+              throw "Unit-test restore failed for $platform."
+            }
+
+            foreach ($framework in @('net48', 'net10.0-windows10.0.26100.0')) {
+              dotnet test "source\SylphyHorn.Tests\SylphyHorn.Tests.csproj" `
+                -c Release `
+                -f $framework `
+                -p:Platform=$platform `
+                -p:RunSylphyHornPostBuild=false `
+                -p:SolutionDir="$solutionDirectory" `
+                --no-restore
+              if ($LASTEXITCODE -ne 0) {
+                throw "Unit tests failed for $framework / $platform."
+              }
+            }
+          }
+
+      - name: Run environment-independent Windows integration tests
+        shell: pwsh
+        run: |
+          & ".github\scripts\RunHostedIntegrationTests.ps1" `
+            -ResultsDirectory (Join-Path $env:RUNNER_TEMP "HostedCI-results")
+
+  package:
+    name: Package ${{ matrix.rid }}
+    needs: metadata
+    runs-on: windows-2025
+    strategy:
+      fail-fast: false
+      matrix:
+        rid:
+          - win-x86
+          - win-x64
+          - win-arm64
+
+    steps:
+      - name: Checkout the tagged source
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          fetch-depth: 0
+          ref: ${{ needs.metadata.outputs.commit }}
+          submodules: recursive
+
+      - name: Set up the pinned .NET SDK
+        uses: actions/setup-dotnet@26b0ec14cb23fa6904739307f278c14f94c95bf1 # v5
+        with:
+          dotnet-version: 10.0.302
+
+      - name: Build and validate portable SCD package
+        shell: pwsh
+        env:
+          RELEASE_VERSION: ${{ needs.metadata.outputs.version }}
+          RELEASE_RID: ${{ matrix.rid }}
+        run: |
+          $outputRoot = Join-Path $env:RUNNER_TEMP "SylphyHornPlus-$env:RELEASE_RID"
+          & "packaging\BuildPortableRelease.ps1" `
+            -Version $env:RELEASE_VERSION `
+            -RuntimeIdentifier $env:RELEASE_RID `
+            -DeploymentMode Scd `
+            -OutputRoot $outputRoot `
+            -SourceTreeMode Release
+          if ($LASTEXITCODE -ne 0) {
+            throw "BuildPortableRelease.ps1 failed with exit code $LASTEXITCODE."
+          }
+
+          $zip = Get-ChildItem -LiteralPath $outputRoot -Filter '*.zip' -File
+          if ($zip.Count -ne 1) {
+            throw "Expected exactly one ZIP in '$outputRoot'; found $($zip.Count)."
+          }
+          New-Item -ItemType Directory -Path "release-assets" | Out-Null
+          Copy-Item -LiteralPath $zip.FullName -Destination "release-assets\$($zip.Name)"
+
+      - name: Upload validated package
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: release-${{ matrix.rid }}
+          path: release-assets/*.zip
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 7
+
+  publish:
+    name: Publish GitHub Release
+    needs:
+      - metadata
+      - package
+      - validation
+    runs-on: windows-2025
+    permissions:
+      contents: write
+
+    steps:
+      - name: Download validated packages
+        uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0 # v5
+        with:
+          pattern: release-*
+          path: release-assets
+          merge-multiple: true
+
+      - name: Verify release asset set
+        shell: pwsh
+        env:
+          RELEASE_VERSION: ${{ needs.metadata.outputs.version }}
+        run: |
+          $expected = @(
+            "SylphyHornPlus-v$env:RELEASE_VERSION-x86.zip",
+            "SylphyHornPlus-v$env:RELEASE_VERSION-x64.zip",
+            "SylphyHornPlus-v$env:RELEASE_VERSION-arm64.zip"
+          ) | Sort-Object
+          $actual = @(
+            Get-ChildItem -LiteralPath "release-assets" -Filter '*.zip' -File |
+              Select-Object -ExpandProperty Name |
+              Sort-Object
+          )
+          if (@(Compare-Object $expected $actual).Count -ne 0) {
+            throw "Release asset set mismatch. Expected: $($expected -join ', '); actual: $($actual -join ', ')."
+          }
+          Get-FileHash "release-assets\*.zip" -Algorithm SHA256 |
+            Format-Table Path, Hash
+
+      - name: Publish release from the existing tag
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_COMMIT: ${{ needs.metadata.outputs.commit }}
+          RELEASE_TAG: ${{ inputs.tag }}
+          RELEASE_VERSION: ${{ needs.metadata.outputs.version }}
+        run: |
+          $tagReferences = @(
+            git ls-remote `
+              "https://github.com/$env:GITHUB_REPOSITORY.git" `
+              "refs/tags/$env:RELEASE_TAG" `
+              "refs/tags/$env:RELEASE_TAG^{}"
+          )
+          if ($LASTEXITCODE -ne 0) {
+            throw "Cannot resolve remote tag '$env:RELEASE_TAG'."
+          }
+          $peeledSuffix = "refs/tags/$env:RELEASE_TAG^{}"
+          $directSuffix = "refs/tags/$env:RELEASE_TAG"
+          $peeledReference = @($tagReferences |
+            Where-Object { ($_ -split '\s+', 2)[1] -ceq $peeledSuffix }) |
+            Select-Object -First 1
+          $selectedReference = if ($peeledReference) {
+            $peeledReference
+          }
+          else {
+            @($tagReferences |
+              Where-Object { ($_ -split '\s+', 2)[1] -ceq $directSuffix }) |
+              Select-Object -First 1
+          }
+          if ([string]::IsNullOrWhiteSpace($selectedReference)) {
+            throw "Remote tag '$env:RELEASE_TAG' does not exist."
+          }
+          $remoteCommit = ($selectedReference -split '\s+')[0]
+          if ($remoteCommit -cne $env:RELEASE_COMMIT) {
+            throw "Remote tag moved from '$env:RELEASE_COMMIT' to '$remoteCommit'."
+          }
+
+          $releaseUri = "https://api.github.com/repos/$env:GITHUB_REPOSITORY/releases/tags/$env:RELEASE_TAG"
+          $releaseResponse = Invoke-WebRequest `
+            -Uri $releaseUri `
+            -Headers @{
+              Accept = 'application/vnd.github+json'
+              Authorization = "Bearer $env:GH_TOKEN"
+              'X-GitHub-Api-Version' = '2022-11-28'
+            } `
+            -SkipHttpErrorCheck
+          if ($releaseResponse.StatusCode -eq 200) {
+            throw "Release '$env:RELEASE_TAG' already exists; existing releases are never overwritten."
+          }
+          if ($releaseResponse.StatusCode -ne 404) {
+            throw "Cannot verify whether release '$env:RELEASE_TAG' exists; GitHub returned HTTP $($releaseResponse.StatusCode)."
+          }
+
+          $assets = @(Get-ChildItem -LiteralPath "release-assets" -Filter '*.zip' -File |
+            Sort-Object Name |
+            Select-Object -ExpandProperty FullName)
+          $arguments = @(
+            'release', 'create', $env:RELEASE_TAG,
+            '--repo', $env:GITHUB_REPOSITORY,
+            '--verify-tag',
+            '--title', "SylphyHornPlus v$env:RELEASE_VERSION",
+            '--generate-notes'
+          )
+          if ($env:RELEASE_VERSION.Contains('-')) {
+            $arguments += '--prerelease'
+          }
+          $arguments += $assets
+          & gh @arguments
+          if ($LASTEXITCODE -ne 0) {
+            throw "GitHub Release publication failed with exit code $LASTEXITCODE."
+          }

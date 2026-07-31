@@ -27,6 +27,9 @@ namespace SylphyHorn.WindowsIntegrationTests
 		// intentionally passes LLKHF_INJECTED events through. Physical-input hook
 		// verification remains an explicit machine smoke test.
 		[WpfFact(Timeout = TestTimeoutMilliseconds)]
+		[Trait(
+			IntegrationTestExecutionEnvironment.TraitName,
+			IntegrationTestExecutionEnvironment.PhysicalInput)]
 		public async Task KeyboardInterceptorLifecycleSmokePassesInjectedInputToIsolatedWindow()
 		{
 			DispatcherHelper.UIDispatcher = Dispatcher.CurrentDispatcher;
@@ -59,6 +62,9 @@ namespace SylphyHorn.WindowsIntegrationTests
 		}
 
 		[WpfFact(Timeout = TestTimeoutMilliseconds)]
+		[Trait(
+			IntegrationTestExecutionEnvironment.TraitName,
+			IntegrationTestExecutionEnvironment.HostedCI)]
 		public async Task ShortcutKeyDetectorLifecycleApiSmokeCompletes()
 		{
 			DispatcherHelper.UIDispatcher = Dispatcher.CurrentDispatcher;
@@ -73,6 +79,9 @@ namespace SylphyHorn.WindowsIntegrationTests
 		}
 
 		[WpfFact(Timeout = TestTimeoutMilliseconds)]
+		[Trait(
+			IntegrationTestExecutionEnvironment.TraitName,
+			IntegrationTestExecutionEnvironment.HostedCI)]
 		public async Task HookServiceConstructionAndDisposeApiSmokeCompletes()
 		{
 			DispatcherHelper.UIDispatcher = Dispatcher.CurrentDispatcher;
@@ -85,6 +94,9 @@ namespace SylphyHorn.WindowsIntegrationTests
 		}
 
 		[WpfFact(Timeout = TestTimeoutMilliseconds)]
+		[Trait(
+			IntegrationTestExecutionEnvironment.TraitName,
+			IntegrationTestExecutionEnvironment.HostedCI)]
 		public async Task HookServiceNestedSuspendTokensResumeAfterLastTokenInEitherOrder()
 		{
 			DispatcherHelper.UIDispatcher = Dispatcher.CurrentDispatcher;
@@ -115,6 +127,9 @@ namespace SylphyHorn.WindowsIntegrationTests
 		}
 
 		[WpfFact(Timeout = TestTimeoutMilliseconds)]
+		[Trait(
+			IntegrationTestExecutionEnvironment.TraitName,
+			IntegrationTestExecutionEnvironment.HostedCI)]
 		public async Task HookServiceDoesNotResumeWhenSuspendTokenReturnsAfterDispose()
 		{
 			DispatcherHelper.UIDispatcher = Dispatcher.CurrentDispatcher;
@@ -136,6 +151,9 @@ namespace SylphyHorn.WindowsIntegrationTests
 		}
 
 		[WpfFact(Timeout = 30000)]
+		[Trait(
+			IntegrationTestExecutionEnvironment.TraitName,
+			IntegrationTestExecutionEnvironment.HostedCI)]
 		public async Task ShortcutKeyDetectorRepeatedLifecycleApiSmokeCompletes()
 		{
 			DispatcherHelper.UIDispatcher = Dispatcher.CurrentDispatcher;
