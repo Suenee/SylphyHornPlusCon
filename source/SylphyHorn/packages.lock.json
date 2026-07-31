@@ -243,7 +243,9 @@
         }
       }
     },
+    ".NETFramework,Version=v4.8/win-arm64": {},
     ".NETFramework,Version=v4.8/win-x64": {},
+    ".NETFramework,Version=v4.8/win-x86": {},
     "net10.0-windows10.0.26100": {
       "ElementalAnnotations-Dualism": {
         "type": "Direct",
@@ -448,7 +450,23 @@
         }
       }
     },
+    "net10.0-windows10.0.26100/win-arm64": {
+      "System.Management": {
+        "type": "Direct",
+        "requested": "[10.0.10, )",
+        "resolved": "10.0.10",
+        "contentHash": "U13ksdXfQlF2WDdu3S4ZPVpikFs2HgV3dbJJZLeZpBIQ4z/xCmQnwEf6LsEEIC2zSamVVa1acA9RdVhZwnWKeA=="
+      }
+    },
     "net10.0-windows10.0.26100/win-x64": {
+      "System.Management": {
+        "type": "Direct",
+        "requested": "[10.0.10, )",
+        "resolved": "10.0.10",
+        "contentHash": "U13ksdXfQlF2WDdu3S4ZPVpikFs2HgV3dbJJZLeZpBIQ4z/xCmQnwEf6LsEEIC2zSamVVa1acA9RdVhZwnWKeA=="
+      }
+    },
+    "net10.0-windows10.0.26100/win-x86": {
       "System.Management": {
         "type": "Direct",
         "requested": "[10.0.10, )",
