@@ -1,0 +1,25 @@
+{
+  "ElementalAnnotations-Core/1.0.1": {
+    "licenseExpression": "MIT",
+    "licenseFiles": ["MIT.txt"]
+  },
+  "ElementalAnnotations-Dark/1.0.2": {
+    "licenseExpression": "MIT",
+    "licenseFiles": ["MIT.txt"]
+  },
+  "ElementalAnnotations-Dualism/1.0.2": {
+    "licenseExpression": "MIT",
+    "licenseFiles": ["MIT.txt"]
+  },
+  "ElementalAnnotations-Light/1.0.2": {
+    "licenseExpression": "MIT",
+    "licenseFiles": ["MIT.txt"]
+  },
+  "System.Data.DataSetExtensions/4.5.0": {
+    "licenseExpression": "MIT",
+    "licenseFiles": [
+      "System.Data.DataSetExtensions-4.5.0-LICENSE.txt",
+      "System.Data.DataSetExtensions-4.5.0-THIRD-PARTY-NOTICES.txt"
+    ]
+  }
+}

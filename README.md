@@ -18,7 +18,21 @@ New features are below:
 
 ## Installations
 
-Please download beta version from [Releases](https://github.com/hwtnb/SylphyHornPlusWin11/releases).
+SylphyHornPlus is a Windows-only application. Download the ZIP that matches
+your Windows CPU architecture from
+[Releases](https://github.com/hwtnb/SylphyHornPlusWin11/releases):
+
+* `SylphyHornPlus-v{version}-x86.zip` for 32-bit Windows
+* `SylphyHornPlus-v{version}-x64.zip` for 64-bit Intel/AMD Windows
+* `SylphyHornPlus-v{version}-arm64.zip` for ARM64 Windows
+
+All three packages are self-contained. You do not need to install the .NET
+Desktop Runtime separately.
+
+Extract the ZIP to a new folder and start `SylphyHorn/SylphyHorn.exe`.
+When updating from the previous single-ZIP distribution, select the package
+for your architecture and replace the extracted application folder while
+SylphyHornPlus is not running.
 
 ### Note: Update from the original or other forks
 Please delete cache data (VirtualDesktop.*****.generated.dll) at %UserProfile%\AppData\Local\grabacr.net\SylphyHorn\assemblies before SylphyHornPlus starts.

@@ -1,3 +1,6 @@
 ﻿/*
 !/.gitignore
 !/*.ps1
+!/licenses/
+!/licenses/*.txt
+!/licenses/*.json
