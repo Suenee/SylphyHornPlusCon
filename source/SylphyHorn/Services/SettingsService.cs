@@ -1,161 +1,73 @@
-﻿using System;
+using System;
+using System.Collections.Generic;
 using System.Linq;
-using SylphyHorn.Properties;
 using SylphyHorn.Serialization;
-using WindowsDesktop;
+using SylphyHorn.Services.DesktopTransitions;
 
 namespace SylphyHorn.Services
 {
 	internal static class SettingsService
 	{
-		#region Synchronize
-
-		public static void Synchronize(bool overrideDesktops)
+		internal const string DesktopNamesKey = "GeneralSettings.DesktopNames";
+		internal const string DesktopWallpaperPathsKey = "GeneralSettings.DesktopBackgroundImagePaths";
+		internal const string DesktopPositionsKey = "GeneralSettings.DesktopBackgroundPositions";
+		internal static DesktopStartupSeed CaptureDesktopStartupSeed()
 		{
-			if (ProductInfo.IsNameSupportBuild)
+			var general = Settings.General;
+			return new DesktopStartupSeed(
+				general.DesktopNames.Value.Select(item => item.Value),
+				general.DesktopBackgroundImagePaths.Value.Select(item => item.Value),
+				general.DesktopBackgroundPositions.Value.Select(item => (WallpaperPosition)item.Value));
+		}
+
+		internal static DesktopStartupSeed CaptureDesktopStartupSeed(IReadOnlyDictionary<string, object> dictionary)
+		{
+			if (dictionary == null) throw new ArgumentNullException(nameof(dictionary));
+			return new DesktopStartupSeed(
+				ReadList<string>(dictionary, DesktopNamesKey),
+				ReadList<string>(dictionary, DesktopWallpaperPathsKey),
+				ReadList<byte>(dictionary, DesktopPositionsKey).Select(value => (WallpaperPosition)value));
+		}
+		internal static void ApplyDesktopProjection(DesktopSettingsProjection projection)
+		{
+			if (projection == null) throw new ArgumentNullException(nameof(projection));
+			var count = projection.Names.Count;
+			if (projection.WallpaperPaths.Count != count || projection.Positions.Count != count)
+				throw new ArgumentException("Desktop settings projection lists must have the same count.", nameof(projection));
+
+			var general = Settings.General;
+			general.DesktopNames.Resize(count);
+			general.DesktopBackgroundImagePaths.Resize(count);
+			general.DesktopBackgroundPositions.Resize(count);
+			for (var index = 0; index < count; index++)
 			{
-				var generalSettings = Settings.General;
-				overrideDesktops = overrideDesktops && (generalSettings.DesktopNames.Count > 0 || generalSettings.DesktopBackgroundImagePaths.Count > 0);
-				if (overrideDesktops)
-				{
-					SuspendResizing();
-					FitWindowsDesktopsWithList();
-					UpdateWindowsDesktopsByList();
-					ResumeResizing();
-					StretchShortcutListTo(VirtualDesktopService.Count);
-				}
-				else
-				{
-					ResizeListIfNeeded();
-					SynchronizeWithWindows();
-				}
+				general.DesktopNames.Value[index].Value = projection.Names[index];
+				general.DesktopBackgroundImagePaths.Value[index].Value = projection.WallpaperPaths[index];
+				general.DesktopBackgroundPositions.Value[index].Value = (byte)projection.Positions[index];
 			}
-			else
-			{
-				ResizeListIfNeeded();
-			}
-
-			WallpaperService.SetPosition(VirtualDesktop.Current);
+			ResizeShortcutListsIfEmpty(count);
 		}
 
-		public static void SynchronizeOnStartup()
+		internal static void ApplyDesktopProjection(IDictionary<string, object> dictionary, DesktopSettingsProjection projection)
 		{
-			Synchronize(Settings.General.OverrideDesktopsOnStartup);
+			if (dictionary == null) throw new ArgumentNullException(nameof(dictionary));
+			if (projection == null) throw new ArgumentNullException(nameof(projection));
+			var count = projection.Names.Count;
+			if (projection.WallpaperPaths.Count != count || projection.Positions.Count != count)
+				throw new ArgumentException("Desktop settings projection lists must have the same count.", nameof(projection));
+			WriteList(dictionary, DesktopNamesKey, projection.Names.Cast<object>().ToArray());
+			WriteList(dictionary, DesktopWallpaperPathsKey, projection.WallpaperPaths.Cast<object>().ToArray());
+			WriteList(dictionary, DesktopPositionsKey, projection.Positions.Select(value => (object)(byte)value).ToArray());
 		}
-
-		public static void SynchronizeWithWindows()
-		{
-			// for OS Build 18975 or later
-			var desktops = VirtualDesktop.AllDesktops;
-
-			_synchronizeWithWindowsAction(desktops);
-		}
-
-		#endregion
-
-		#region Resize
-
-		[Obsolete]
-		public static void ResizeList()
-		{
-			if (!_allowResize) return;
-
-			var desktopCount = VirtualDesktopService.Count;
-
-			ResizeDesktopListCore(desktopCount);
-			ResizeShortcutListCore(desktopCount);
-		}
-
-		public static void ResizeListIfNeeded()
-		{
-			if (!_allowResize) return;
-
-			var desktopCount = VirtualDesktopService.Count;
-
-			ResizeDesktopListCore(desktopCount);
-			ResizeShortcutListIfEmptyCore(desktopCount);
-		}
-
-		[Obsolete]
-		public static void ResizeShortcutList()
-		{
-			if (!_allowResize) return;
-
-			var desktopCount = VirtualDesktopService.Count;
-
-			ResizeShortcutListCore(desktopCount);
-		}
-
-		public static void StretchShortcutListTo(int count)
-		{
-			if (!_allowResize) return;
-
-			StretchShortcutListCore(count);
-		}
-
-		#endregion
-
-		#region private methods
-
-		private static bool _allowResize = true;
-
-		private static void SuspendResizing() => _allowResize = false;
-
-		private static void ResumeResizing() => _allowResize = true;
-
-		private static void ResizeDesktopListCore(int desktopCount)
-		{
-			Settings.General.DesktopNames.Resize(desktopCount);
-			Settings.General.DesktopBackgroundImagePaths.Resize(desktopCount);
-			Settings.General.DesktopBackgroundPositions.Resize(desktopCount);
-
-			foreach (var name in Settings.General.DesktopNames.Value)
-			{
-				if (name.Value == null) name.Value = "";
-			}
-			foreach (var path in Settings.General.DesktopBackgroundImagePaths.Value)
-			{
-				if (path.Value == null) path.Value = "";
-			}
-		}
-
-		private static void ResizeShortcutListCore(int desktopCount)
-		{
-			Settings.ShortcutKey.SwitchToIndices.Resize(desktopCount);
-			Settings.ShortcutKey.MoveToIndices.Resize(desktopCount);
-			Settings.ShortcutKey.MoveToIndicesAndSwitch.Resize(desktopCount);
-			Settings.ShortcutKey.SwapDesktopIndices.Resize(desktopCount);
-
-			Settings.MouseShortcut.SwitchToIndices.Resize(desktopCount);
-			Settings.MouseShortcut.MoveToIndices.Resize(desktopCount);
-			Settings.MouseShortcut.MoveToIndicesAndSwitch.Resize(desktopCount);
-			Settings.MouseShortcut.SwapDesktopIndices.Resize(desktopCount);
-		}
-
-		private static void ResizeShortcutListIfEmptyCore(int desktopCount)
-		{
-			Settings.ShortcutKey.SwitchToIndices.ResizeIfEmpty(desktopCount);
-			Settings.ShortcutKey.MoveToIndices.ResizeIfEmpty(desktopCount);
-			Settings.ShortcutKey.MoveToIndicesAndSwitch.ResizeIfEmpty(desktopCount);
-			Settings.ShortcutKey.SwapDesktopIndices.ResizeIfEmpty(desktopCount);
-
-			Settings.MouseShortcut.SwitchToIndices.ResizeIfEmpty(desktopCount);
-			Settings.MouseShortcut.MoveToIndices.ResizeIfEmpty(desktopCount);
-			Settings.MouseShortcut.MoveToIndicesAndSwitch.ResizeIfEmpty(desktopCount);
-			Settings.MouseShortcut.SwapDesktopIndices.ResizeIfEmpty(desktopCount);
-		}
-
-		private static void StretchShortcutListCore(int count)
+		internal static void StretchShortcutListsTo(int count)
 		{
 			Settings.ShortcutKey.SwitchToIndices.StretchTo(count);
 			Settings.ShortcutKey.MoveToIndices.StretchTo(count);
 			Settings.ShortcutKey.MoveToIndicesAndSwitch.StretchTo(count);
-
 			Settings.MouseShortcut.SwitchToIndices.StretchTo(count);
 			Settings.MouseShortcut.MoveToIndices.StretchTo(count);
 			Settings.MouseShortcut.MoveToIndicesAndSwitch.StretchTo(count);
-
-			if (ProductInfo.IsReorderingSupportBuild)
+			if (Properties.ProductInfo.IsReorderingSupportBuild)
 			{
 				Settings.ShortcutKey.SwapDesktopIndices.StretchTo(count);
 				Settings.MouseShortcut.SwapDesktopIndices.StretchTo(count);
@@ -167,180 +79,36 @@ namespace SylphyHorn.Services
 			}
 		}
 
-		private static Action<VirtualDesktop[]> _synchronizeWithWindowsAction = new Func<Action<VirtualDesktop[]>>(() =>
+		private static void ResizeShortcutListsIfEmpty(int count)
 		{
-			if (ProductInfo.IsWallpaperSupportBuild)
-			{
-				return desktops =>
-				{
-					SynchronizeDesktopNamesCore(desktops);
-					SynchronizeWallpaperPathsCore(desktops);
-				};
-			}
-			else if (ProductInfo.IsNameSupportBuild)
-			{
-				return SynchronizeDesktopNamesCore;
-			}
-			else
-			{
-				return _ => { };
-			}
-		})();
-
-		private static void SynchronizeDesktopNamesCore(VirtualDesktop[] desktops)
-		{
-			// for OS Build 18975 or later
-			var generalSettings = Settings.General;
-
-			Array.ForEach(generalSettings.DesktopNames.Value.ToArray(),
-				prop => prop.Value = desktops[prop.Index].Name);
+			Settings.ShortcutKey.SwitchToIndices.ResizeIfEmpty(count);
+			Settings.ShortcutKey.MoveToIndices.ResizeIfEmpty(count);
+			Settings.ShortcutKey.MoveToIndicesAndSwitch.ResizeIfEmpty(count);
+			Settings.ShortcutKey.SwapDesktopIndices.ResizeIfEmpty(count);
+			Settings.MouseShortcut.SwitchToIndices.ResizeIfEmpty(count);
+			Settings.MouseShortcut.MoveToIndices.ResizeIfEmpty(count);
+			Settings.MouseShortcut.MoveToIndicesAndSwitch.ResizeIfEmpty(count);
+			Settings.MouseShortcut.SwapDesktopIndices.ResizeIfEmpty(count);
 		}
 
-		private static void SynchronizeWallpaperPathsCore(VirtualDesktop[] desktops)
+		private static IReadOnlyList<T> ReadList<T>(IReadOnlyDictionary<string, object> dictionary, string key)
 		{
-			// for OS Build 21337 or later
-			var generalSettings = Settings.General;
-
-			Array.ForEach(generalSettings.DesktopBackgroundImagePaths.Value.ToArray(),
-				prop => prop.Value = desktops[prop.Index].WallpaperPath);
+			var count = dictionary.TryGetValue(key + "#Count", out var countValue) && countValue is int storedCount ? Math.Max(0, storedCount) : 0;
+			var result = new List<T>(count);
+			for (var index = 0; index < count; index++)
+			{
+				if (dictionary.TryGetValue(key + "[" + index + "]", out var value) && value is T typed) result.Add(typed);
+				else result.Add(default(T));
+			}
+			return result;
 		}
 
-		private static Action<VirtualDesktop[]> _updateByListAction = new Func<Action<VirtualDesktop[]>>(() =>
+		private static void WriteList(IDictionary<string, object> dictionary, string key, IReadOnlyList<object> values)
 		{
-			if (ProductInfo.IsWallpaperSupportBuild)
-			{
-				return desktops =>
-				{
-					UpdateDesktopNamesCore(desktops);
-					UpdateWallpaperPathsCore(desktops);
-				};
-			}
-			else if (ProductInfo.IsNameSupportBuild)
-			{
-				return desktops =>
-				{
-					UpdateDesktopNamesCore(desktops);
-					UpdateWallpaperPathsCoreForWin10();
-				};
-			}
-			else
-			{
-				return _ => UpdateWallpaperPathsCoreForWin10();
-			}
-		})();
-
-		private static void UpdateWindowsDesktopsByList()
-		{
-			// for OS Build 18975 or later
-			var desktops = VirtualDesktop.AllDesktops;
-			_updateByListAction(desktops);
+			var prefix = key + "[";
+			foreach (var existing in dictionary.Keys.Where(existing => existing.StartsWith(prefix, StringComparison.Ordinal)).ToArray()) dictionary.Remove(existing);
+			dictionary[key + "#Count"] = values.Count;
+			for (var index = 0; index < values.Count; index++) dictionary[key + "[" + index + "]"] = values[index];
 		}
-
-		private static void UpdateDesktopNamesCore(VirtualDesktop[] desktops)
-		{
-			// for OS Build 18975 or later
-			var generalSettings = Settings.General;
-
-			var desktopNames = generalSettings.DesktopNames.Value;
-			for (int i = 0; i < desktopNames.Count; ++i)
-			{
-				var prop = desktopNames[i];
-				var desktop = i < desktops.Length ? desktops[i] : null;
-				if (desktop != null)
-				{
-					var name = prop.Value;
-					if (name != null)
-					{
-						desktop.Name = name;
-					}
-					else
-					{
-						prop.Value = desktop.Name;
-					}
-				}
-				else if (prop.Value == null)
-				{
-					prop.Value = "";
-				}
-			}
-		}
-
-		private static void UpdateWallpaperPathsCore(VirtualDesktop[] desktops)
-		{
-			// for OS Build 21337 or later
-			var generalSettings = Settings.General;
-
-			var wallpaperPaths = generalSettings.DesktopBackgroundImagePaths.Value;
-			for (int i = 0; i < wallpaperPaths.Count; ++i)
-			{
-				var prop = wallpaperPaths[i];
-				var desktop = i < desktops.Length ? desktops[i] : null;
-				if (desktop != null)
-				{
-					var path = prop.Value;
-					if (path != null)
-					{
-						desktop.WallpaperPath = path;
-					}
-					else
-					{
-						prop.Value = desktop.WallpaperPath;
-					}
-				}
-				else if (prop.Value == null)
-				{
-					prop.Value = "";
-				}
-			}
-		}
-
-		private static void UpdateWallpaperPathsCoreForWin10()
-		{
-			if (!Settings.General.ChangeBackgroundEachDesktop) return;
-
-			WallpaperService.SetWallpaperAndPosition(VirtualDesktop.Current);
-		}
-
-		private static void FitWindowsDesktopsWithList()
-		{
-			var generalSettings = Settings.General;
-
-			var nameCount = generalSettings.DesktopNames.Count;
-			var wallpaperCount = generalSettings.DesktopBackgroundImagePaths.Count;
-			var settingsCount = nameCount >= wallpaperCount ? nameCount : wallpaperCount;
-
-			if (nameCount < settingsCount)
-			{
-				generalSettings.DesktopNames.Resize(settingsCount);
-			}
-			else if (wallpaperCount < settingsCount)
-			{
-				generalSettings.DesktopBackgroundImagePaths.Resize(settingsCount);
-			}
-			if (generalSettings.DesktopBackgroundPositions.Count < settingsCount)
-			{
-				generalSettings.DesktopBackgroundPositions.Resize(settingsCount);
-			}
-
-			var desktops = VirtualDesktop.AllDesktops;
-			var currentCount = desktops.Length;
-
-			if (settingsCount > currentCount)
-			{
-				for (var i = currentCount; i < settingsCount; ++i)
-				{
-					VirtualDesktop.Create();
-				}
-			}
-			else if (settingsCount < currentCount)
-			{
-				for (var i = settingsCount; i < currentCount; ++i)
-				{
-					desktops[i].Remove();
-				}
-			}
-		}
-
-		#endregion
 	}
 }

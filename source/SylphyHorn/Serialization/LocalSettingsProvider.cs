@@ -1,8 +1,8 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.IO;
-using System.Linq;
 using System.Runtime.Serialization;
+using System.Security.Cryptography;
 using System.Threading.Tasks;
 using System.Xml;
 using SylphyHorn.Properties;
@@ -12,16 +12,12 @@ namespace SylphyHorn.Serialization
 	public sealed class LocalSettingsProvider : DictionaryProvider
 	{
 		public static readonly string SupportedFormats = "XML (*.xml)|*.xml";
-
 		public static TimeSpan FileSystemHandlerThrottleDueTime { get; set; } = TimeSpan.FromMilliseconds(1500);
-
 		public static LocalSettingsProvider Instance { get; } = new LocalSettingsProvider();
 
 		private readonly FileInfo _targetFile;
-
 		public bool Available { get; }
-
-		public string FilePath => this._targetFile.FullName;
+		public string FilePath => this._targetFile?.FullName;
 
 		private LocalSettingsProvider()
 		{
@@ -30,27 +26,20 @@ namespace SylphyHorn.Serialization
 				ProductInfo.Company,
 				ProductInfo.Product,
 				this.Filename);
-
 			var file = new FileInfo(path);
 			if (file.Directory == null || file.DirectoryName == null)
 			{
 				this.Available = false;
 				return;
 			}
-
-			if (!file.Directory.Exists)
-			{
-				file.Directory.Create();
-			}
-
+			if (!file.Directory.Exists) file.Directory.Create();
 			this._targetFile = file;
 			this.Available = true;
 		}
 
-
 		public async Task LoadOrMigrateAsync()
 		{
-			if (this.Available && this._targetFile.Exists)
+			if (this.Available && File.Exists(this._targetFile.FullName))
 			{
 				await this.LoadAsync().ConfigureAwait(false);
 				return;
@@ -61,100 +50,91 @@ namespace SylphyHorn.Serialization
 				ProductInfo.OriginalCompany,
 				ProductInfo.OriginalProduct,
 				this.Filename);
-
-			if (File.Exists(path))
-			{
-				await this.ImportAsync(path).ConfigureAwait(false);
-				await this.SaveAsync().ConfigureAwait(false);
-			}
-			else
-			{
-				await this.LoadAsync().ConfigureAwait(false);
-			}
+			if (File.Exists(path)) await this.ImportAsync(path).ConfigureAwait(false);
+			else await this.LoadAsync().ConfigureAwait(false);
 		}
 
 		protected override Task SaveAsyncCore(IDictionary<string, object> dic)
 		{
-			if (!this.Available)
-			{
-				return Task.FromResult<IDictionary<string, object>>(null);
-			}
-
-			return this.SaveAsyncCore(dic, this._targetFile);
+			if (!this.Available) throw new InvalidOperationException("The local settings provider is unavailable.");
+			return AtomicSettingsFile.WriteAsync(dic, this._targetFile, this.KnownTypes);
 		}
 
 		protected override Task SaveAsyncCore(IDictionary<string, object> dic, string path)
 		{
-			var file = new FileInfo(path);
-			if (file.Directory == null || file.DirectoryName == null)
-			{
-				return Task.FromResult<IDictionary<string, object>>(null);
-			}
-
-			if (!file.Directory.Exists)
-			{
-				file.Directory.Create();
-			}
-
-			return this.SaveAsyncCore(dic, file);
-		}
-
-		private Task SaveAsyncCore(IDictionary<string, object> dic, FileInfo targetFile)
-		{
-			return Task.Run(() =>
-			{
-				var serializer = new DataContractSerializer(dic.GetType(), this.KnownTypes);
-				var settings = new XmlWriterSettings
-				{
-					Indent = true, // more readable!!!
-				};
-
-				using (var stream = targetFile.Open(FileMode.Create))
-				using (var writer = XmlWriter.Create(stream, settings))
-				{
-					serializer.WriteObject(writer, dic);
-				}
-			});
+			if (string.IsNullOrWhiteSpace(path)) throw new ArgumentException("A target path is required.", nameof(path));
+			return AtomicSettingsFile.WriteAsync(dic, new FileInfo(path), this.KnownTypes);
 		}
 
 		protected override Task<IDictionary<string, object>> LoadAsyncCore()
 		{
-			if (!this.Available)
-			{
-				return Task.FromResult<IDictionary<string, object>>(null);
-			}
-
-			return this.LoadAsyncCore(this._targetFile);
+			if (!this.Available) return Task.FromResult<IDictionary<string, object>>(null);
+			return AtomicSettingsFile.ReadAsync(this._targetFile, this.KnownTypes);
 		}
 
 		protected override Task<IDictionary<string, object>> LoadAsyncCore(string path)
 		{
-			var file = new FileInfo(path);
-			if (file.Directory == null || file.DirectoryName == null)
-			{
-				return Task.FromResult<IDictionary<string, object>>(null);
-			}
-
-			return this.LoadAsyncCore(file);
+			if (string.IsNullOrWhiteSpace(path)) throw new ArgumentException("A source path is required.", nameof(path));
+			return AtomicSettingsFile.ReadAsync(new FileInfo(path), this.KnownTypes);
 		}
 
-		private Task<IDictionary<string, object>> LoadAsyncCore(FileInfo targetFile)
-		{
-			if (!targetFile.Exists)
-			{
-				return Task.FromResult<IDictionary<string, object>>(null);
-			}
+		protected override Task<string> GetContentHashAsyncCore()
+			=> !this.Available ? Task.FromResult<string>(null) : AtomicSettingsFile.HashAsync(this._targetFile);
+	}
 
+	internal static class AtomicSettingsFile
+	{
+		internal static Task WriteAsync(IDictionary<string, object> dictionary, FileInfo targetFile, Type[] knownTypes)
+		{
+			if (dictionary == null) throw new ArgumentNullException(nameof(dictionary));
+			if (targetFile?.Directory == null || targetFile.DirectoryName == null) throw new InvalidOperationException("The settings target directory is unavailable.");
 			return Task.Run(() =>
 			{
-				if (!targetFile.Exists) return null;
-
-				var serializer = new DataContractSerializer(typeof(IDictionary<string, object>), this.KnownTypes);
-
-				using (var stream = targetFile.OpenRead())
+				if (!targetFile.Directory.Exists) targetFile.Directory.Create();
+				var tempPath = Path.Combine(targetFile.DirectoryName, targetFile.Name + "." + Guid.NewGuid().ToString("N") + ".tmp");
+				try
 				{
-					return serializer.ReadObject(stream) as IDictionary<string, object>;
+					var serializer = new DataContractSerializer(dictionary.GetType(), knownTypes);
+					var writerSettings = new XmlWriterSettings { Indent = true, CloseOutput = false };
+					using (var stream = new FileStream(tempPath, FileMode.CreateNew, FileAccess.Write, FileShare.None, 4096, FileOptions.WriteThrough))
+					{
+						using (var writer = XmlWriter.Create(stream, writerSettings))
+						{
+							serializer.WriteObject(writer, dictionary);
+							writer.Flush();
+						}
+						stream.Flush(true);
+					}
+					if (File.Exists(targetFile.FullName)) File.Replace(tempPath, targetFile.FullName, null, true);
+					else File.Move(tempPath, targetFile.FullName);
 				}
+				finally
+				{
+					if (File.Exists(tempPath)) File.Delete(tempPath);
+				}
+			});
+		}
+
+		internal static Task<IDictionary<string, object>> ReadAsync(FileInfo file, Type[] knownTypes)
+		{
+			if (file == null || !File.Exists(file.FullName)) return Task.FromResult<IDictionary<string, object>>(null);
+			return Task.Run(() =>
+			{
+				if (!File.Exists(file.FullName)) return null;
+				var serializer = new DataContractSerializer(typeof(IDictionary<string, object>), knownTypes);
+				using (var stream = new FileStream(file.FullName, FileMode.Open, FileAccess.Read, FileShare.Read))
+					return serializer.ReadObject(stream) as IDictionary<string, object>;
+			});
+		}
+
+		internal static Task<string> HashAsync(FileInfo file)
+		{
+			if (file == null || !File.Exists(file.FullName)) return Task.FromResult<string>(null);
+			return Task.Run(() =>
+			{
+				using (var stream = new FileStream(file.FullName, FileMode.Open, FileAccess.Read, FileShare.Read))
+				using (var sha = SHA256.Create())
+					return BitConverter.ToString(sha.ComputeHash(stream)).Replace("-", string.Empty).ToLowerInvariant();
 			});
 		}
 	}

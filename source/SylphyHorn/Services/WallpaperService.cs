@@ -1,18 +1,15 @@
-﻿using System;
+using System;
 using System.Linq;
-using System.Threading.Tasks;
 using System.Windows.Media;
 using SylphyHorn.Interop;
 using SylphyHorn.Properties;
 using SylphyHorn.Serialization;
-using WindowsDesktop;
+using SylphyHorn.Services.DesktopTransitions;
 
 namespace SylphyHorn.Services
 {
 	public class WallpaperService : IDisposable
 	{
-		private static readonly WallpaperPosition _defaultPosition = WallpaperPosition.Fill;
-
 		private static readonly ImageFormatSupportDetector[] _detectors =
 		{
 			new JpegXrSupportDetector(),
@@ -30,137 +27,87 @@ namespace SylphyHorn.Services
 		};
 
 		public static readonly string SupportedFormats = CreateSupportFormatText();
-		public static string[] SupportedFileTypes { get; } = _defaultSupportedFormats
-			.Select(f => f.Item1)
-			.Concat(_detectors.Where(d => d.IsSupported).Select(d => d.FileType))
-			.ToArray();
-
+		public static string[] SupportedFileTypes { get; } = _defaultSupportedFormats.Select(f => f.Item1).Concat(_detectors.Where(d => d.IsSupported).Select(d => d.FileType)).ToArray();
 		public static WallpaperService Instance { get; } = new WallpaperService();
 
-		private WallpaperService()
+		private DesktopTransitionRuntime _runtime;
+		private WallpaperService() { }
+
+		internal void BindDesktopRuntime(DesktopTransitionRuntime runtime)
 		{
-			if (ProductInfo.IsWallpaperSupportBuild)
+			if (runtime == null) throw new ArgumentNullException(nameof(runtime));
+			if (this._runtime != null)
 			{
-				VirtualDesktop.CurrentChanged += this.VirtualDesktopOnCurrentChanged;
+				if (ReferenceEquals(this._runtime, runtime)) return;
+				throw new InvalidOperationException("WallpaperService cannot be rebound to another desktop runtime.");
 			}
-			else
-			{
-				VirtualDesktop.CurrentChanged += this.VirtualDesktopOnCurrentChangedForWin10;
-			}
+			this._runtime = runtime;
+			runtime.StateChanged += this.OnDesktopStateChanged;
+			this.ApplyCurrent(runtime.State);
 		}
 
-		private void VirtualDesktopOnCurrentChanged(object sender, VirtualDesktopChangedEventArgs e)
+		private void OnDesktopStateChanged(object sender, DesktopRuntimeStateChanged e)
 		{
-			Task.Run(() => SetPosition(e.NewDesktop));
+			var state = e.Change.Snapshot;
+			var current = state.CurrentDesktopId;
+			if (!current.HasValue) return;
+			if (e.Change.Kind == DesktopStateChangeKind.CurrentChanged || e.Change.Kind == DesktopStateChangeKind.Initialized || e.Change.Kind == DesktopStateChangeKind.Reset ||
+				e.Change.WallpaperChanges.Any(change => change.Id == current.Value) || e.Change.PositionChanges.Any(change => change.Id == current.Value))
+				this.ApplyCurrent(state);
 		}
 
-		private void VirtualDesktopOnCurrentChangedForWin10(object sender, VirtualDesktopChangedEventArgs e)
+		private void ApplyCurrent(DesktopRuntimeState state)
 		{
-			Task.Run(() =>
-			{
-				if (!Settings.General.ChangeBackgroundEachDesktop) return;
-				SetWallpaperAndPosition(e.NewDesktop);
-			});
+			if (state?.CurrentDesktopId == null || !state.Records.TryGetValue(state.CurrentDesktopId.Value, out var record)) return;
+			var path = record.WallpaperPath.HasValue ? record.WallpaperPath.Value : null;
+			if (!ProductInfo.IsWallpaperSupportBuild && !Settings.General.ChangeBackgroundEachDesktop) path = null;
+			ApplyDesktopWallpaper(path, record.WallpaperPosition);
+		}
+
+		internal static void ApplyDesktopWallpaper(string path, WallpaperPosition position)
+		{
+			var wallpaper = DesktopWallpaperFactory.Create();
+			if (!ProductInfo.IsWallpaperSupportBuild && !string.IsNullOrEmpty(path)) wallpaper.SetWallpaper(null, path);
+			var target = (DesktopWallpaperPosition)position;
+			if (wallpaper.GetPosition() != target) wallpaper.SetPosition(target);
 		}
 
 		public void Dispose()
 		{
-			VirtualDesktop.CurrentChanged -= this.VirtualDesktopOnCurrentChanged;
-		}
-
-		public static void SetPosition(VirtualDesktop newDesktop)
-		{
-			var newIndex = newDesktop.Index;
-			var positionSettings = Settings.General.DesktopBackgroundPositions;
-			var positionCount = positionSettings.Count;
-
-			if (positionCount == 0) return;
-
-			var dw = DesktopWallpaperFactory.Create();
-			var oldPosition = dw.GetPosition();
-			var newPosition = newIndex < positionCount
-				? (DesktopWallpaperPosition)positionSettings.Value[newIndex].Value
-				: (DesktopWallpaperPosition)_defaultPosition;
-			if (oldPosition != newPosition) dw.SetPosition(newPosition);
-		}
-
-		public static void SetWallpaperAndPosition(VirtualDesktop newDesktop)
-		{
-			var newIndex = newDesktop.Index;
-			var pathSettings = Settings.General.DesktopBackgroundImagePaths;
-			var positionSettings = Settings.General.DesktopBackgroundPositions;
-			var pathCount = pathSettings.Count;
-			var positionCount = positionSettings.Count;
-
-			if (pathCount == 0 && positionCount == 0) return;
-
-			var dw = DesktopWallpaperFactory.Create();
-			var path = newIndex < pathCount
-				? pathSettings.Value[newIndex].Value
-				: pathSettings.Value.FirstOrDefault(p => p.Value.Length > 0);
-			if (!string.IsNullOrEmpty(path)) dw.SetWallpaper(null, path);
-			var oldPosition = dw.GetPosition();
-			var newPosition = newIndex < positionCount
-				? (DesktopWallpaperPosition)positionSettings.Value[newIndex].Value
-				: (DesktopWallpaperPosition)_defaultPosition;
-			if (oldPosition != newPosition) dw.SetPosition(newPosition);
+			if (this._runtime != null) this._runtime.StateChanged -= this.OnDesktopStateChanged;
+			this._runtime = null;
 		}
 
 		public static void SetWallpaperEnabled(bool enabled)
 		{
-			var dw = DesktopWallpaperFactory.Create();
-			dw.Enable(enabled);
+			var wallpaper = DesktopWallpaperFactory.Create();
+			wallpaper.Enable(enabled);
 		}
 
 		public static void SetBackgroundColor(Color color)
 		{
-			var dw = DesktopWallpaperFactory.Create();
-			dw.SetBackgroundColor(new COLORREF { R = color.R, G = color.G, B = color.B });
+			var wallpaper = DesktopWallpaperFactory.Create();
+			wallpaper.SetBackgroundColor(new COLORREF { R = color.R, G = color.G, B = color.B });
 		}
 
 		public static Tuple<Color, string> GetCurrentColorAndWallpaper()
 		{
-			var dw = DesktopWallpaperFactory.Create();
-			var colorref = dw.GetBackgroundColor();
-
+			var wallpaper = DesktopWallpaperFactory.Create();
+			var colorref = wallpaper.GetBackgroundColor();
 			string path = null;
-			if (dw.GetMonitorDevicePathCount() >= 1)
+			if (wallpaper.GetMonitorDevicePathCount() >= 1)
 			{
-				var monitorId = dw.GetMonitorDevicePathAt(0);
-				path = dw.GetWallpaper(monitorId);
+				var monitorId = wallpaper.GetMonitorDevicePathAt(0);
+				path = wallpaper.GetWallpaper(monitorId);
 			}
-
 			return Tuple.Create(Color.FromRgb(colorref.R, colorref.G, colorref.B), path);
 		}
 
 		private static string CreateSupportFormatText()
 		{
-			var defaultExtensions = string.Join(
-				";",
-				_defaultSupportedFormats
-					.Select(f => f.Item3)
-					.Concat(_detectors.Where(d => d.IsSupported)
-						.SelectMany(d => d.Extensions.Select(e => $"*{e}"))));
-
+			var defaultExtensions = string.Join(";", _defaultSupportedFormats.Select(f => f.Item3).Concat(_detectors.Where(d => d.IsSupported).SelectMany(d => d.Extensions.Select(e => $"*{e}"))));
 			return $"Image File ({defaultExtensions})|{defaultExtensions}|" +
-				string.Join(
-					"|",
-					_defaultSupportedFormats
-						.Select(f => $"{f.Item2} ({f.Item3})|{f.Item3}")
-						.Concat(_detectors.Where(d => d.IsSupported)
-							.Select(d => d.FormatInfo)));
-		}
-
-		private static WallpaperPosition Parse(string options)
-		{
-			var options2 = options.ToLower();
-			if (options2.StartsWith("fil")) return WallpaperPosition.Fill;
-			if (options2.StartsWith("sp")) return WallpaperPosition.Span;
-			if (options2[0] == 'c') return WallpaperPosition.Center;
-			if (options2[0] == 't') return WallpaperPosition.Tile;
-			if (options2[0] == 's') return WallpaperPosition.Stretch;
-			if (options2[0] == 'f') return WallpaperPosition.Fit;
-			return WallpaperPosition.Fill;
+				string.Join("|", _defaultSupportedFormats.Select(f => $"{f.Item2} ({f.Item3})|{f.Item3}").Concat(_detectors.Where(d => d.IsSupported).Select(d => d.FormatInfo)));
 		}
 	}
 

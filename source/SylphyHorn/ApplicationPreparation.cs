@@ -1,7 +1,8 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Threading;
 using System.Threading.Tasks;
 using WindowsDesktop;
 using MetroTrilithon.Lifetime;
@@ -9,6 +10,7 @@ using SylphyHorn.Interop;
 using SylphyHorn.Properties;
 using SylphyHorn.Serialization;
 using SylphyHorn.Services;
+using SylphyHorn.Services.DesktopTransitions;
 using SylphyHorn.UI;
 using SylphyHorn.UI.Bindings;
 
@@ -22,11 +24,10 @@ namespace SylphyHorn
 		private readonly Action _shutdownAction;
 		private readonly IDisposableHolder _disposable;
 		private TaskTrayIcon _taskTrayIcon;
+		private DesktopTransitionRuntime _desktopRuntime;
 
 		public event Action VirtualDesktopInitialized;
-
 		public event Action VirtualDesktopInitializationCanceled;
-
 		public event Action<Exception, bool> VirtualDesktopInitializationFailed;
 
 		public ApplicationPreparation(HookService hookService, Action shutdownAction, IDisposableHolder disposable)
@@ -34,11 +35,7 @@ namespace SylphyHorn
 			this._hookService = hookService;
 			this._shutdownAction = shutdownAction;
 			this._disposable = disposable;
-
-			this._hookService.Reload = () =>
-			{
-				this.RegisterActions();
-			};
+			this._hookService.Reload = this.RegisterActions;
 		}
 
 		public void RegisterActions()
@@ -53,10 +50,8 @@ namespace SylphyHorn
 			{
 				const string iconUri = "pack://application:,,,/SylphyHorn;Component/.assets/tasktray.dark.ico";
 				const string lightIconUri = "pack://application:,,,/SylphyHorn;Component/.assets/tasktray.light.ico";
-
 				if (!Uri.TryCreate(iconUri, UriKind.Absolute, out var uri)) return null;
 				if (!Uri.TryCreate(lightIconUri, UriKind.Absolute, out var lightUri)) return null;
-
 				var darkIcon = IconHelper.GetIconFromResource(uri);
 				var lightIcon = IconHelper.GetIconFromResource(lightUri);
 				var menus = new[]
@@ -67,26 +62,18 @@ namespace SylphyHorn
 					new TaskTrayIconItem("Tasktray Icon Test", () => new TaskTrayTestWindow().Show()),
 #endif
 				};
-
 				this._taskTrayIcon = new TaskTrayIcon(darkIcon, lightIcon, menus);
 			}
-
 			return this._taskTrayIcon;
 		}
 
 		private void ShowSettings()
 		{
-			if (SettingsWindow.Instance != null)
-			{
-				SettingsWindow.Instance.Activate();
-			}
+			if (this._desktopRuntime == null || !this._desktopRuntime.IsInitialized) return;
+			if (SettingsWindow.Instance != null) SettingsWindow.Instance.Activate();
 			else
 			{
-				SettingsWindow.Instance = new SettingsWindow
-				{
-					DataContext = new SettingsWindowViewModel(this._hookService),
-				};
-
+				SettingsWindow.Instance = new SettingsWindow { DataContext = new SettingsWindowViewModel(this._hookService, this._desktopRuntime) };
 				SettingsWindow.Instance.ShowDialog();
 				SettingsWindow.Instance = null;
 			}
@@ -98,144 +85,77 @@ namespace SylphyHorn
 			baloon.Title = ProductInfo.Title;
 			baloon.Text = Resources.TaskTray_FirstTimeMessage;
 			baloon.Timespan = TimeSpan.FromMilliseconds(5000);
-
 			return baloon;
 		}
 
 		public void PrepareVirtualDesktop()
 		{
-			var provider = new VirtualDesktopProvider()
-			{
-				ComInterfaceAssemblyPath = Path.Combine(Directories.LocalAppData.FullName, "assemblies"),
-			};
-
+			var provider = new VirtualDesktopProvider { ComInterfaceAssemblyPath = Path.Combine(Directories.LocalAppData.FullName, "assemblies") };
+			provider.EnableDispatcherEventScheduling(Application.Current.Dispatcher);
 			VirtualDesktop.Provider = provider;
-			VirtualDesktop.Provider.Initialize().ContinueWith(Continue, TaskScheduler.FromCurrentSynchronizationContext());
-
-			void Continue(Task t)
-			{
-				switch (t.Status)
-				{
-					case TaskStatus.RanToCompletion:
-						SettingsService.SynchronizeOnStartup();
-						this.RegisterActions();
-						this.RegisterVirtualDesktopEvents();
-						this.VirtualDesktopInitialized?.Invoke();
-						break;
-
-					case TaskStatus.Canceled:
-						this.VirtualDesktopInitializationCanceled?.Invoke();
-						break;
-
-					case TaskStatus.Faulted:
-						var autoRestart = VirtualDesktop.Provider.TryDeleteAssembly();
-						this.VirtualDesktopInitializationFailed?.Invoke(t.Exception, autoRestart);
-						break;
-				}
-			}
+			provider.Initialize().ContinueWith(task => this.CompleteProviderInitialization(task, provider), TaskScheduler.FromCurrentSynchronizationContext());
 		}
 
-		private void RegisterVirtualDesktopEvents()
+		private async void CompleteProviderInitialization(Task initialization, VirtualDesktopProvider provider)
 		{
-			if (ProductInfo.IsNameSupportBuild)
+			if (initialization.IsCanceled)
 			{
-				VirtualDesktop.Renamed += (sender, args) =>
-				{
-					var desktop = args.Source;
-					var index = desktop.Index;
-					var names = Settings.General.DesktopNames.Value;
-
-					if (index >= names.Count) SettingsService.ResizeListIfNeeded();
-
-					var targetName = names[index];
-					targetName.Value = args.NewName;
-
-					LocalSettingsProvider.Instance.SaveAsync().Wait();
-				};
+				this.VirtualDesktopInitializationCanceled?.Invoke();
+				return;
 			}
-
-			var idCaches = VirtualDesktop.AllDesktops.Select(d => d.Id).ToArray();
-			VirtualDesktop.Created += (sender, args) =>
+			if (initialization.IsFaulted)
 			{
-				SettingsService.ResizeListIfNeeded();
-
-				LocalSettingsProvider.Instance.SaveAsync().Wait();
-				idCaches = VirtualDesktop.AllDesktops.Select(d => d.Id).ToArray();
-			};
-			if (ProductInfo.IsWallpaperSupportBuild)
-			{
-				VirtualDesktop.Destroyed += (sender, args) =>
-				{
-					var destroyedIndex = Array.IndexOf(idCaches, args.Destroyed.Id);
-					if (destroyedIndex < 0) return;
-					var nameSettings = Settings.General.DesktopNames;
-					for (var i = destroyedIndex; i + 1 < nameSettings.Count; ++i)
-					{
-						nameSettings.Value[i].Value = nameSettings.Value[i + 1].Value;
-					}
-					var positionSettings = Settings.General.DesktopBackgroundPositions;
-					for (var i = destroyedIndex; i + 1 < positionSettings.Count; ++i)
-					{
-						positionSettings.Value[i].Value = positionSettings.Value[i + 1].Value;
-					}
-					SettingsService.ResizeListIfNeeded();
-
-					LocalSettingsProvider.Instance.SaveAsync().Wait();
-					idCaches = VirtualDesktop.AllDesktops.Select(d => d.Id).ToArray();
-				};
-			}
-			else
-			{
-				VirtualDesktop.Destroyed += (sender, args) =>
-				{
-					var destroyedIndex = Array.IndexOf(idCaches, args.Destroyed.Id);
-					if (destroyedIndex < 0) return;
-					var nameSettings = Settings.General.DesktopNames;
-					for (var i = destroyedIndex; i + 1 < nameSettings.Count; ++i)
-					{
-						nameSettings.Value[i].Value = nameSettings.Value[i + 1].Value;
-					}
-					var pathSettings = Settings.General.DesktopBackgroundImagePaths;
-					for (var i = destroyedIndex; i + 1 < pathSettings.Count; ++i)
-					{
-						pathSettings.Value[i].Value = pathSettings.Value[i + 1].Value;
-					}
-					var positionSettings = Settings.General.DesktopBackgroundPositions;
-					for (var i = destroyedIndex; i + 1 < positionSettings.Count; ++i)
-					{
-						positionSettings.Value[i].Value = positionSettings.Value[i + 1].Value;
-					}
-					SettingsService.ResizeListIfNeeded();
-
-					LocalSettingsProvider.Instance.SaveAsync().Wait();
-					idCaches = VirtualDesktop.AllDesktops.Select(d => d.Id).ToArray();
-				};
+				this.VirtualDesktopInitializationFailed?.Invoke(initialization.Exception, false);
 				return;
 			}
 
-			VirtualDesktop.Moved += (sender, args) =>
+			try
 			{
-				SettingsService.SynchronizeWithWindows();
-				Settings.General.DesktopBackgroundPositions.Move(args.OldIndex, args.NewIndex);
+				var runtime = new DesktopTransitionRuntime(
+					new VirtualDesktopProviderClient(provider),
+					new ApplicationDesktopSettingsTransactions(LocalSettingsProvider.Instance),
+					new DispatcherDesktopOwnerContext(Application.Current.Dispatcher),
+					new VirtualDesktopOperations());
+				runtime.Faulted += (sender, fault) => LoggingService.Instance.Register(new DesktopRuntimeLog(fault));
+				var result = await runtime.InitializeAsync(Settings.General.OverrideDesktopsOnStartup, CancellationToken.None);
+				if (!result.Succeeded)
+				{
+					if (result.Status == DesktopRuntimeInitializationStatus.Cancelled || result.Status == DesktopRuntimeInitializationStatus.ShuttingDown) this.VirtualDesktopInitializationCanceled?.Invoke();
+					else this.VirtualDesktopInitializationFailed?.Invoke(new InvalidOperationException("Virtual desktop runtime initialization did not produce a stable state."), false);
+					return;
+				}
 
-				LocalSettingsProvider.Instance.SaveAsync().Wait();
-				idCaches = VirtualDesktop.AllDesktops.Select(d => d.Id).ToArray();
-			};
-			VirtualDesktop.WallpaperChanged += (sender, args) =>
+				this._desktopRuntime = runtime;
+				runtime.AddTo(this._disposable);
+				this.CreateTaskTrayIcon().BindDesktopRuntime(runtime);
+				NotificationService.Instance.BindDesktopRuntime(runtime);
+				WallpaperService.Instance.BindDesktopRuntime(runtime);
+				SettingsService.StretchShortcutListsTo(runtime.State.Order.Count);
+				this.RegisterActions();
+				this.VirtualDesktopInitialized?.Invoke();
+			}
+			catch (Exception ex)
 			{
-				var desktop = args.Source;
-				var index = desktop.Index;
-				var paths = Settings.General.DesktopBackgroundImagePaths.Value;
-
-				if (index >= paths.Count) SettingsService.ResizeListIfNeeded();
-
-				var targetPath = paths[index];
-				targetPath.Value = args.NewPath;
-
-				LocalSettingsProvider.Instance.SaveAsync().Wait();
-			};
+				this.VirtualDesktopInitializationFailed?.Invoke(ex, false);
+			}
 		}
 
+		internal Task ShutdownAsync()
+		{
+			return this._desktopRuntime?.ShutdownAsync() ?? Task.CompletedTask;
+		}
+		private sealed class DesktopRuntimeLog : ILog
+		{
+			internal DesktopRuntimeLog(DesktopRuntimeFault fault)
+			{
+				this.DateTime = DateTimeOffset.Now;
+				this.Header = fault.Category;
+				this.Content = "ExceptionType=" + (fault.ExceptionType ?? "none") + ";DesktopId=" + (fault.DesktopId.HasValue ? fault.DesktopId.Value.ToString("N").Substring(0, 8) : "none") + ";Sequence=" + (fault.Sequence?.ToString() ?? "none");
+			}
+			public DateTimeOffset DateTime { get; }
+			public string Header { get; }
+			public string Content { get; }
+		}
 		private void RegisterActions(ShortcutKeySettings settings, ActionRegister register)
 		{
 			register(() => settings.MoveLeft.ToShortcutKey(), hWnd => hWnd.MoveToLeft())

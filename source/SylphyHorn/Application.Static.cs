@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
@@ -108,7 +108,7 @@ Exception: {exception?.GetType().FullName}
 				Debug.WriteLine(ex);
 			}
 
-			Current.Shutdown();
+			Current.BeginShutdown();
 		}
 	}
 }

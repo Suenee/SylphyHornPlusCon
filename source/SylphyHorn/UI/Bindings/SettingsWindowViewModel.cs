@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
@@ -17,6 +17,7 @@ using MetroTrilithon.Threading.Tasks;
 using SylphyHorn.Properties;
 using SylphyHorn.Serialization;
 using SylphyHorn.Services;
+using SylphyHorn.Services.DesktopTransitions;
 using SylphyHorn.UI.Controls;
 using WindowsDesktop;
 
@@ -29,6 +30,7 @@ namespace SylphyHorn.UI.Bindings
 		private static string _exportOrImportFolder = Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments);
 
 		private readonly HookService _hookService;
+		private readonly DesktopTransitionRuntime _desktopRuntime;
 		private readonly Startup _startup;
 		private readonly StartupScheduler _startupScheduler;
 
@@ -761,9 +763,10 @@ namespace SylphyHorn.UI.Bindings
 
 		public ReadOnlyDispatcherCollection<LogViewModel> Logs { get; }
 
-		public SettingsWindowViewModel(HookService hookService)
+		internal SettingsWindowViewModel(HookService hookService, DesktopTransitionRuntime desktopRuntime)
 		{
 			this._hookService = hookService;
+			this._desktopRuntime = desktopRuntime ?? throw new ArgumentNullException(nameof(desktopRuntime));
 			ShortcutKeyBox.HookService = hookService;
 			MouseShortcutBox.HookService = hookService;
 
@@ -845,33 +848,15 @@ namespace SylphyHorn.UI.Bindings
 			this._HasStartupLink = this._startup.IsExists;
 			this._HasStartupScheduler = this._startupScheduler.IsExists;
 
-			this._Desktops = VirtualDesktopViewModel.CreateAll();
-			this._CurrentDesktop = this._Desktops[VirtualDesktop.Current.Index];
-			this.CompositeDisposable.Add(
-				new EventListener<EventHandler<VirtualDesktop>>(
-					h => VirtualDesktop.Created += h,
-					h => VirtualDesktop.Created -= h,
-					(sender, args) => this.Desktops = VirtualDesktopViewModel.CreateAll()));
-			this.CompositeDisposable.Add(
-				new EventListener<EventHandler<VirtualDesktopDestroyEventArgs>>(
-					h => VirtualDesktop.Destroyed += h,
-					h => VirtualDesktop.Destroyed -= h,
-					(sender, args) =>
-					{
-						SettingsService.Synchronize(overrideDesktops: false);
-						this.Desktops = VirtualDesktopViewModel.CreateAll();
-					}));
-			this.CompositeDisposable.Add(
-				new EventListener<EventHandler<VirtualDesktopMovedEventArgs>>(
-					h => VirtualDesktop.Moved += h,
-					h => VirtualDesktop.Moved -= h,
-					(sender, args) => VirtualDesktopViewModel.UpdateModel(this.Desktops)));
-			this.CompositeDisposable.Add(
-				new EventListener<EventHandler<VirtualDesktopChangedEventArgs>>(
-					h => VirtualDesktop.CurrentChanged += h,
-					h => VirtualDesktop.CurrentChanged -= h,
-					(sender, args) => this.UpdatePreviewBackground()));
-
+			this.UpdateDesktops(this._desktopRuntime.State);
+			EventHandler<DesktopRuntimeStateChanged> desktopStateChanged = (sender, args) =>
+			{
+				this.UpdateDesktops(args.Change.Snapshot);
+				this.UpdatePreviewBackground();
+			};
+			this._desktopRuntime.StateChanged += desktopStateChanged;
+			Disposable.Create(() => this._desktopRuntime.StateChanged -= desktopStateChanged).AddTo(this);
+			this._desktopRuntime.RequestReconciliationAsync().Forget();
 			var colAndWall = WallpaperService.GetCurrentColorAndWallpaper();
 			this.PreviewBackgroundBrush = new SolidColorBrush(colAndWall.Item1);
 			this.PreviewBackgroundPath = colAndWall.Item2;
@@ -958,7 +943,7 @@ namespace SylphyHorn.UI.Bindings
 				.RegisterListener(_ => this.RaisePropertyChanged(nameof(this.TaskbarBackground)))
 				.AddTo(this);
 
-			Disposable.Create(() => LocalSettingsProvider.Instance.SaveAsync().Wait())
+			Disposable.Create(() => LocalSettingsProvider.Instance.SaveAsync().Forget())
 				.AddTo(this);
 
 			Disposable.Create(() => Application.Current.TaskTrayIcon.Reload())
@@ -1021,7 +1006,7 @@ namespace SylphyHorn.UI.Bindings
 		}
 
 		[UsedImplicitly]
-		public void OpenImportPathDialog()
+		public async void OpenImportPathDialog()
 		{
 			var provider = LocalSettingsProvider.Instance;
 			var message = new OpeningFileSelectionMessage("Window.OpenImportPathDialog.Open")
@@ -1034,25 +1019,35 @@ namespace SylphyHorn.UI.Bindings
 			};
 			this.Messenger.Raise(message);
 
-			if (message.Response != null && message.Response.Length > 0 && !string.IsNullOrEmpty(message.Response[0]))
+			if (message.Response == null || message.Response.Length == 0 || string.IsNullOrEmpty(message.Response[0])) return;
+			var hookDisposable = this._hookService?.Suspend();
+			try
 			{
-				var hookDisposable = this._hookService?.Suspend();
-
 				var filePath = message.Response[0];
 				_exportOrImportFolder = Path.GetDirectoryName(filePath);
-
-				provider.ImportAsync(filePath).Wait();
-
-				this.SynchronizeDesktopsWithSettingsIfRequired();
-				this.NotifyOfAllPropertiesChanged();
-				hookDisposable?.Dispose();
-
-				provider.SaveAsync().Forget();
+				var stage = await provider.PrepareImportAsync(filePath);
+				var seed = SettingsService.CaptureDesktopStartupSeed(stage.Settings);
+				var overrideDesktops = false;
+				if (this.IsNameSupport && (seed.Names.Count > 0 || seed.WallpaperPaths.Count > 0))
+				{
+					var confirmation = new ConfirmationMessage("", "", "Window.OverrideDesktopsDialog.Confirm")
+					{
+						Text = Resources.Settings_ManagingSettings_OverrideDesktopsConfirmationMessage,
+						Caption = Resources.Settings_ManagingSettings_OverrideDesktopsConfirmationDialog,
+						Image = MessageBoxImage.Question,
+						Button = MessageBoxButton.OKCancel,
+					};
+					this.Messenger.Raise(confirmation);
+					overrideDesktops = confirmation.Response ?? false;
+				}
+				var result = await this._desktopRuntime.CommitPreparedImportAsync(stage, overrideDesktops, default(System.Threading.CancellationToken));
+				if (result.Succeeded) this.NotifyOfAllPropertiesChanged();
 			}
+			finally { hookDisposable?.Dispose(); }
 		}
 
 		[UsedImplicitly]
-		public void ResetSettings()
+		public async void ResetSettings()
 		{
 			var message = new ConfirmationMessage("", "", "Window.ResetSettingsDialog.Confirm")
 			{
@@ -1061,22 +1056,15 @@ namespace SylphyHorn.UI.Bindings
 				Image = MessageBoxImage.Warning,
 				Button = MessageBoxButton.OKCancel,
 			};
-
 			this.Messenger.Raise(message);
-
-			if (message.Response ?? false)
+			if (!(message.Response ?? false)) return;
+			var hookDisposable = this._hookService?.Suspend();
+			try
 			{
-				var hookDisposable = this._hookService?.Suspend();
-
-				var provider = LocalSettingsProvider.Instance;
-				provider.Clear();
-				provider.SaveAsync()
-					.ContinueWith(_ => SettingsService.Synchronize(overrideDesktops: false))
-					.ContinueWith(_ => this._Desktops = VirtualDesktopViewModel.CreateAll())
-					.ContinueWith(_ => this.NotifyOfAllPropertiesChanged())
-					.ContinueWith(_ => hookDisposable?.Dispose())
-					.Forget();
+				var result = await this._desktopRuntime.ResetSettingsAsync(default(System.Threading.CancellationToken));
+				if (result.Succeeded) this.NotifyOfAllPropertiesChanged();
 			}
+			finally { hookDisposable?.Dispose(); }
 		}
 
 		[UsedImplicitly]
@@ -1153,52 +1141,35 @@ namespace SylphyHorn.UI.Bindings
 			return type.GetProperty(propName).GetValue(settings, null) as ShortcutkeyPropertyList;
 		}
 
-		private void SynchronizeDesktopsWithSettingsIfRequired()
-		{
-			if (!this.IsNameSupport || !HasDesktopSettings())
-			{
-				SettingsService.Synchronize(overrideDesktops: false);
-				return;
-			}
-
-			var message = new ConfirmationMessage("", "", "Window.OverrideDesktopsDialog.Confirm")
-			{
-				Text = Resources.Settings_ManagingSettings_OverrideDesktopsConfirmationMessage,
-				Caption = Resources.Settings_ManagingSettings_OverrideDesktopsConfirmationDialog,
-				Image = MessageBoxImage.Question,
-				Button = MessageBoxButton.OKCancel,
-			};
-
-			this.Messenger.Raise(message);
-
-			SettingsService.Synchronize(overrideDesktops: message.Response ?? false);
-
-			bool HasDesktopSettings()
-			{
-				var generalSettings = Settings.General;
-				return generalSettings.DesktopNames.Count > 0 || generalSettings.DesktopBackgroundImagePaths.Count > 0;
-			};
-		}
-
 		private void UpdatePreviewBackground()
 		{
-			var index = VirtualDesktop.Current.Index;
-			if (this._Desktops == null || index >= this._Desktops.Length) this._Desktops = VirtualDesktopViewModel.CreateAll();
-			
-			this.CurrentDesktop = this.Desktops[index];
+			var state = this._desktopRuntime.State;
+			var currentId = state?.CurrentDesktopId;
+			this.CurrentDesktop = currentId.HasValue ? this.Desktops.FirstOrDefault(desktop => desktop.Id == currentId.Value) : null;
+			this.PreviewBackgroundPath = DesktopTransitionRuntime.GetCurrentWallpaperPath(state);
+		}
 
-			if (this.CurrentDesktop.HasWallpaper) this.PreviewBackgroundPath = this.CurrentDesktop.WallpaperPath;
+
+
+		private void UpdateDesktops(DesktopRuntimeState state)
+		{
+			if (state == null) return;
+			var existing = (this._Desktops ?? Array.Empty<VirtualDesktopViewModel>()).ToDictionary(desktop => desktop.Id);
+			var next = state.Order.Select((id, index) =>
+			{
+				if (!existing.TryGetValue(id, out var viewModel)) viewModel = new VirtualDesktopViewModel(this._desktopRuntime, index, state.Records[id]);
+				else viewModel.Update(index, state.Records[id]);
+				return viewModel;
+			}).ToArray();
+			this.Desktops = next;
+			this.CurrentDesktop = state.CurrentDesktopId.HasValue ? next.FirstOrDefault(desktop => desktop.Id == state.CurrentDesktopId.Value) : null;
 		}
 
 		private void NotifyOfAllPropertiesChanged()
 		{
 			var properties = this.GetType().GetProperties();
-			foreach (var prop in properties)
-			{
-				this.RaisePropertyChanged(prop.Name);
-			}
+			foreach (var prop in properties) this.RaisePropertyChanged(prop.Name);
 		}
-
 		private void UpdateNotificationColor(BlurWindowThemeMode mode)
 		{
 			this.GetColorByThemeMode(mode, out var background, out var foreground);

@@ -1,8 +1,9 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Linq;
 using System.Threading;
+using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Threading;
 using Livet;
@@ -27,6 +28,8 @@ namespace SylphyHorn
 #endif
 
 		private readonly LivetCompositeDisposable _compositeDisposable = new LivetCompositeDisposable();
+		private ApplicationPreparation _preparation;
+		private int _shutdownStarted;
 
 		internal HookService HookService { get; private set; }
 
@@ -44,7 +47,7 @@ namespace SylphyHorn
 			if (!this.WaitUntilExplorerStarts())
 			{
 				MessageBox.Show("This application must start after Explorer is launched.", "Not ready", MessageBoxButton.OK, MessageBoxImage.Stop);
-				this.Shutdown();
+				this.BeginShutdown();
 				return;
 			}
 
@@ -68,7 +71,7 @@ Time: {now:O}"));
 					return;
 				}
 
-				this.Shutdown();
+				this.BeginShutdown();
 				return;
 			}
 #endif
@@ -88,7 +91,8 @@ Time: {now:O}"));
 
 				this.HookService = new HookService().AddTo(this);
 
-				var preparation = new ApplicationPreparation(this.HookService, this.Shutdown, this);
+				this._preparation = new ApplicationPreparation(this.HookService, this.BeginShutdown, this);
+				var preparation = this._preparation;
 				this.TaskTrayIcon = preparation.CreateTaskTrayIcon().AddTo(this);
 
 				if (Settings.General.FirstTime)
@@ -108,7 +112,7 @@ Time: {now:O}"));
 						NotificationService.Instance.ShowCurrentDesktop();
 					}
 				};
-				preparation.VirtualDesktopInitializationCanceled += () => this.Shutdown(); // ToDo
+				preparation.VirtualDesktopInitializationCanceled += () => this.BeginShutdown(); // ToDo
 				preparation.VirtualDesktopInitializationFailed += (ex, autoRestart) =>
 				{
 					this.TaskTrayIcon.Show();
@@ -119,7 +123,7 @@ Time: {now:O}"));
 						try
 						{
 							Restart();
-							this.Shutdown();
+							this.BeginShutdown();
 							return;
 						}
 						catch (Exception ex2)
@@ -139,10 +143,23 @@ Time: {now:O}"));
 			else
 			{
 				MessageBox.Show("This application is supported on Windows 10 Anniversary Update (build 14393) or later.", "Not supported", MessageBoxButton.OK, MessageBoxImage.Stop);
-				this.Shutdown();
+				this.BeginShutdown();
 			}
 		}
 
+		private async void BeginShutdown()
+		{
+			if (Interlocked.Exchange(ref this._shutdownStarted, 1) != 0) return;
+			try
+			{
+				if (this._preparation != null) await this._preparation.ShutdownAsync();
+			}
+			catch (Exception ex)
+			{
+				LoggingService.Instance.Register(ex);
+			}
+			base.Shutdown();
+		}
 		protected override void OnExit(ExitEventArgs e)
 		{
 			base.OnExit(e);
@@ -203,11 +220,11 @@ Time: {now:O}"));
 				catch (Exception ex)
 				{
 					LoggingService.Instance.Register(ex);
-					this.Shutdown();
+					this.BeginShutdown();
 					return;
 				}
 			}
-			this.Shutdown();
+			this.BeginShutdown();
 		}
 
 		#region IDisposable members

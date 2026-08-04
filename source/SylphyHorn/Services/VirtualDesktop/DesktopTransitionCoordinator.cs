@@ -19,6 +19,15 @@ namespace SylphyHorn.Services.DesktopTransitions
 			this._startupSeed = startupSeed ?? throw new ArgumentNullException(nameof(startupSeed));
 		}
 
+		private DesktopTransitionCoordinator(DesktopTransitionCoordinator source)
+		{
+			this._startupSeed = source._startupSeed;
+			this._state = source._state;
+			this._startupSeedAssigned = source._startupSeedAssigned;
+			this._lastCurrentIngressSequence = source._lastCurrentIngressSequence;
+			foreach (var candidate in source._seedEmptyCandidates) this._seedEmptyCandidates.Add(candidate.Key, candidate.Value);
+		}
+
 		internal DesktopRuntimeState State => this._state;
 
 		internal DesktopCoordinatorTransition ApplyStableBatch(VirtualDesktopStableBatch batch)
@@ -186,6 +195,29 @@ namespace SylphyHorn.Services.DesktopTransitions
 			this._state = prepared.Transition.NewState;
 			if (prepared.Command.Property.HasValue) this._seedEmptyCandidates.Remove(new SeedCandidateKey(prepared.Command.DesktopId, prepared.Command.Property.Value));
 			return prepared.Transition;
+		}
+		internal DesktopPreparedRuntime BeginStagedRuntime()
+		{
+			if (this._state == null) throw new InvalidOperationException("An initial stable state is required before staging runtime changes.");
+			return DesktopPreparedRuntime.Create(this._ownerToken, this._state, new DesktopTransitionCoordinator(this));
+		}
+
+		internal DesktopCoordinatorTransition CommitStagedRuntime(DesktopPreparedRuntime prepared, bool requiresSave)
+		{
+			if (prepared == null || this._state == null || !prepared.TryConsume(this._ownerToken, this._state))
+				return this.Rejected(DesktopReconciliationReason.InvalidLocalEdit);
+			var before = this._state;
+			var staged = prepared.Coordinator;
+			var next = staged.State;
+			if (ReferenceEquals(before, next)) return DesktopCoordinatorTransition.AcceptedNoOp(before);
+			this._state = next;
+			this._startupSeedAssigned = staged._startupSeedAssigned;
+			this._lastCurrentIngressSequence = staged._lastCurrentIngressSequence;
+			this._seedEmptyCandidates.Clear();
+			foreach (var candidate in staged._seedEmptyCandidates) this._seedEmptyCandidates.Add(candidate.Key, candidate.Value);
+			var projection = CreateProjection(next);
+			var changed = CreateDiff(before, next, true).ToStateChanged(DesktopStateChangeKind.Reset, next);
+			return DesktopCoordinatorTransition.AcceptedChange(next, projection, changed, requiresSave, false, DesktopReconciliationReason.None);
 		}
 
 		private DesktopRecord CreateInitialRecord(Guid id, int index, bool allowSeed)
@@ -357,6 +389,29 @@ namespace SylphyHorn.Services.DesktopTransitions
 		private static bool PropertyEquals(DesktopPropertyState left, DesktopPropertyState right)
 			=> left.HasValue == right.HasValue && left.Value == right.Value && left.ReadStatus == right.ReadStatus && left.Authority == right.Authority && left.IsConfirmed == right.IsConfirmed;
 
+		internal sealed class DesktopPreparedRuntime
+		{
+			private readonly object _ownerToken;
+			private readonly DesktopRuntimeState _sourceState;
+			private bool _consumed;
+
+			private DesktopPreparedRuntime(object ownerToken, DesktopRuntimeState sourceState, DesktopTransitionCoordinator coordinator)
+			{
+				this._ownerToken = ownerToken;
+				this._sourceState = sourceState;
+				this.Coordinator = coordinator;
+			}
+
+			internal DesktopTransitionCoordinator Coordinator { get; }
+			internal static DesktopPreparedRuntime Create(object ownerToken, DesktopRuntimeState sourceState, DesktopTransitionCoordinator coordinator)
+				=> new DesktopPreparedRuntime(ownerToken, sourceState, coordinator);
+			internal bool TryConsume(object ownerToken, DesktopRuntimeState state)
+			{
+				if (this._consumed || !ReferenceEquals(this._ownerToken, ownerToken) || !ReferenceEquals(this._sourceState, state) || this.Coordinator?.State == null) return false;
+				this._consumed = true;
+				return true;
+			}
+		}
 		internal sealed class DesktopPreparedLocalEdit
 		{
 			private readonly object _ownerToken;

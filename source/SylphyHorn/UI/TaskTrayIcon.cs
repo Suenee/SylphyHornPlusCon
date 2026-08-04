@@ -1,13 +1,11 @@
-﻿using System;
+using System;
 using System.Drawing;
 using System.Linq;
-using System.Windows;
 using System.Windows.Forms;
 using MetroRadiance.Platform;
 using SylphyHorn.Properties;
 using SylphyHorn.Serialization;
-using SylphyHorn.Services;
-using WindowsDesktop;
+using SylphyHorn.Services.DesktopTransitions;
 
 namespace SylphyHorn.UI
 {
@@ -19,33 +17,38 @@ namespace SylphyHorn.UI
 		private readonly TaskTrayIconItem[] _items;
 		private NotifyIcon _notifyIcon;
 		private DynamicInfoTrayIcon _infoIcon;
+		private DesktopTransitionRuntime _runtime;
 		private readonly string _showSettingsMenuName = Resources.TaskTray_Menu_Settings;
 
 		public TaskTrayIcon(Icon darkIcon, Icon lightIcon, TaskTrayIconItem[] items)
 		{
 			this._darkIcon = darkIcon;
 			this._lightIcon = lightIcon;
-
 			this._icon = WindowsTheme.SystemTheme.Current == Theme.Light ? this._lightIcon : this._darkIcon;
 			this._items = items;
-
 			WindowsTheme.SystemTheme.Changed += this.OnSystemThemeChanged;
 			WindowsTheme.Accent.Changed += this.OnAccentChanged;
 			WindowsTheme.ColorPrevalence.Changed += this.OnColorPrevalenceChanged;
-			VirtualDesktop.CurrentChanged += this.OnCurrentDesktopChanged;
-			VirtualDesktop.Destroyed += this.OnDesktopDestroyed;
+		}
+
+		internal void BindDesktopRuntime(DesktopTransitionRuntime runtime)
+		{
+			if (runtime == null) throw new ArgumentNullException(nameof(runtime));
+			if (this._runtime != null)
+			{
+				if (ReferenceEquals(this._runtime, runtime)) return;
+				throw new InvalidOperationException("TaskTrayIcon cannot be rebound to another desktop runtime.");
+			}
+			this._runtime = runtime;
+			runtime.StateChanged += this.OnDesktopStateChanged;
+			this.Reload();
 		}
 
 		public void Show()
 		{
 			if (this._notifyIcon != null) return;
-
-			var menus = this._items
-				.Where(x => x.CanDisplay())
-				.Select(x => new ToolStripMenuItem(x.Text, null, (sender, args) => x.ClickAction()))
-				.ToArray();
-
-			this._notifyIcon = new NotifyIcon()
+			var menus = this._items.Where(x => x.CanDisplay()).Select(x => new ToolStripMenuItem(x.Text, null, (sender, args) => x.ClickAction())).ToArray();
+			this._notifyIcon = new NotifyIcon
 			{
 				Text = ProductInfo.Title,
 				Icon = this._icon,
@@ -53,7 +56,6 @@ namespace SylphyHorn.UI
 				ContextMenuStrip = new ContextMenuStrip(),
 			};
 			this._notifyIcon.ContextMenuStrip.Items.AddRange(menus);
-
 			this._notifyIcon.MouseClick += this.OnIconClick;
 		}
 
@@ -62,121 +64,75 @@ namespace SylphyHorn.UI
 		internal void ShowBaloon(TaskTrayBaloon baloon)
 		{
 			if (this._notifyIcon == null) this.Show();
-
-			this._notifyIcon.ShowBalloonTip(
-				(int)baloon.Timespan.TotalMilliseconds,
-				baloon.Title,
-				baloon.Text,
-				ToolTipIcon.None);
+			this._notifyIcon.ShowBalloonTip((int)baloon.Timespan.TotalMilliseconds, baloon.Title, baloon.Text, ToolTipIcon.None);
 		}
 
-		public void Reload(VirtualDesktop desktop = null)
+		public void Reload()
 		{
-			if (Settings.General.TrayShowDesktop)
-			{
-				VisualHelper.InvokeOnUIDispatcher(() => this.UpdateWithDesktopInfo(desktop ?? VirtualDesktop.Current));
-			}
+			if (Settings.General.TrayShowDesktop && this._runtime?.State != null) this.UpdateWithDesktopInfo(this._runtime.State);
 			else if (this._icon != this._darkIcon && this._icon != this._lightIcon)
 			{
 				this._infoIcon = null;
-
-				this.ChangeIcon(WindowsTheme.SystemTheme.Current == Theme.Light
-					? this._lightIcon
-					: this._darkIcon);
+				this.ChangeIcon(WindowsTheme.SystemTheme.Current == Theme.Light ? this._lightIcon : this._darkIcon);
 			}
 		}
 
-		private void UpdateWithDesktopInfo(VirtualDesktop currentDesktop)
+		private void UpdateWithDesktopInfo(DesktopRuntimeState state)
 		{
-			var desktops = VirtualDesktop.AllDesktops;
-			var currentDesktopIndex = Array.IndexOf(desktops, currentDesktop) + 1;
-			var totalDesktopCount = desktops.Length;
-
-			var text = string.Format(
-				Resources.TaskTray_TooltipText_DesktopCount + "\n" + ProductInfo.Title,
-				currentDesktopIndex,
-				totalDesktopCount);
-			this.ChangeText(text);
-
-			if (this._infoIcon == null)
-			{
-				this._infoIcon = new DynamicInfoTrayIcon(
-					WindowsTheme.SystemTheme.Current,
-					WindowsTheme.ColorPrevalence.Current);
-			}
-
-			this.ChangeIcon(this._infoIcon.GetDesktopInfoIcon(currentDesktopIndex, Settings.General.TrayShowOnlyCurrentNumber ? 0 : totalDesktopCount));
+			if (this._notifyIcon == null || state.CurrentDesktopId == null) return;
+			var currentIndex = state.Order.IndexOf(state.CurrentDesktopId.Value) + 1;
+			if (currentIndex <= 0) return;
+			var total = state.Order.Count;
+			this.ChangeText(string.Format(Resources.TaskTray_TooltipText_DesktopCount + "\n" + ProductInfo.Title, currentIndex, total));
+			if (this._infoIcon == null) this._infoIcon = new DynamicInfoTrayIcon(WindowsTheme.SystemTheme.Current, WindowsTheme.ColorPrevalence.Current);
+			this.ChangeIcon(this._infoIcon.GetDesktopInfoIcon(currentIndex, Settings.General.TrayShowOnlyCurrentNumber ? 0 : total));
 		}
 
-		private void OnCurrentDesktopChanged(object sender, VirtualDesktopChangedEventArgs e)
-		{
-			this.Reload(e.NewDesktop);
-		}
-
-		private void OnDesktopDestroyed(object sender, VirtualDesktopDestroyEventArgs e)
-		{
-			this.Reload();
-		}
+		private void OnDesktopStateChanged(object sender, DesktopRuntimeStateChanged e) => this.Reload();
 
 		private void OnAccentChanged(object sender, System.Windows.Media.Color e)
 		{
 			var colorPrevalence = WindowsTheme.ColorPrevalence.Current;
 			if (Settings.General.TrayShowDesktop && colorPrevalence)
 			{
-				this._infoIcon.UpdateBrush(WindowsTheme.SystemTheme.Current, colorPrevalence);
-				VisualHelper.InvokeOnUIDispatcher(() => this.UpdateWithDesktopInfo(VirtualDesktop.Current));
+				this._infoIcon?.UpdateBrush(WindowsTheme.SystemTheme.Current, colorPrevalence);
+				this.Reload();
 			}
 		}
 
 		private void OnColorPrevalenceChanged(object sender, bool e)
 		{
-			if (Settings.General.TrayShowDesktop)
-			{
-				this._infoIcon.UpdateBrush(WindowsTheme.SystemTheme.Current, e);
-				VisualHelper.InvokeOnUIDispatcher(() => this.UpdateWithDesktopInfo(VirtualDesktop.Current));
-			}
+			if (!Settings.General.TrayShowDesktop) return;
+			this._infoIcon?.UpdateBrush(WindowsTheme.SystemTheme.Current, e);
+			this.Reload();
 		}
 
 		private void OnSystemThemeChanged(object sender, Theme e)
 		{
 			if (Settings.General.TrayShowDesktop)
 			{
-				this._infoIcon.UpdateBrush(e, WindowsTheme.ColorPrevalence.Current);
-				VisualHelper.InvokeOnUIDispatcher(() => this.UpdateWithDesktopInfo(VirtualDesktop.Current));
+				this._infoIcon?.UpdateBrush(e, WindowsTheme.ColorPrevalence.Current);
+				this.Reload();
 			}
-			else
-			{
-				this.ChangeIcon(e == Theme.Light
-					? this._lightIcon
-					: this._darkIcon);
-			}
+			else this.ChangeIcon(e == Theme.Light ? this._lightIcon : this._darkIcon);
 		}
 
 		private void OnIconClick(object sender, MouseEventArgs e)
 		{
-			if (e.Button == MouseButtons.Left)
-			{
-				if (this._items == null || this._items.Length == 0) return;
-
-				var showSettingsItem = this._items.FirstOrDefault(i => i.Text == this._showSettingsMenuName);
-				showSettingsItem?.ClickAction();
-			}
+			if (e.Button != MouseButtons.Left || this._items == null || this._items.Length == 0) return;
+			this._items.FirstOrDefault(i => i.Text == this._showSettingsMenuName)?.ClickAction();
 		}
 
 		private void ChangeText(string newText)
 		{
-			this._notifyIcon.Text = newText;
+			if (this._notifyIcon != null) this._notifyIcon.Text = newText;
 		}
 
 		private void ChangeIcon(Icon newIcon)
 		{
-			if (this._icon != this._darkIcon && this._icon != this._lightIcon)
-			{
-				this._icon?.Dispose();
-			}
-
+			if (this._icon != this._darkIcon && this._icon != this._lightIcon) this._icon?.Dispose();
 			this._icon = newIcon;
-			this._notifyIcon.Icon = newIcon;
+			if (this._notifyIcon != null) this._notifyIcon.Icon = newIcon;
 		}
 
 		public void Dispose()
@@ -184,19 +140,13 @@ namespace SylphyHorn.UI
 			WindowsTheme.SystemTheme.Changed -= this.OnSystemThemeChanged;
 			WindowsTheme.Accent.Changed -= this.OnAccentChanged;
 			WindowsTheme.ColorPrevalence.Changed -= this.OnColorPrevalenceChanged;
-			VirtualDesktop.CurrentChanged -= this.OnCurrentDesktopChanged;
-			VirtualDesktop.Destroyed -= this.OnDesktopDestroyed;
-			if (this._notifyIcon != null)
-			{
-				this._notifyIcon.MouseClick -= this.OnIconClick;
-			}
-
+			if (this._runtime != null) this._runtime.StateChanged -= this.OnDesktopStateChanged;
+			if (this._notifyIcon != null) this._notifyIcon.MouseClick -= this.OnIconClick;
 			this._notifyIcon?.Dispose();
 			this._lightIcon?.Dispose();
 			this._icon?.Dispose();
 		}
 	}
-
 	public class TaskTrayIconItem
 	{
 		public string Text { get; }

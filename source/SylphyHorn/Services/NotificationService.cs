@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading;
@@ -6,6 +6,7 @@ using System.Threading.Tasks;
 using MetroTrilithon.Lifetime;
 using SylphyHorn.Properties;
 using SylphyHorn.Serialization;
+using SylphyHorn.Services.DesktopTransitions;
 using SylphyHorn.UI;
 using SylphyHorn.UI.Bindings;
 using WindowsDesktop;
@@ -15,154 +16,102 @@ namespace SylphyHorn.Services
 	public class NotificationService : IDisposable
 	{
 		public static NotificationService Instance { get; } = new NotificationService();
-
 		private static string ResidentHeader => Settings.General.SimpleNotification ? "" : "Virtual Desktop";
-
 		private static string SwitchedHeader => Settings.General.SimpleNotification ? "" : "Virtual Desktop Switched";
-
 		private static List<SwitchWindow> _residentWindows = new List<SwitchWindow>();
-
 		private readonly SerialDisposable _notificationWindow = new SerialDisposable();
-
-		public void ShowCurrentDesktop()
-		{
-			var current = VirtualDesktop.Current;
-			var currentNumber = current.Index + 1;
-
-			this._notificationWindow.Disposable = ShowDesktopWindow(currentNumber, ResidentHeader);
-		}
-
-		public void HideCurrentDesktop()
-		{
-			CloseResidentWindows();
-		}
-
-		public void ToggleCurrentDesktop()
-		{
-			if (_residentWindows.Count(window => window.IsVisible) == 0)
-			{
-				this.ShowCurrentDesktop();
-			}
-			else
-			{
-				this.HideCurrentDesktop();
-			}
-		}
+		private DesktopTransitionRuntime _runtime;
 
 		private NotificationService()
 		{
-			VirtualDesktop.CurrentChanged += this.VirtualDesktopOnCurrentChanged;
 			VirtualDesktopService.WindowPinned += this.VirtualDesktopServiceOnWindowPinned;
-
-			if (ProductInfo.IsReorderingSupportBuild) VirtualDesktop.Moved += this.VirtualDesktopOnMoved;
 		}
 
-		private void VirtualDesktopOnCurrentChanged(object sender, VirtualDesktopChangedEventArgs e)
+		internal void BindDesktopRuntime(DesktopTransitionRuntime runtime)
+		{
+			if (runtime == null) throw new ArgumentNullException(nameof(runtime));
+			if (this._runtime != null)
+			{
+				if (ReferenceEquals(this._runtime, runtime)) return;
+				throw new InvalidOperationException("NotificationService cannot be rebound to another desktop runtime.");
+			}
+			this._runtime = runtime;
+			runtime.StateChanged += this.OnDesktopStateChanged;
+		}
+
+		public void ShowCurrentDesktop()
+		{
+			var state = this._runtime?.State;
+			if (!TryGetCurrent(state, out var number, out var record)) return;
+			this._notificationWindow.Disposable = ShowDesktopWindow(number, ResidentHeader, record);
+		}
+
+		public void HideCurrentDesktop() => CloseResidentWindows();
+
+		public void ToggleCurrentDesktop()
+		{
+			if (_residentWindows.Count(window => window.IsVisible) == 0) this.ShowCurrentDesktop();
+			else this.HideCurrentDesktop();
+		}
+
+		private void OnDesktopStateChanged(object sender, DesktopRuntimeStateChanged e)
+		{
+			var state = e.Change.Snapshot;
+			if (e.Change.Moves.Count == 1)
+			{
+				var move = e.Change.Moves[0];
+				if (TryGetCurrent(state, out var currentNumber, out var currentRecord))
+					this.ShowMoved(currentNumber, move.NewIndex + 1, move.OldIndex + 1, currentRecord);
+				return;
+			}
+			if (e.Change.Kind != DesktopStateChangeKind.CurrentChanged && e.Change.Kind != DesktopStateChangeKind.Initialized && e.Change.Kind != DesktopStateChangeKind.Reset) return;
+			if (!Settings.General.NotificationWhenSwitchedDesktop)
+			{
+				if (Settings.General.AlwaysShowDesktopNotification) this.ShowCurrentDesktop();
+				return;
+			}
+			if (TryGetCurrent(state, out var number, out var record)) this._notificationWindow.Disposable = ShowDesktopWindow(number, SwitchedHeader, record);
+		}
+
+		private void ShowMoved(int currentNumber, int newNumber, int oldNumber, DesktopRecord currentRecord)
 		{
 			if (!Settings.General.NotificationWhenSwitchedDesktop)
 			{
-				if (Settings.General.AlwaysShowDesktopNotification)
-				{
-					VisualHelper.InvokeOnUIDispatcher(() => Instance.ShowCurrentDesktop());
-				}
+				if (Settings.General.AlwaysShowDesktopNotification) this.ShowCurrentDesktop();
 				return;
 			}
-
-			VisualHelper.InvokeOnUIDispatcher(() =>
-			{
-				var newIndex = e.NewDesktop.Index + 1;
-
-				this._notificationWindow.Disposable = ShowSwitchedDesktopWindow(newIndex);
-			});
-		}
-
-		private void VirtualDesktopOnMoved(object sender, VirtualDesktopMovedEventArgs e)
-		{
-			if (!Settings.General.NotificationWhenSwitchedDesktop)
-			{
-				if (Settings.General.AlwaysShowDesktopNotification)
-				{
-					VisualHelper.InvokeOnUIDispatcher(() => Instance.ShowCurrentDesktop());
-				}
-				return;
-			}
-
-			VisualHelper.InvokeOnUIDispatcher(() =>
-			{
-				var current = VirtualDesktop.Current;
-				var currentNumber = current.Index + 1;
-				var newNumber = e.NewIndex + 1;
-				var oldNumber = e.OldIndex + 1;
-
-				this._notificationWindow.Disposable = ShowMovedDesktopWindow(currentNumber, newNumber, oldNumber);
-			});
+			var header = Settings.General.SimpleNotification ? $"Desktop {oldNumber} => Desktop {newNumber}" : $"Desktop {oldNumber} Moved to Desktop {newNumber}";
+			this._notificationWindow.Disposable = ShowDesktopWindow(header, CreateNotificationBody(currentNumber, currentRecord, true));
 		}
 
 		private void VirtualDesktopServiceOnWindowPinned(object sender, WindowPinnedEventArgs e)
 		{
-			VisualHelper.InvokeOnUIDispatcher(() =>
-			{
-				this._notificationWindow.Disposable = ShowPinWindow(e.Target, e.PinOperation);
-			});
+			VisualHelper.InvokeOnUIDispatcher(() => this._notificationWindow.Disposable = ShowPinWindow(e.Target, e.PinOperation));
 		}
 
-		private static IDisposable ShowSwitchedDesktopWindow(int newNumber)
+		private static IDisposable ShowDesktopWindow(int number, string header, DesktopRecord record)
+			=> ShowDesktopWindow(header, CreateNotificationBody(number, record, false));
+
+		private static string CreateNotificationBody(int number, DesktopRecord record, bool moved)
 		{
-			return ShowDesktopWindow(newNumber, SwitchedHeader);
-		}
-
-		private static IDisposable ShowMovedDesktopWindow(int currentNumber, int newNumber, int oldNumber)
-		{
-			return ShowDesktopWindow(
-				header: Settings.General.SimpleNotification ? $"Desktop {oldNumber} => Desktop {newNumber}" : $"Desktop {oldNumber} Moved to Desktop {newNumber}",
-				body: CreateNotificationBodyText(currentNumber));
-
-			string CreateNotificationBodyText(int number)
+			var hasName = Settings.General.UseDesktopName && record?.Name.HasValue == true && !string.IsNullOrEmpty(record.Name.Value);
+			if (!hasName)
 			{
-				var generalSttings = Settings.General;
-				var desktopNames = generalSttings.DesktopNames.Value;
-				var i = number - 1;
-				if (!generalSttings.UseDesktopName || desktopNames.Count < number ||
-					desktopNames[i].Value == null || desktopNames[i].Value.Length == 0)
-				{
-					var prefix = generalSttings.SimpleNotification ? "" : "Reordered Current Desktop: ";
-					return prefix + "Desktop " + number.ToString();
-				}
-				else
-				{
-					return generalSttings.SimpleNotification
-						? $"{number}. {desktopNames[i].Value}"
-						: $"Reordered Desktop {number}: {desktopNames[i].Value}";
-				}
-			};
+				var prefix = Settings.General.SimpleNotification ? "" : moved ? "Reordered Current Desktop: " : "Current Desktop: ";
+				return prefix + "Desktop " + number;
+			}
+			if (Settings.General.SimpleNotification) return $"{number}. {record.Name.Value}";
+			return moved ? $"Reordered Desktop {number}: {record.Name.Value}" : $"Desktop {number}: {record.Name.Value}";
 		}
 
-		private static IDisposable ShowDesktopWindow(int newNumber, string header)
+		private static bool TryGetCurrent(DesktopRuntimeState state, out int number, out DesktopRecord record)
 		{
-			return ShowDesktopWindow(
-				header: header,
-				body: CreateNotificationBodyText(newNumber));
-
-			string CreateNotificationBodyText(int number)
-			{
-				var generalSttings = Settings.General;
-				var desktopNames = generalSttings.DesktopNames.Value;
-				var i = number - 1;
-				if (!generalSttings.UseDesktopName || desktopNames.Count < number ||
-					desktopNames[i].Value == null || desktopNames[i].Value.Length == 0)
-				{
-					var prefix = generalSttings.SimpleNotification ? "" : "Current Desktop: ";
-					return prefix + "Desktop " + number.ToString();
-				}
-				else
-				{
-					return generalSttings.SimpleNotification
-						? $"{number}. {desktopNames[i].Value}"
-						: $"Desktop {number}: {desktopNames[i].Value}";
-				}
-			};
+			number = 0;
+			record = null;
+			if (state?.CurrentDesktopId == null || !state.Records.TryGetValue(state.CurrentDesktopId.Value, out record)) return false;
+			number = state.Order.IndexOf(state.CurrentDesktopId.Value) + 1;
+			return number > 0;
 		}
-
 		private static IDisposable ShowDesktopWindow(string header, string body)
 		{
 			CloseResidentWindows();
@@ -275,10 +224,9 @@ namespace SylphyHorn.Services
 
 		public void Dispose()
 		{
-			VirtualDesktop.CurrentChanged -= this.VirtualDesktopOnCurrentChanged;
-			VirtualDesktop.Moved -= this.VirtualDesktopOnMoved;
+			if (this._runtime != null) this._runtime.StateChanged -= this.OnDesktopStateChanged;
+			this._runtime = null;
 			VirtualDesktopService.WindowPinned -= this.VirtualDesktopServiceOnWindowPinned;
-
 			this._notificationWindow.Dispose();
 		}
 	}
