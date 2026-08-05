@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
@@ -9,106 +9,10 @@ using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 using MetroTrilithon.Serialization;
+using static SylphyHorn.Serialization.SettingsDictionarySnapshot;
 
 namespace SylphyHorn.Serialization
 {
-	public enum SettingsSaveErrorCategory
-	{
-		None,
-		Serialization,
-		Io,
-		Unknown,
-	}
-
-	public sealed class SettingsSaveResult
-	{
-		private SettingsSaveResult(bool succeeded, long saveRevision, long settingsRevision, SettingsSaveErrorCategory errorCategory, string exceptionType)
-		{
-			this.Succeeded = succeeded;
-			this.SaveRevision = saveRevision;
-			this.SettingsRevision = settingsRevision;
-			this.ErrorCategory = errorCategory;
-			this.ExceptionType = exceptionType;
-		}
-
-		public bool Succeeded { get; }
-		public long SaveRevision { get; }
-		public long SettingsRevision { get; }
-		public SettingsSaveErrorCategory ErrorCategory { get; }
-		public string ExceptionType { get; }
-
-		internal static SettingsSaveResult Success(long saveRevision, long settingsRevision)
-			=> new SettingsSaveResult(true, saveRevision, settingsRevision, SettingsSaveErrorCategory.None, null);
-
-		internal static SettingsSaveResult Failure(long saveRevision, long settingsRevision, SettingsSaveErrorCategory category, Type exceptionType)
-			=> new SettingsSaveResult(false, saveRevision, settingsRevision, category, exceptionType?.FullName);
-	}
-
-	public sealed class StagedSettingsImport
-	{
-		private readonly object _ownerToken;
-		private readonly ReadOnlyDictionary<string, object> _settings;
-
-		internal StagedSettingsImport(object ownerToken, IDictionary<string, object> settings, long settingsRevision, string activeFingerprint, string diskHash)
-		{
-			this._ownerToken = ownerToken ?? throw new ArgumentNullException(nameof(ownerToken));
-			this.StageId = Guid.NewGuid();
-			this._settings = new ReadOnlyDictionary<string, object>(DictionaryProvider.CloneDictionary(settings));
-			this.SettingsRevision = settingsRevision;
-			this.ActiveFingerprint = activeFingerprint ?? throw new ArgumentNullException(nameof(activeFingerprint));
-			this.DiskHash = diskHash;
-		}
-
-		public Guid StageId { get; }
-		public long SettingsRevision { get; }
-		public string ActiveFingerprint { get; }
-		public string DiskHash { get; }
-		public IReadOnlyDictionary<string, object> Settings => this._settings;
-		public IDictionary<string, object> CreateCommitDictionary() => DictionaryProvider.CloneDictionary(this._settings);
-		internal bool IsOwnedBy(object ownerToken) => ReferenceEquals(this._ownerToken, ownerToken);
-	}
-
-	public enum SettingsImportCommitStatus
-	{
-		Publishing,
-		Completed,
-		CompletedWithFailures,
-		FailedWithoutStableState,
-		SupersededByReset,
-		Conflict,
-		InvalidStage,
-		PublishFailed,
-		Discarded,
-		Cancelled,
-		ShuttingDown,
-	}
-
-	public sealed class SettingsImportCommitResult
-	{
-		internal SettingsImportCommitResult(SettingsImportCommitStatus status, SettingsSaveResult saveResult)
-		{
-			this.Status = status;
-			this.SaveResult = saveResult;
-		}
-
-		public SettingsImportCommitStatus Status { get; }
-		public SettingsSaveResult SaveResult { get; }
-		public bool Succeeded => this.Status == SettingsImportCommitStatus.Completed;
-		public static SettingsImportCommitResult Failed() => new SettingsImportCommitResult(SettingsImportCommitStatus.PublishFailed, null);
-		public static SettingsImportCommitResult Cancelled() => new SettingsImportCommitResult(SettingsImportCommitStatus.Cancelled, null);
-		public static SettingsImportCommitResult ShuttingDown() => new SettingsImportCommitResult(SettingsImportCommitStatus.ShuttingDown, null);
-		public static SettingsImportCommitResult CompletedWithFailures() => new SettingsImportCommitResult(SettingsImportCommitStatus.CompletedWithFailures, null);
-		public static SettingsImportCommitResult FailedWithoutStableState() => new SettingsImportCommitResult(SettingsImportCommitStatus.FailedWithoutStableState, null);
-		public static SettingsImportCommitResult SupersededByReset() => new SettingsImportCommitResult(SettingsImportCommitStatus.SupersededByReset, null);
-	}
-
-	internal enum SettingsImportTransactionPhase
-	{
-		None,
-		Preparing,
-		Prepared,
-		Publishing,
-	}
 	public abstract class DictionaryProvider : ISerializationProvider
 	{
 		private readonly object _sync = new object();
@@ -392,9 +296,6 @@ namespace SylphyHorn.Serialization
 		protected virtual Task<string> GetContentHashAsyncCore() => Task.FromResult<string>(null);
 		protected void OnReloaded() => this.NotifyReloaded();
 
-		internal static Dictionary<string, object> CloneDictionary(IEnumerable<KeyValuePair<string, object>> source)
-			=> source?.ToDictionary(pair => pair.Key, pair => CloneValue(pair.Value), StringComparer.Ordinal) ?? new Dictionary<string, object>(StringComparer.Ordinal);
-
 		private async Task RunSaveLoopAsync()
 		{
 			while (true)
@@ -512,48 +413,6 @@ namespace SylphyHorn.Serialization
 				try { handler(this, EventArgs.Empty); }
 				catch { }
 			}
-		}
-
-		private static object CloneValue(object value)
-		{
-			if (value == null || value is string || value.GetType().IsValueType) return value;
-			if (value is Array array) return array.Clone();
-			if (value is IList<int> integers) return integers.ToList();
-			if (value is IList<string> strings) return strings.ToList();
-			if (value is IList<byte> bytes) return bytes.ToList();
-			if (value is IList list)
-			{
-				var copy = new ArrayList(list.Count);
-				foreach (var item in list) copy.Add(CloneValue(item));
-				return copy;
-			}
-			return value;
-		}
-
-		private static string ComputeFingerprint(IEnumerable<KeyValuePair<string, object>> settings)
-		{
-			var builder = new StringBuilder();
-			foreach (var pair in settings.OrderBy(pair => pair.Key, StringComparer.Ordinal))
-			{
-				builder.Append(pair.Key.Length.ToString(CultureInfo.InvariantCulture)).Append(':').Append(pair.Key).Append('=');
-				AppendValue(builder, pair.Value);
-				builder.Append(';');
-			}
-			using (var sha = SHA256.Create()) return BitConverter.ToString(sha.ComputeHash(Encoding.UTF8.GetBytes(builder.ToString()))).Replace("-", string.Empty).ToLowerInvariant();
-		}
-
-		private static void AppendValue(StringBuilder builder, object value)
-		{
-			if (value == null) { builder.Append("null"); return; }
-			builder.Append(value.GetType().FullName).Append(':');
-			if (value is IEnumerable enumerable && !(value is string))
-			{
-				builder.Append('[');
-				foreach (var item in enumerable) { AppendValue(builder, item); builder.Append(','); }
-				builder.Append(']');
-				return;
-			}
-			builder.Append(Convert.ToString(value, CultureInfo.InvariantCulture));
 		}
 
 		private static SettingsSaveErrorCategory Categorize(Exception exception)

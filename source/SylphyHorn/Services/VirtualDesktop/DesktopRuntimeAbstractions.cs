@@ -1,0 +1,53 @@
+using System;
+using System.Collections.Generic;
+using System.Linq;
+using System.Threading;
+using System.Threading.Tasks;
+using System.Windows.Threading;
+using SylphyHorn.Serialization;
+using WindowsDesktop;
+
+namespace SylphyHorn.Services.DesktopTransitions
+{
+	internal interface IDesktopProviderClient : IDisposable
+	{
+		event EventHandler<VirtualDesktopStableBatch> StableBatchPublished;
+		event EventHandler<VirtualDesktopCurrentTransition> CurrentTransitioned;
+		event EventHandler<VirtualDesktopProviderFault> Faulted;
+		Task<VirtualDesktopReconciliationResult> RequestReconciliationAsync(VirtualDesktopStableReason reason, CancellationToken cancellationToken);
+	}
+
+	internal interface IDesktopSettingsTransactions
+	{
+		DesktopStartupSeed CaptureStartupSeed();
+		void ApplyProjection(DesktopSettingsProjection projection);
+		long SettingsRevision { get; }
+		Task<SettingsSaveResult> RequestSaveAsync(long stateRevision);
+		Task<StagedSettingsImport> PrepareImportAsync(string path);
+		Task<StagedSettingsImport> PrepareResetAsync();
+		Task<SettingsImportCommitResult> CommitImportAsync(StagedSettingsImport stage, IDictionary<string, object> dictionary);
+		SettingsImportCommitResult DiscardImport(StagedSettingsImport stage);
+		void PublishImportCommitted();
+	}
+
+	internal interface IDesktopOwnerContext
+	{
+		bool CheckAccess();
+		bool Post(Action action);
+	}
+
+	internal interface IDesktopOperations
+	{
+		void Create();
+		void SetName(Guid desktopId, string value);
+		void SetWallpaperPath(Guid desktopId, string value);
+		void ApplyWallpaper(Guid desktopId, string value, WallpaperPosition position);
+		void MoveLeft(Guid desktopId);
+		void MoveRight(Guid desktopId);
+		void MoveFirst(Guid desktopId);
+		void MoveLast(Guid desktopId);
+		void Switch(Guid desktopId);
+		void Remove(Guid desktopId);
+	}
+
+}
