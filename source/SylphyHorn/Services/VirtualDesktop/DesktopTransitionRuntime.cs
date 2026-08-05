@@ -97,7 +97,7 @@ namespace SylphyHorn.Services.DesktopTransitions
 		}
 	}
 
-	internal sealed class DesktopTransitionRuntime : IDisposable
+	internal sealed class DesktopTransitionRuntime : IDisposable, IDesktopStartupTransactionRuntime
 	{
 		private readonly IDesktopProviderClient _provider;
 		private readonly IDesktopSettingsTransactions _settings;
@@ -142,67 +142,63 @@ namespace SylphyHorn.Services.DesktopTransitions
 		internal DesktopRuntimeState State => this._coordinator.State;
 		internal bool IsInitialized => this._initialized;
 
+		DesktopRuntimeState IDesktopStartupTransactionRuntime.State => this.State;
+		Task<VirtualDesktopReconciliationResult> IDesktopStartupTransactionRuntime.RequestProviderAsync(VirtualDesktopStableReason reason, CancellationToken cancellationToken)
+			=> this.RequestProviderWithBudgetAsync(reason, cancellationToken);
+		DesktopRuntimeInitializationResult IDesktopStartupTransactionRuntime.CommitInitialReconciliation(VirtualDesktopReconciliationResult result, DesktopStartupPublicationMode publicationMode)
+			=> this.CompleteInitialization(result, publicationMode);
+		void IDesktopStartupTransactionRuntime.ApplyStableBatch(VirtualDesktopStableBatch batch)
+			=> this.ApplyStableBatch(batch);
+		bool IDesktopStartupTransactionRuntime.ExecuteTopologyPlan(DesktopStartupOverridePlan plan, DesktopOperationJournal journal)
+			=> this.ExecuteTopologyPlan(plan, journal);
+		DesktopTransitionCoordinator.DesktopPreparedRuntime IDesktopStartupTransactionRuntime.BeginPreparedRuntime()
+		{
+			this._preparedRuntime = this._coordinator.BeginStagedRuntime();
+			return this._preparedRuntime;
+		}
+		void IDesktopStartupTransactionRuntime.ClearPreparedRuntime() => this._preparedRuntime = null;
+		bool IDesktopStartupTransactionRuntime.ApplySeed(DesktopTransitionCoordinator.DesktopPreparedRuntime prepared, DesktopStartupSeed seed, DesktopOperationJournal journal)
+			=> this.ApplySeedToPreparedRuntime(prepared, seed, true, journal);
+		void IDesktopStartupTransactionRuntime.ApplyStableBatchToPrepared(VirtualDesktopStableBatch batch)
+			=> this.ApplyStableBatchToPrepared(batch);
+		void IDesktopStartupTransactionRuntime.ReportUnconfirmedOverride(Guid desktopId, DesktopPropertyKind property)
+			=> this.ReportUnconfirmedOverride(desktopId, property);
+
 		internal async Task<DesktopRuntimeInitializationResult> InitializeAsync(bool overrideDesktopsOnStartup = false, CancellationToken cancellationToken = default(CancellationToken))
 		{
 			this.EnsureOwnerAccess();
 			if (this._initialized) return new DesktopRuntimeInitializationResult(DesktopRuntimeInitializationStatus.Completed);
 			if (this._shutdownStarted || this._stopping) return new DesktopRuntimeInitializationResult(DesktopRuntimeInitializationStatus.ShuttingDown);
 
-			var targetCount = GetSeedTargetCount(this._startupSeed);
-			var overrideEnabled = overrideDesktopsOnStartup && targetCount > 0;
+			var overrideEnabled = overrideDesktopsOnStartup && DesktopStartupOverridePlan.GetTargetCount(this._startupSeed) > 0;
 			this._suppressPublication = overrideEnabled;
 			this.SubscribeProviderEvents();
-			var initial = this.CompleteInitialization(await this.RequestProviderWithBudgetAsync(VirtualDesktopStableReason.Initialization, cancellationToken));
-			if (!initial.Succeeded)
-			{
-				this.TerminateFailedInitialization();
-				return initial;
-			}
-			if (!overrideEnabled) return initial;
-
-			var plan = DesktopStartupOverridePlan.Create(this.State, targetCount);
-			var journal = new DesktopOperationJournal(plan);
-			journal.PlanSeedTargets(this._startupSeed, this.State);
 			try
 			{
-				var topologySucceeded = this.ExecuteTopologyPlan(plan, journal);
-				if (!topologySucceeded)
-					return await this.CompleteFailedStartupOverrideAsync(journal, cancellationToken);
-
-				if (targetCount != this.State.Order.Count)
+				var outcome = await new DesktopStartupTransaction(this._startupSeed, overrideEnabled, this)
+					.ExecuteAsync(cancellationToken);
+				switch (outcome.Kind)
 				{
-					var topology = await this.RequestProviderWithBudgetAsync(VirtualDesktopStableReason.ExplicitReconciliation, cancellationToken);
-					if (topology.Status != VirtualDesktopReconciliationStatus.Succeeded)
-						return await this.CompleteFailedStartupOverrideAsync(journal, cancellationToken);
-					this.ApplyStableBatch(topology.Batch);
-					if (this.State == null || this.State.Order.Count != targetCount)
-						return await this.CompleteFailedStartupOverrideAsync(journal, cancellationToken);
+					case DesktopStartupTransactionOutcomeKind.AlreadyPublished:
+						return outcome.Result;
+					case DesktopStartupTransactionOutcomeKind.CommitPreparedAndPublish:
+						this._coordinator.CommitStagedRuntime(outcome.PreparedRuntime, false);
+						this._preparedRuntime = null;
+						this._persistenceProtection = outcome.PersistenceProtection;
+						this._suppressPublication = false;
+						this.PublishInitialization();
+						return outcome.Result;
+					case DesktopStartupTransactionOutcomeKind.PublishRecovered:
+						this._persistenceProtection = outcome.PersistenceProtection;
+						this._suppressPublication = false;
+						this.PublishInitialization();
+						return outcome.Result;
+					case DesktopStartupTransactionOutcomeKind.Terminate:
+						this.TerminateFailedInitialization();
+						return outcome.Result;
+					default:
+						throw new InvalidOperationException("Unknown startup transaction outcome.");
 				}
-
-				var prepared = this._coordinator.BeginStagedRuntime();
-				this._preparedRuntime = prepared;
-				var propertiesSucceeded = this.ApplySeedToPreparedRuntime(prepared, this._startupSeed, true, journal);
-				var confirmation = await this.RequestProviderWithBudgetAsync(VirtualDesktopStableReason.ExplicitReconciliation, cancellationToken);
-				if (confirmation.Status != VirtualDesktopReconciliationStatus.Succeeded)
-				{
-					this._preparedRuntime = null;
-					return await this.CompleteFailedStartupOverrideAsync(journal, cancellationToken);
-				}
-				journal.Confirm(confirmation.Batch, this.ReportUnconfirmedOverride);
-				this.ApplyStableBatchToPrepared(confirmation.Batch);
-				if (!propertiesSucceeded || journal.HasFailures)
-					this._persistenceProtection = DesktopPersistenceProtection.FromSeed(prepared.Coordinator.State, journal);
-				this._coordinator.CommitStagedRuntime(prepared, false);
-				this._preparedRuntime = null;
-				this._suppressPublication = false;
-				this.PublishInitialization();
-				var status = journal.HasFailures ? DesktopStartupOverrideStatus.CompletedWithFailures : DesktopStartupOverrideStatus.Completed;
-				return new DesktopRuntimeInitializationResult(DesktopRuntimeInitializationStatus.Completed, null, journal.Complete(status));
-			}
-			catch (OperationCanceledException)
-			{
-				this.TerminateFailedInitialization();
-				return new DesktopRuntimeInitializationResult(DesktopRuntimeInitializationStatus.Cancelled, null, journal.Complete(DesktopStartupOverrideStatus.Cancelled));
 			}
 			finally
 			{
@@ -227,22 +223,6 @@ namespace SylphyHorn.Services.DesktopTransitions
 				catch { journal.RecordTopology(DesktopStartupTopologyMutationKind.Remove, id, DesktopOverrideOperationStatus.Failed); failed = true; }
 			}
 			return !failed;
-		}
-
-		private async Task<DesktopRuntimeInitializationResult> CompleteFailedStartupOverrideAsync(DesktopOperationJournal journal, CancellationToken cancellationToken)
-		{
-			this._preparedRuntime = null;
-			var recovery = await this.RequestProviderWithBudgetAsync(VirtualDesktopStableReason.Recovery, cancellationToken);
-			if (recovery.Status != VirtualDesktopReconciliationStatus.Succeeded)
-			{
-				this.TerminateFailedInitialization();
-				return new DesktopRuntimeInitializationResult(DesktopRuntimeInitializationStatus.Unavailable, recovery.FailureCategory, journal.Complete(DesktopStartupOverrideStatus.Unavailable));
-			}
-			this.ApplyStableBatch(recovery.Batch);
-			this._persistenceProtection = DesktopPersistenceProtection.FromSeed(this.State, journal);
-			this._suppressPublication = false;
-			this.PublishInitialization();
-			return new DesktopRuntimeInitializationResult(DesktopRuntimeInitializationStatus.Completed, recovery.FailureCategory, journal.Complete(DesktopStartupOverrideStatus.CompletedWithFailures));
 		}
 
 		private async Task<VirtualDesktopReconciliationResult> RequestProviderWithBudgetAsync(VirtualDesktopStableReason reason, CancellationToken cancellationToken)
@@ -413,9 +393,9 @@ namespace SylphyHorn.Services.DesktopTransitions
 			try
 			{
 				var seed = SettingsService.CaptureDesktopStartupSeed(stage.Settings);
-				if (overrideDesktops && GetSeedTargetCount(seed) > 0)
+				if (overrideDesktops && DesktopStartupOverridePlan.GetTargetCount(seed) > 0)
 				{
-					var plan = DesktopStartupOverridePlan.Create(prepared.Coordinator.State, GetSeedTargetCount(seed));
+					var plan = DesktopStartupOverridePlan.Create(prepared.Coordinator.State, DesktopStartupOverridePlan.GetTargetCount(seed));
 					journal = new DesktopOperationJournal(plan);
 					if (!this.ExecuteTopologyPlan(plan, journal))
 						return await this.RecoverFailedImportAsync(stage, preImportProjection, journal, cancellationToken);
@@ -431,7 +411,7 @@ namespace SylphyHorn.Services.DesktopTransitions
 				}
 
 				var propertiesSucceeded = this.ApplySeedToPreparedRuntime(prepared, seed, overrideDesktops, journal, resetPositions);
-				if (overrideDesktops && GetSeedTargetCount(seed) > 0)
+				if (overrideDesktops && DesktopStartupOverridePlan.GetTargetCount(seed) > 0)
 				{
 					var confirmation = await this.RequestProviderWithBudgetAsync(VirtualDesktopStableReason.ExplicitReconciliation, cancellationToken);
 					if (confirmation.Status != VirtualDesktopReconciliationStatus.Succeeded)
@@ -582,9 +562,6 @@ namespace SylphyHorn.Services.DesktopTransitions
 			var shutdown = this.ShutdownAsync();
 			if (!this._owner.CheckAccess()) shutdown.GetAwaiter().GetResult();
 		}
-		private static int GetSeedTargetCount(DesktopStartupSeed seed)
-			=> Math.Max(seed.Names.Count, seed.WallpaperPaths.Count);
-
 		private void SubscribeProviderEvents()
 		{
 			if (this._providerEventsSubscribed) return;
@@ -619,9 +596,12 @@ namespace SylphyHorn.Services.DesktopTransitions
 			while (!this._importCommitFrozen && this._frozenProviderIngress.Count != 0 && !this._stopping)
 				this._frozenProviderIngress.Dequeue()();
 		}
-		private DesktopRuntimeInitializationResult CompleteInitialization(VirtualDesktopReconciliationResult result)
+		private DesktopRuntimeInitializationResult CompleteInitialization(VirtualDesktopReconciliationResult result, DesktopStartupPublicationMode publicationMode)
 		{
 			this.EnsureOwnerAccess();
+			var expectedSuppression = publicationMode == DesktopStartupPublicationMode.DeferredUntilOverrideCompletes;
+			if (this._suppressPublication != expectedSuppression)
+				throw new InvalidOperationException("The startup publication mode does not match the active startup session.");
 			switch (result.Status)
 			{
 				case VirtualDesktopReconciliationStatus.Succeeded:

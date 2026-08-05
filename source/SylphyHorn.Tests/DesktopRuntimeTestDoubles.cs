@@ -63,15 +63,20 @@ namespace SylphyHorn.Tests
 		public event EventHandler<VirtualDesktopCurrentTransition> CurrentTransitioned;
 		public event EventHandler<VirtualDesktopProviderFault> Faulted;
 		internal Task<VirtualDesktopReconciliationResult> NextRequest { get; set; }
+		internal int NextRequestNumber { get; set; }
+		internal TaskCompletionSource<bool> NextRequestStarted { get; } = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
 		internal VirtualDesktopStableBatch PublishSynchronouslyBeforeRequestCompletion { get; set; }
 		internal bool Disposed { get; private set; }
+		internal int ReconciliationRequestCount { get; private set; }
+		internal int StablePublicationCount { get; private set; }
 		internal void EnqueueResult(VirtualDesktopStableBatch batch) => this._results.Enqueue(VirtualDesktopReconciliationResult.Succeeded(batch));
 		internal void EnqueueResult(VirtualDesktopReconciliationResult result) => this._results.Enqueue(result);
-		internal void PublishStable(VirtualDesktopStableBatch batch) => this.StableBatchPublished?.Invoke(this, batch);
+		internal void PublishStable(VirtualDesktopStableBatch batch) { this.StablePublicationCount++; this.StableBatchPublished?.Invoke(this, batch); }
 		internal void PublishCurrent(VirtualDesktopCurrentTransition transition) => this.CurrentTransitioned?.Invoke(this, transition);
 		internal void PublishFault(VirtualDesktopProviderFault fault) => this.Faulted?.Invoke(this, fault);
 		public Task<VirtualDesktopReconciliationResult> RequestReconciliationAsync(VirtualDesktopStableReason reason, CancellationToken cancellationToken)
 		{
+			this.ReconciliationRequestCount++;
 			if (this.Disposed) return Task.FromResult(VirtualDesktopReconciliationResult.ShuttingDown());
 			if (this.PublishSynchronouslyBeforeRequestCompletion != null)
 			{
@@ -80,7 +85,13 @@ namespace SylphyHorn.Tests
 				this.PublishStable(published);
 				return Task.FromResult(VirtualDesktopReconciliationResult.Succeeded(published));
 			}
-			if (this.NextRequest != null) { var result = this.NextRequest; this.NextRequest = null; return result; }
+			if (this.NextRequest != null && (this.NextRequestNumber == 0 || this.NextRequestNumber == this.ReconciliationRequestCount))
+			{
+				var result = this.NextRequest;
+				this.NextRequest = null;
+				this.NextRequestStarted.TrySetResult(true);
+				return result;
+			}
 			return Task.FromResult(this._results.Count == 0 ? VirtualDesktopReconciliationResult.Unavailable(VirtualDesktopProviderFailureCategory.ReconciliationUnavailable) : this._results.Dequeue());
 		}
 		public void Dispose() => this.Disposed = true;
@@ -203,6 +214,7 @@ namespace SylphyHorn.Tests
 		internal int CreateCalls { get; private set; }
 		internal List<Guid> RemovedIds { get; } = new List<Guid>();
 		internal Exception NameFailure { get; set; }
+		internal Exception CreateFailure { get; set; }
 		internal string FailNameValue { get; set; }
 		internal string FailWallpaperValue { get; set; }
 		internal int WallpaperCalls { get; private set; }
@@ -210,7 +222,7 @@ namespace SylphyHorn.Tests
 		internal List<string> AppliedWallpaperValues { get; } = new List<string>();
 		internal Action BeforeName { get; set; }
 		internal List<string> NameValues { get; } = new List<string>();
-		public void Create() => this.CreateCalls++;
+		public void Create() { this.CreateCalls++; if (this.CreateFailure != null) throw this.CreateFailure; }
 		public void SetName(Guid desktopId, string value) { this.NameCalls++; this.NameValues.Add(value); this.BeforeName?.Invoke(); if (this.NameFailure != null || this.FailNameValue == value) throw this.NameFailure ?? new InvalidOperationException("synthetic"); }
 		public void SetWallpaperPath(Guid desktopId, string value) { this.WallpaperCalls++; if (this.FailWallpaperValue == value) throw new InvalidOperationException("synthetic"); }
 		public void ApplyWallpaper(Guid desktopId, string value, WallpaperPosition position) { this.AppliedWallpaperIds.Add(desktopId); this.AppliedWallpaperValues.Add(value); }

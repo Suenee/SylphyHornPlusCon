@@ -95,6 +95,8 @@ namespace SylphyHorn.Services.DesktopTransitions
 			var removals = state.Order.Skip(Math.Max(0, targetCount)).Reverse().ToArray();
 			return new DesktopStartupOverridePlan(Guid.NewGuid(), state.Order.Count, targetCount, removals);
 		}
+		internal static int GetTargetCount(DesktopStartupSeed seed)
+			=> Math.Max(seed.Names.Count, seed.WallpaperPaths.Count);
 	}
 	internal sealed class DesktopStartupMutationResult
 	{

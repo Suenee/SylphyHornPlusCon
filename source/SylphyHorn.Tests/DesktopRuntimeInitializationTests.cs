@@ -33,6 +33,10 @@ namespace SylphyHorn.Tests
 
 			Assert.True(result.Succeeded);
 			Assert.Equal(new[] { "projection", "event" }, observed);
+			Assert.Equal(1, harness.Provider.ReconciliationRequestCount);
+			Assert.Equal(0, harness.Provider.StablePublicationCount);
+			Assert.Empty(harness.Owner.Posted);
+			Assert.Equal(1, harness.Settings.ProjectionCount);
 			Assert.Equal(1, harness.Settings.SaveRequests);
 			Assert.Equal(A, harness.Runtime.State.CurrentDesktopId);
 			var assemblyPath = typeof(DesktopRuntimeInitializationTests).Assembly.Location;
@@ -58,6 +62,13 @@ namespace SylphyHorn.Tests
 			Assert.NotEqual(Guid.Empty, result.StartupOverride.PlanId);
 			Assert.Equal(2, result.StartupOverride.Journal.Count);
 			Assert.All(result.StartupOverride.Journal, mutation => Assert.True(mutation.Succeeded));
+			Assert.Equal(2, provider.ReconciliationRequestCount);
+			Assert.Equal(0, provider.StablePublicationCount);
+			Assert.Equal(0, operations.CreateCalls);
+			Assert.Empty(operations.RemovedIds);
+			Assert.Equal(1, operations.NameCalls);
+			Assert.Equal(1, operations.WallpaperCalls);
+			Assert.Equal(1, settings.ProjectionCount);
 			Assert.Equal(1, events);
 			Assert.Equal("seed", runtime.State.Records[A].Name.Value);
 			Assert.Equal("seed", settings.LastProjection.Names[0]);
@@ -76,6 +87,9 @@ namespace SylphyHorn.Tests
 			var result = await runtime.InitializeAsync(true, TestContext.Current.CancellationToken);
 
 			Assert.True(result.Succeeded);
+			Assert.Equal(2, provider.ReconciliationRequestCount);
+			Assert.Equal(1, settings.ProjectionCount);
+			Assert.Equal(1, settings.SaveRequests);
 			Assert.Equal(DesktopStartupOverrideStatus.CompletedWithFailures, result.StartupOverride.Status);
 			Assert.Single(result.StartupOverride.Journal);
 			Assert.False(result.StartupOverride.Journal[0].Succeeded);
@@ -97,6 +111,7 @@ namespace SylphyHorn.Tests
 			var result = await runtime.InitializeAsync(true, TestContext.Current.CancellationToken);
 
 			Assert.True(result.Succeeded);
+			Assert.Equal(3, provider.ReconciliationRequestCount);
 			Assert.Equal(2, operations.CreateCalls);
 			Assert.Equal(3, result.StartupOverride.TargetDesktopCount);
 			Assert.Equal(2, result.StartupOverride.TopologyJournal.Count);
@@ -117,6 +132,7 @@ namespace SylphyHorn.Tests
 			var result = await runtime.InitializeAsync(true, TestContext.Current.CancellationToken);
 
 			Assert.True(result.Succeeded);
+			Assert.Equal(3, provider.ReconciliationRequestCount);
 			Assert.Equal(new[] { C, B }, operations.RemovedIds);
 			Assert.Single(runtime.State.Order);
 		}
@@ -136,6 +152,8 @@ namespace SylphyHorn.Tests
 
 			Assert.Equal(DesktopRuntimeInitializationStatus.Unavailable, result.Status);
 			Assert.Equal(DesktopStartupOverrideStatus.Unavailable, result.StartupOverride.Status);
+			Assert.Equal(3, provider.ReconciliationRequestCount);
+			Assert.Equal(1, provider.StablePublicationCount);
 			Assert.False(runtime.IsInitialized);
 			Assert.True(provider.Disposed);
 			Assert.Equal(0, events);
@@ -203,8 +221,111 @@ namespace SylphyHorn.Tests
 
 			Assert.True(result.Succeeded);
 			Assert.Equal(DesktopStartupOverrideStatus.NotRequested, result.StartupOverride.Status);
+			Assert.Equal(1, provider.ReconciliationRequestCount);
+			Assert.Equal(1, settings.ProjectionCount);
+			Assert.Equal(1, settings.SaveRequests);
 			Assert.Equal(0, operations.CreateCalls);
 			Assert.Empty(operations.RemovedIds);
+		}
+
+		[Fact]
+		public void StartupOutcomeFactoriesOnlyCreateValidLifecycleKinds()
+		{
+			var success = new DesktopRuntimeInitializationResult(DesktopRuntimeInitializationStatus.Completed);
+			var failure = new DesktopRuntimeInitializationResult(DesktopRuntimeInitializationStatus.Unavailable);
+			var coordinator = new DesktopTransitionCoordinator(DesktopStartupSeed.Empty);
+			coordinator.ApplyStableBatch(Batch(1, 1, A, Entry(A, 0, "name", "wall")));
+			var prepared = coordinator.BeginStagedRuntime();
+
+			var published = DesktopStartupTransactionOutcome.AlreadyPublished(success);
+			var commit = DesktopStartupTransactionOutcome.CommitPreparedAndPublish(success, prepared, null);
+			var recovered = DesktopStartupTransactionOutcome.PublishRecovered(success, null);
+			var terminate = DesktopStartupTransactionOutcome.Terminate(failure);
+
+			Assert.Equal(DesktopStartupTransactionOutcomeKind.AlreadyPublished, published.Kind);
+			Assert.Null(published.PreparedRuntime);
+			Assert.Equal(DesktopStartupTransactionOutcomeKind.CommitPreparedAndPublish, commit.Kind);
+			Assert.Same(prepared, commit.PreparedRuntime);
+			Assert.Equal(DesktopStartupTransactionOutcomeKind.PublishRecovered, recovered.Kind);
+			Assert.Null(recovered.PreparedRuntime);
+			Assert.Equal(DesktopStartupTransactionOutcomeKind.Terminate, terminate.Kind);
+			Assert.Null(terminate.PreparedRuntime);
+			Assert.Throws<ArgumentException>(() => DesktopStartupTransactionOutcome.AlreadyPublished(failure));
+			Assert.Throws<ArgumentNullException>(() => DesktopStartupTransactionOutcome.CommitPreparedAndPublish(success, null, null));
+			Assert.Throws<ArgumentException>(() => DesktopStartupTransactionOutcome.CommitPreparedAndPublish(failure, prepared, null));
+			Assert.Throws<ArgumentException>(() => DesktopStartupTransactionOutcome.PublishRecovered(failure, null));
+			Assert.Throws<ArgumentException>(() => DesktopStartupTransactionOutcome.Terminate(success));
+		}
+
+		[Fact]
+		public async Task StartupTopologyFailureRecoversAndPublishesOnce()
+		{
+			var provider = new FakeProvider(Batch(1, 1, A, Entry(A, 0, "a", "wall")));
+			provider.EnqueueResult(Batch(1, 2, A, Entry(A, 0, "recovered", "wall")));
+			var settings = new FakeSettings(new DesktopStartupSeed(new[] { "seed-a", "seed-b" }, null, null));
+			var operations = new FakeOperations { CreateFailure = new InvalidOperationException("synthetic") };
+			var runtime = new DesktopTransitionRuntime(provider, settings, new FakeOwner(), operations);
+			var events = 0;
+			runtime.StateChanged += (_, __) => events++;
+
+			var result = await runtime.InitializeAsync(true, TestContext.Current.CancellationToken);
+
+			Assert.True(result.Succeeded);
+			Assert.Equal(DesktopStartupOverrideStatus.CompletedWithFailures, result.StartupOverride.Status);
+			Assert.Equal(2, provider.ReconciliationRequestCount);
+			Assert.Equal(1, operations.CreateCalls);
+			Assert.Single(result.StartupOverride.TopologyJournal);
+			Assert.Equal(DesktopOverrideOperationStatus.Failed, result.StartupOverride.TopologyJournal[0].Status);
+			Assert.Equal(1, settings.ProjectionCount);
+			Assert.Equal(1, events);
+			Assert.Equal(1, settings.SaveRequests);
+			Assert.Equal("recovered", runtime.State.Records[A].Name.Value);
+		}
+
+		[Fact]
+		public async Task InitialCancellationTerminatesWithoutPublication()
+		{
+			var provider = new FakeProvider(Batch(1, 1, A, Entry(A, 0, "name", "wall")));
+			var settings = new FakeSettings(DesktopStartupSeed.Empty);
+			var runtime = new DesktopTransitionRuntime(provider, settings, new FakeOwner(), new FakeOperations());
+			using (var cancellation = new CancellationTokenSource())
+			{
+				cancellation.Cancel();
+				var result = await runtime.InitializeAsync(false, cancellation.Token);
+
+				Assert.Equal(DesktopRuntimeInitializationStatus.Cancelled, result.Status);
+			}
+			Assert.Equal(0, provider.ReconciliationRequestCount);
+			Assert.True(provider.Disposed);
+			Assert.Equal(0, settings.ProjectionCount);
+			Assert.Equal(0, settings.SaveRequests);
+		}
+
+		[Fact]
+		public async Task ConfirmationCancellationDoesNotCommitPreparedState()
+		{
+			var provider = new FakeProvider(Batch(1, 1, A, Entry(A, 0, "old", "wall")))
+			{
+				NextRequestNumber = 2,
+				NextRequest = new TaskCompletionSource<VirtualDesktopReconciliationResult>(TaskCreationOptions.RunContinuationsAsynchronously).Task,
+			};
+			var settings = new FakeSettings(new DesktopStartupSeed(new[] { "target" }, null, null));
+			var runtime = new DesktopTransitionRuntime(provider, settings, new FakeOwner(), new FakeOperations());
+			using (var cancellation = new CancellationTokenSource())
+			{
+				var initialization = runtime.InitializeAsync(true, cancellation.Token);
+				await provider.NextRequestStarted.Task;
+				cancellation.Cancel();
+				var result = await initialization;
+
+				Assert.Equal(DesktopRuntimeInitializationStatus.Unavailable, result.Status);
+				Assert.Equal(DesktopStartupOverrideStatus.Unavailable, result.StartupOverride.Status);
+			}
+			Assert.Equal(2, provider.ReconciliationRequestCount);
+			Assert.True(provider.Disposed);
+			Assert.False(runtime.IsInitialized);
+			Assert.Equal(0, settings.ProjectionCount);
+			Assert.Equal(0, settings.SaveRequests);
 		}
 
 		[Fact]
