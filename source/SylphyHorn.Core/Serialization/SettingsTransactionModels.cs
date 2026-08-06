@@ -68,6 +68,18 @@ namespace SylphyHorn.Serialization
 		internal bool IsOwnedBy(object ownerToken) => ReferenceEquals(this._ownerToken, ownerToken);
 	}
 
+	internal sealed class StagedSettingsImportClaim
+	{
+		internal StagedSettingsImportClaim(StagedSettingsImport stage, object claimToken)
+		{
+			this.Stage = stage ?? throw new ArgumentNullException(nameof(stage));
+			this.ClaimToken = claimToken ?? throw new ArgumentNullException(nameof(claimToken));
+		}
+
+		internal StagedSettingsImport Stage { get; }
+		internal object ClaimToken { get; }
+	}
+
 	public enum SettingsImportCommitStatus
 	{
 		Publishing,
@@ -98,6 +110,7 @@ namespace SylphyHorn.Serialization
 		public static SettingsImportCommitResult Cancelled() => new SettingsImportCommitResult(SettingsImportCommitStatus.Cancelled, null);
 		public static SettingsImportCommitResult ShuttingDown() => new SettingsImportCommitResult(SettingsImportCommitStatus.ShuttingDown, null);
 		public static SettingsImportCommitResult CompletedWithFailures() => new SettingsImportCommitResult(SettingsImportCommitStatus.CompletedWithFailures, null);
+		internal static SettingsImportCommitResult CompletedWithFailures(SettingsSaveResult saveResult) => new SettingsImportCommitResult(SettingsImportCommitStatus.CompletedWithFailures, saveResult);
 		public static SettingsImportCommitResult FailedWithoutStableState() => new SettingsImportCommitResult(SettingsImportCommitStatus.FailedWithoutStableState, null);
 		public static SettingsImportCommitResult SupersededByReset() => new SettingsImportCommitResult(SettingsImportCommitStatus.SupersededByReset, null);
 	}
@@ -107,6 +120,7 @@ namespace SylphyHorn.Serialization
 		None,
 		Preparing,
 		Prepared,
+		Claimed,
 		Publishing,
 	}
 }

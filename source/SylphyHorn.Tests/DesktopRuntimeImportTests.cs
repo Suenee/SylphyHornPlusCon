@@ -351,5 +351,389 @@ namespace SylphyHorn.Tests
 			Assert.Equal("import-b", runtime.State.Records[B].WallpaperPath.Value);
 		}
 
+		[Fact]
+		public async Task ImportOutcomeFactoriesRejectInvalidLifecycleCombinations()
+		{
+			var settings = new FakeSettings(DesktopStartupSeed.Empty);
+			var stage = await settings.PrepareImportAsync("synthetic");
+			var success = await settings.CommitImportAsync(settings.ClaimImport(stage), stage.CreateCommitDictionary());
+			var coordinator = new DesktopTransitionCoordinator(DesktopStartupSeed.Empty);
+			var batch = Batch(1, 1, A, Entry(A, 0, "name", "wall"));
+			coordinator.ApplyStableBatch(batch);
+			var prepared = coordinator.BeginStagedRuntime();
+			var completedWithFailures = SettingsImportCommitResult.CompletedWithFailures();
+			var cancelled = SettingsImportCommitResult.Cancelled();
+
+			var commit = DesktopImportTransactionOutcome.CommitPreparedRuntime(success, prepared);
+			var recovered = DesktopImportTransactionOutcome.ApplyRecoveredState(completedWithFailures, batch, null);
+			var discarded = DesktopImportTransactionOutcome.Discarded(cancelled);
+			var reconcile = DesktopImportTransactionOutcome.DiscardedAndReconcile(cancelled);
+
+			Assert.Equal(DesktopImportTransactionOutcomeKind.CommitPreparedRuntime, commit.Kind);
+			Assert.Same(prepared, commit.PreparedRuntime);
+			Assert.Equal(DesktopImportTransactionOutcomeKind.ApplyRecoveredState, recovered.Kind);
+			Assert.Same(batch, recovered.RecoveryBatch);
+			Assert.Equal(DesktopImportTransactionOutcomeKind.Discarded, discarded.Kind);
+			Assert.Equal(DesktopImportTransactionOutcomeKind.DiscardedAndReconcile, reconcile.Kind);
+			Assert.Throws<ArgumentNullException>(() => DesktopImportTransactionOutcome.CommitPreparedRuntime(null, prepared));
+			Assert.Throws<ArgumentNullException>(() => DesktopImportTransactionOutcome.CommitPreparedRuntime(success, null));
+			Assert.Throws<ArgumentException>(() => DesktopImportTransactionOutcome.CommitPreparedRuntime(cancelled, prepared));
+			Assert.Throws<ArgumentNullException>(() => DesktopImportTransactionOutcome.ApplyRecoveredState(completedWithFailures, null, null));
+			Assert.Throws<ArgumentException>(() => DesktopImportTransactionOutcome.ApplyRecoveredState(cancelled, batch, null));
+			Assert.Throws<ArgumentException>(() => DesktopImportTransactionOutcome.Discarded(success));
+			Assert.Throws<ArgumentException>(() => DesktopImportTransactionOutcome.Discarded(completedWithFailures));
+			Assert.Throws<ArgumentNullException>(() => DesktopImportTransactionOutcome.Discarded(null));
+		}
+
+		[Fact]
+		public async Task PreparedImportAppliesCurrentIngressOnlyToPreparedRuntime()
+		{
+			var harness = Harness.Create(Batch(1, 1, A, Entry(A, 0, "a", "wall"), Entry(B, 1, "b", "wall")));
+			await harness.Runtime.InitializeAsync(false, TestContext.Current.CancellationToken);
+			harness.Settings.Provider.NextImport = new Dictionary<string, object>
+			{
+				[SettingsService.DesktopNamesKey + "#Count"] = 2,
+				[SettingsService.DesktopNamesKey + "[0]"] = "import-a",
+				[SettingsService.DesktopNamesKey + "[1]"] = "import-b",
+			};
+			var stage = await harness.Settings.PrepareImportAsync("synthetic");
+			var gate = new TaskCompletionSource<VirtualDesktopReconciliationResult>(TaskCreationOptions.RunContinuationsAsynchronously);
+			harness.Provider.NextRequest = gate.Task;
+			var commit = harness.Runtime.CommitPreparedImportAsync(stage, true, TestContext.Current.CancellationToken);
+
+			harness.Provider.PublishCurrent(new VirtualDesktopCurrentTransition(1, 100, 1, B));
+			Assert.Equal(A, harness.Runtime.State.CurrentDesktopId);
+			gate.SetResult(VirtualDesktopReconciliationResult.Succeeded(
+				Batch(1, 1, A, Entry(A, 0, "import-a", "wall"), Entry(B, 1, "import-b", "wall"))));
+			var result = await commit;
+
+			Assert.True(result.Succeeded);
+			Assert.Equal(B, harness.Runtime.State.CurrentDesktopId);
+			Assert.Equal(2, harness.Provider.ReconciliationRequestCount);
+			Assert.Equal(1, harness.Settings.ImportCommitRequests);
+			Assert.Equal(1, harness.Settings.ImportPublishRequests);
+			Assert.Equal(0, harness.Settings.ImportDiscardRequests);
+		}
+
+		[Fact]
+		public async Task ImportCommitFreezeReplaysStableAndCurrentIngressInArrivalOrder()
+		{
+			var harness = Harness.Create(Batch(1, 1, A, Entry(A, 0, "a", "wall"), Entry(B, 1, "b", "wall")));
+			await harness.Runtime.InitializeAsync(false, TestContext.Current.CancellationToken);
+			harness.Settings.Provider.NextImport = new Dictionary<string, object>();
+			var stage = await harness.Settings.PrepareImportAsync("synthetic");
+			harness.Settings.BlockCommit = true;
+			var commit = harness.Runtime.CommitPreparedImportAsync(stage, false, TestContext.Current.CancellationToken);
+			await harness.Settings.CommitStarted.Task;
+
+			harness.Provider.PublishStable(Batch(1, 2, A, Entry(A, 0, "after", "wall"), Entry(B, 1, "b", "wall")));
+			harness.Provider.PublishCurrent(new VirtualDesktopCurrentTransition(1, 100, 2, B));
+			Assert.Equal("a", harness.Runtime.State.Records[A].Name.Value);
+			Assert.Equal(A, harness.Runtime.State.CurrentDesktopId);
+			harness.Settings.CommitRelease.TrySetResult(true);
+			var result = await commit;
+
+			Assert.True(result.Succeeded);
+			Assert.Equal("after", harness.Runtime.State.Records[A].Name.Value);
+			Assert.Equal(B, harness.Runtime.State.CurrentDesktopId);
+			Assert.Equal(1, harness.Settings.ImportCommitRequests);
+			Assert.Equal(1, harness.Settings.ImportPublishRequests);
+			Assert.Equal(0, harness.Settings.ImportDiscardRequests);
+		}
+
+		[Fact]
+		public async Task ShutdownWaitsForActiveImportAndDiscardsSession()
+		{
+			var harness = await Harness.Initialized();
+			harness.Settings.Provider.NextImport = new Dictionary<string, object>
+			{
+				[SettingsService.DesktopNamesKey + "#Count"] = 1,
+				[SettingsService.DesktopNamesKey + "[0]"] = "imported",
+			};
+			var stage = await harness.Settings.PrepareImportAsync("synthetic");
+			harness.Settings.BlockCommit = true;
+			var order = new List<string>();
+			harness.Operations.BeforeName = () => order.Add("deferred-edit");
+			harness.Provider.RequestObserved = count =>
+			{
+				if (count == 2)
+				{
+					order.Add("final-reconciliation");
+					Assert.Equal("deferred", harness.Runtime.State.Records[A].Name.Value);
+				}
+			};
+			harness.Provider.Disposing = () => order.Add("dispose");
+			harness.Provider.EnqueueResult(Batch(1, 2, A, Entry(A, 0, "deferred", "wall")));
+			var commit = harness.Runtime.CommitPreparedImportAsync(stage, false, TestContext.Current.CancellationToken);
+			await harness.Settings.CommitStarted.Task;
+			harness.Runtime.EditName(A, "deferred");
+			var shutdown = harness.Runtime.ShutdownAsync();
+
+			Assert.False(commit.IsCompleted);
+			Assert.False(shutdown.IsCompleted);
+			Assert.Equal(0, harness.Operations.NameCalls);
+			Assert.Equal("name", harness.Runtime.State.Records[A].Name.Value);
+
+			harness.Settings.CommitRelease.TrySetResult(true);
+			var importResult = await commit;
+			var shutdownResult = await shutdown;
+
+			Assert.True(importResult.Succeeded);
+			Assert.Equal(DesktopRuntimeShutdownStatus.Completed, shutdownResult.Status);
+			Assert.Equal(new[] { "deferred-edit", "final-reconciliation", "dispose" }, order);
+			Assert.Equal(1, harness.Operations.NameCalls);
+			Assert.Equal("deferred", harness.Runtime.State.Records[A].Name.Value);
+			Assert.Equal("deferred", harness.Settings.LastProjection.Names[0]);
+			Assert.False(harness.Settings.Provider.ImportTransactionActive);
+			Assert.Equal(0, harness.Settings.ImportDiscardRequests);
+			Assert.Equal(1, harness.Settings.ImportCommitRequests);
+			Assert.Equal(1, harness.Settings.ImportPublishRequests);
+			Assert.True(harness.Provider.Disposed);
+		}
+		[Fact]
+		public async Task ImportPublishFailureRequestsReconciliationBeforeFrozenIngressReplay()
+		{
+			var harness = await Harness.Initialized();
+			harness.Settings.Provider.NextImport = new Dictionary<string, object>();
+			harness.Settings.Provider.SaveFailure = new IOException("synthetic");
+			var stage = await harness.Settings.PrepareImportAsync("synthetic");
+			harness.Settings.BlockCommit = true;
+			string nameWhenReconciliationRequested = null;
+			harness.Provider.RequestObserved = count =>
+			{
+				if (count == 2) nameWhenReconciliationRequested = harness.Runtime.State.Records[A].Name.Value;
+			};
+			var commit = harness.Runtime.CommitPreparedImportAsync(stage, false, TestContext.Current.CancellationToken);
+			await harness.Settings.CommitStarted.Task;
+			harness.Provider.PublishStable(Batch(1, 2, A, Entry(A, 0, "after", "wall")));
+			harness.Settings.CommitRelease.TrySetResult(true);
+
+			var result = await commit;
+
+			Assert.Equal(SettingsImportCommitStatus.PublishFailed, result.Status);
+			Assert.Equal("name", nameWhenReconciliationRequested);
+			Assert.Equal("after", harness.Runtime.State.Records[A].Name.Value);
+			Assert.Equal(2, harness.Provider.ReconciliationRequestCount);
+			Assert.Equal(1, harness.Settings.ImportCommitRequests);
+			Assert.Equal(0, harness.Settings.ImportPublishRequests);
+			Assert.Equal(0, harness.Settings.ImportDiscardRequests);
+		}
+		[Fact]
+		public async Task PreparedImportSessionCannotBeExecutedTwice()
+		{
+			var harness = await Harness.Initialized();
+			harness.Settings.Provider.NextImport = new Dictionary<string, object>();
+			var stage = await harness.Settings.PrepareImportAsync("synthetic");
+			var session = new DesktopPreparedImportSession(harness.Settings.ClaimImport(stage), false, false, harness.Runtime, harness.Settings);
+
+			var outcome = await session.ExecuteAsync(TestContext.Current.CancellationToken);
+
+			Assert.Equal(DesktopImportTransactionOutcomeKind.CommitPreparedRuntime, outcome.Kind);
+			await Assert.ThrowsAsync<InvalidOperationException>(() => session.ExecuteAsync(TestContext.Current.CancellationToken));
+			Assert.Empty(session.Complete());
+			Assert.Equal(1, harness.Settings.ImportCommitRequests);
+		}
+
+		[Fact]
+		public async Task ForeignPreparedImportStageIsRejectedWithoutRuntimeExchange()
+		{
+			var harness = await Harness.Initialized();
+			var foreignSettings = new FakeSettings(DesktopStartupSeed.Empty);
+			foreignSettings.Provider.NextImport = new Dictionary<string, object>
+			{
+				[SettingsService.DesktopNamesKey + "#Count"] = 2,
+				[SettingsService.DesktopNamesKey + "[0]"] = "foreign-a",
+				[SettingsService.DesktopNamesKey + "[1]"] = "foreign-b",
+				[SettingsService.DesktopWallpaperPathsKey + "#Count"] = 2,
+				[SettingsService.DesktopWallpaperPathsKey + "[0]"] = "foreign-wall-a",
+				[SettingsService.DesktopWallpaperPathsKey + "[1]"] = "foreign-wall-b",
+			};
+			var foreignStage = await foreignSettings.PrepareImportAsync("synthetic");
+			var before = harness.Runtime.State;
+			var projectionCount = harness.Settings.ProjectionCount;
+			var saveRequests = harness.Settings.SaveRequests;
+			var stateChanged = 0;
+			harness.Runtime.StateChanged += (_, __) => stateChanged++;
+
+			var result = await harness.Runtime.CommitPreparedImportAsync(foreignStage, true, TestContext.Current.CancellationToken);
+
+			Assert.Equal(SettingsImportCommitStatus.InvalidStage, result.Status);
+			Assert.Same(before, harness.Runtime.State);
+			Assert.Equal(0, harness.Operations.CreateCalls);
+			Assert.Empty(harness.Operations.RemovedIds);
+			Assert.Equal(0, harness.Operations.NameCalls);
+			Assert.Equal(0, harness.Operations.WallpaperCalls);
+			Assert.Equal(0, harness.Settings.ImportCommitRequests);
+			Assert.Equal(0, harness.Settings.ImportPublishRequests);
+			Assert.Equal(0, harness.Settings.ImportDiscardRequests);
+			Assert.Equal(1, harness.Provider.ReconciliationRequestCount);
+			Assert.Equal(projectionCount, harness.Settings.ProjectionCount);
+			Assert.Equal(saveRequests, harness.Settings.SaveRequests);
+			Assert.Equal(0, stateChanged);
+			Assert.True(foreignSettings.Provider.ImportTransactionActive);
+			Assert.Equal(SettingsImportCommitStatus.Discarded, foreignSettings.Provider.DiscardStagedImport(foreignStage).Status);
+			Assert.Equal(SettingsImportCommitStatus.InvalidStage, foreignSettings.Provider.DiscardStagedImport(foreignStage).Status);
+		}
+
+		[Fact]
+		public async Task ForeignStageClaimAndOwnerDiscardRaceDoesNotStartImportOperations()
+		{
+			var harness = await Harness.Initialized();
+			var foreignSettings = new FakeSettings(DesktopStartupSeed.Empty);
+			foreignSettings.Provider.NextImport = new Dictionary<string, object>
+			{
+				[SettingsService.DesktopNamesKey + "#Count"] = 2,
+				[SettingsService.DesktopNamesKey + "[0]"] = "foreign-a",
+				[SettingsService.DesktopNamesKey + "[1]"] = "foreign-b",
+			};
+			var foreignStage = await foreignSettings.PrepareImportAsync("synthetic");
+			var release = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+			var localAttempt = Task.Run(async () =>
+			{
+				await release.Task;
+				return await harness.Runtime.CommitPreparedImportAsync(foreignStage, true, TestContext.Current.CancellationToken);
+			});
+			var ownerDiscard = Task.Run(async () =>
+			{
+				await release.Task;
+				return foreignSettings.Provider.DiscardStagedImport(foreignStage);
+			});
+			release.TrySetResult(true);
+
+			var localResult = await localAttempt;
+			var discardResult = await ownerDiscard;
+
+			Assert.Equal(SettingsImportCommitStatus.InvalidStage, localResult.Status);
+			Assert.Equal(SettingsImportCommitStatus.Discarded, discardResult.Status);
+			Assert.Equal(0, harness.Operations.CreateCalls);
+			Assert.Empty(harness.Operations.RemovedIds);
+			Assert.Equal(0, harness.Operations.NameCalls);
+			Assert.Equal(0, harness.Operations.WallpaperCalls);
+			Assert.Equal(0, harness.Settings.ImportCommitRequests);
+			Assert.Equal(0, harness.Settings.ImportDiscardRequests);
+			Assert.Equal(0, harness.Settings.ImportPublishRequests);
+			Assert.Equal(1, harness.Provider.ReconciliationRequestCount);
+		}
+
+		[Fact]
+		public async Task ImportStageClaimIsSingleUseAcrossCommitAndDiscard()
+		{
+			var settings = new FakeSettings(DesktopStartupSeed.Empty);
+			settings.Provider.NextImport = new Dictionary<string, object>();
+			var discardedStage = await settings.PrepareImportAsync("discard");
+			var discardedClaim = settings.ClaimImport(discardedStage);
+
+			Assert.NotNull(discardedClaim);
+			Assert.Null(settings.ClaimImport(discardedStage));
+			Assert.Equal(SettingsImportCommitStatus.Publishing, settings.Provider.DiscardStagedImport(discardedStage).Status);
+			Assert.Equal(SettingsImportCommitStatus.Discarded, settings.DiscardImport(discardedClaim).Status);
+			Assert.Equal(SettingsImportCommitStatus.InvalidStage, settings.DiscardImport(discardedClaim).Status);
+			Assert.Null(settings.ClaimImport(discardedStage));
+
+			settings.Provider.NextImport = new Dictionary<string, object>();
+			var committedStage = await settings.PrepareImportAsync("commit");
+			var committedClaim = settings.ClaimImport(committedStage);
+			var committed = await settings.CommitImportAsync(committedClaim, committedStage.CreateCommitDictionary());
+
+			Assert.True(committed.Succeeded);
+			Assert.Null(settings.ClaimImport(committedStage));
+			Assert.Equal(SettingsImportCommitStatus.InvalidStage, (await settings.CommitImportAsync(committedClaim, committedStage.CreateCommitDictionary())).Status);
+			Assert.Equal(SettingsImportCommitStatus.InvalidStage, (await settings.Provider.CommitStagedImportAsync(committedStage, committedStage.CreateCommitDictionary())).Status);
+		}
+
+		[Fact]
+		public async Task PreCommitExceptionReturnsTypedFailureAndReleasesClaim()
+		{
+			var harness = await Harness.Initialized();
+			harness.Settings.Provider.NextImport = new Dictionary<string, object>();
+			harness.Settings.CommitException = new IOException("synthetic");
+			var stage = await harness.Settings.PrepareImportAsync("synthetic");
+			var before = harness.Runtime.State;
+			var faults = new List<DesktopRuntimeFault>();
+			harness.Runtime.Faulted += (_, fault) => faults.Add(fault);
+
+			var result = await harness.Runtime.CommitPreparedImportAsync(stage, false, TestContext.Current.CancellationToken);
+
+			Assert.Equal(SettingsImportCommitStatus.PublishFailed, result.Status);
+			Assert.Same(before, harness.Runtime.State);
+			Assert.False(harness.Settings.Provider.ImportTransactionActive);
+			Assert.Equal(1, harness.Settings.ImportCommitRequests);
+			Assert.Equal(1, harness.Settings.ImportDiscardRequests);
+			Assert.Equal(0, harness.Settings.ImportPublishRequests);
+			Assert.Equal(2, harness.Provider.ReconciliationRequestCount);
+			Assert.Contains(faults, fault => fault.Category == "SettingsTransaction" && fault.ExceptionType == typeof(IOException).FullName);
+		}
+
+		[Fact]
+		public async Task PostCommitPublicationExceptionReportsConsistencyWithoutRollbackAndReplaysIngress()
+		{
+			var harness = await Harness.Initialized();
+			harness.Settings.Provider.NextImport = new Dictionary<string, object>
+			{
+				[SettingsService.DesktopNamesKey + "#Count"] = 1,
+				[SettingsService.DesktopNamesKey + "[0]"] = "imported",
+			};
+			var stage = await harness.Settings.PrepareImportAsync("synthetic");
+			harness.Settings.BlockCommit = true;
+			harness.Settings.PublishException = new IOException("synthetic");
+			harness.Provider.EnqueueResult(Batch(1, 2, A, Entry(A, 0, "imported", "wall")));
+			var faults = new List<DesktopRuntimeFault>();
+			harness.Runtime.Faulted += (_, fault) => faults.Add(fault);
+			string nameWhenRecoveryRequested = null;
+			harness.Provider.RequestObserved = count =>
+			{
+				if (count == 3) nameWhenRecoveryRequested = harness.Runtime.State.Records[A].Name.Value;
+			};
+			var commit = harness.Runtime.CommitPreparedImportAsync(stage, true, TestContext.Current.CancellationToken);
+			await harness.Settings.CommitStarted.Task;
+			harness.Provider.PublishStable(Batch(1, 3, A, Entry(A, 0, "after", "wall")));
+			harness.Settings.CommitRelease.TrySetResult(true);
+
+			var result = await commit;
+
+			Assert.Equal(SettingsImportCommitStatus.CompletedWithFailures, result.Status);
+			Assert.NotNull(result.SaveResult);
+			Assert.Equal("imported", nameWhenRecoveryRequested);
+			Assert.Equal("after", harness.Runtime.State.Records[A].Name.Value);
+			Assert.True(harness.Settings.Provider.TryGetValue(SettingsService.DesktopNamesKey + "[0]", out string persisted));
+			Assert.Equal("after", persisted);
+			Assert.Contains(harness.Settings.Provider.SavedDictionaries, dictionary => dictionary.TryGetValue(SettingsService.DesktopNamesKey + "[0]", out var value) && Equals(value, "imported"));
+			Assert.False(harness.Settings.Provider.ImportTransactionActive);
+			Assert.Equal(1, harness.Settings.ImportCommitRequests);
+			Assert.Equal(1, harness.Settings.ImportPublishRequests);
+			Assert.Equal(0, harness.Settings.ImportDiscardRequests);
+			Assert.Equal(3, harness.Provider.ReconciliationRequestCount);
+			Assert.Contains(faults, fault => fault.Category == "SettingsTransaction.PostCommitConsistency" && fault.ExceptionType == typeof(IOException).FullName);
+		}
+
+		[Fact]
+		public async Task ImportSubscriberExceptionsDoNotRollbackCommittedState()
+		{
+			var harness = await Harness.Initialized();
+			harness.Settings.Provider.NextImport = new Dictionary<string, object>
+			{
+				[SettingsService.DesktopNamesKey + "#Count"] = 1,
+				[SettingsService.DesktopNamesKey + "[0]"] = "imported",
+			};
+			var stage = await harness.Settings.PrepareImportAsync("synthetic");
+			harness.Provider.EnqueueResult(Batch(1, 2, A, Entry(A, 0, "imported", "wall")));
+			var reloaded = 0;
+			harness.Settings.Provider.Reloaded += (_, __) => throw new InvalidOperationException("synthetic");
+			harness.Settings.Provider.Reloaded += (_, __) => reloaded++;
+			var stateChanged = 0;
+			harness.Runtime.StateChanged += (_, __) => throw new InvalidOperationException("synthetic");
+			harness.Runtime.StateChanged += (_, __) => stateChanged++;
+			var faults = new List<DesktopRuntimeFault>();
+			harness.Runtime.Faulted += (_, fault) => faults.Add(fault);
+
+			var result = await harness.Runtime.CommitPreparedImportAsync(stage, true, TestContext.Current.CancellationToken);
+
+			Assert.True(result.Succeeded);
+			Assert.Equal("imported", harness.Runtime.State.Records[A].Name.Value);
+			Assert.Equal(1, reloaded);
+			Assert.Equal(1, stateChanged);
+			Assert.Contains(faults, fault => fault.Category == "StateChangedSubscriber");
+			Assert.False(harness.Settings.Provider.ImportTransactionActive);
+		}
 	}
 }

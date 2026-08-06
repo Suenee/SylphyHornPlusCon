@@ -97,7 +97,7 @@ namespace SylphyHorn.Services.DesktopTransitions
 		}
 	}
 
-	internal sealed class DesktopTransitionRuntime : IDisposable, IDesktopStartupTransactionRuntime
+	internal sealed class DesktopTransitionRuntime : IDisposable, IDesktopStartupTransactionRuntime, IDesktopImportTransactionRuntime
 	{
 		private readonly IDesktopProviderClient _provider;
 		private readonly IDesktopSettingsTransactions _settings;
@@ -109,15 +109,13 @@ namespace SylphyHorn.Services.DesktopTransitions
 		private readonly List<ProviderWaitRace> _providerWaits = new List<ProviderWaitRace>();
 		private DesktopPersistenceProtection _persistenceProtection;
 		private readonly Queue<Action> _deferredCommands = new Queue<Action>();
-		private readonly Queue<Action> _frozenProviderIngress = new Queue<Action>();
 		private DesktopTransitionCoordinator _coordinator;
 		private DesktopTransitionCoordinator.DesktopPreparedRuntime _preparedRuntime;
-		private StagedSettingsImport _activeSettingsStage;
+		private DesktopPreparedImportSession _activeImportSession;
 		private Task<SettingsImportCommitResult> _activeImportCommit;
 		private Task<DesktopRuntimeShutdownResult> _shutdownTask;
 		private bool _publishing;
 		private bool _deferredDrainScheduled;
-		private bool _importCommitFrozen;
 		private bool _providerEventsSubscribed;
 		private bool _suppressPublication;
 		private DesktopCoordinatorTransition _suppressedTransition;
@@ -163,6 +161,22 @@ namespace SylphyHorn.Services.DesktopTransitions
 			=> this.ApplyStableBatchToPrepared(batch);
 		void IDesktopStartupTransactionRuntime.ReportUnconfirmedOverride(Guid desktopId, DesktopPropertyKind property)
 			=> this.ReportUnconfirmedOverride(desktopId, property);
+
+		DesktopRuntimeState IDesktopImportTransactionRuntime.State => this.State;
+		DesktopTransitionCoordinator.DesktopPreparedRuntime IDesktopImportTransactionRuntime.BeginPreparedRuntime()
+			=> this._coordinator.BeginStagedRuntime();
+		Task<VirtualDesktopReconciliationResult> IDesktopImportTransactionRuntime.RequestProviderAsync(VirtualDesktopStableReason reason, CancellationToken cancellationToken)
+			=> this.RequestProviderWithBudgetAsync(reason, cancellationToken);
+		bool IDesktopImportTransactionRuntime.ExecuteTopologyPlan(DesktopStartupOverridePlan plan, DesktopOperationJournal journal)
+			=> this.ExecuteTopologyPlan(plan, journal);
+		bool IDesktopImportTransactionRuntime.ApplySeed(DesktopTransitionCoordinator.DesktopPreparedRuntime prepared, DesktopStartupSeed seed, bool overrideDesktops, DesktopOperationJournal journal, bool resetPositions)
+			=> this.ApplySeedToPreparedRuntime(prepared, seed, overrideDesktops, journal, resetPositions);
+		bool IDesktopImportTransactionRuntime.CanCommitPreparedRuntime(DesktopTransitionCoordinator.DesktopPreparedRuntime prepared)
+			=> this._coordinator.CanCommitStagedRuntime(prepared);
+		void IDesktopImportTransactionRuntime.ReportUnconfirmedOverride(Guid desktopId, DesktopPropertyKind property)
+			=> this.ReportUnconfirmedOverride(desktopId, property);
+		void IDesktopImportTransactionRuntime.ReportFault(Type exceptionType)
+			=> this.ReportFault(new DesktopRuntimeFault("SettingsTransaction", exceptionType));
 
 		internal async Task<DesktopRuntimeInitializationResult> InitializeAsync(bool overrideDesktopsOnStartup = false, CancellationToken cancellationToken = default(CancellationToken))
 		{
@@ -232,7 +246,7 @@ namespace SylphyHorn.Services.DesktopTransitions
 			using (var providerCancellation = new CancellationTokenSource())
 			using (var timeoutCancellation = new CancellationTokenSource())
 			{
-				var providerState = this._preparedRuntime?.Coordinator.State ?? this.State;
+				var providerState = this._activeImportSession?.PreparedState ?? this._preparedRuntime?.Coordinator.State ?? this.State;
 				var race = new ProviderWaitRace(providerCancellation, providerState?.ProviderEpoch ?? 0, providerState?.ProviderSnapshotRevision ?? 0);
 				CancellationTokenRegistration callerCancellation = default(CancellationTokenRegistration);
 				this.RegisterProviderWait(race);
@@ -373,141 +387,107 @@ namespace SylphyHorn.Services.DesktopTransitions
 		{
 			this.EnsureOwnerAccess();
 			if (stage == null) throw new ArgumentNullException(nameof(stage));
+			var claim = this._settings.ClaimImport(stage);
+			if (claim == null) return new SettingsImportCommitResult(SettingsImportCommitStatus.InvalidStage, null);
 			if (this._stopping)
 			{
-				this._settings.DiscardImport(stage);
+				this._settings.DiscardImport(claim);
 				return SettingsImportCommitResult.ShuttingDown();
 			}
 			if (cancellationToken.IsCancellationRequested)
 			{
-				this._settings.DiscardImport(stage);
+				this._settings.DiscardImport(claim);
 				return SettingsImportCommitResult.Cancelled();
 			}
 
-			var prepared = this._coordinator.BeginStagedRuntime();
-			this._preparedRuntime = prepared;
-			this._activeSettingsStage = stage;
-			var preImportProjection = CreateProjection(this.State);
-			var frozen = false;
-			DesktopOperationJournal journal = null;
+			var session = new DesktopPreparedImportSession(claim, overrideDesktops, resetPositions, this, this._settings);
+			this._activeImportSession = session;
+			var requestReconciliation = false;
 			try
 			{
-				var seed = SettingsService.CaptureDesktopStartupSeed(stage.Settings);
-				if (overrideDesktops && DesktopStartupOverridePlan.GetTargetCount(seed) > 0)
+				var outcome = await session.ExecuteAsync(cancellationToken);
+				try
 				{
-					var plan = DesktopStartupOverridePlan.Create(prepared.Coordinator.State, DesktopStartupOverridePlan.GetTargetCount(seed));
-					journal = new DesktopOperationJournal(plan);
-					if (!this.ExecuteTopologyPlan(plan, journal))
-						return await this.RecoverFailedImportAsync(stage, preImportProjection, journal, cancellationToken);
-					if (plan.CreateCount != 0 || plan.RemoveIds.Count != 0)
+					switch (outcome.Kind)
 					{
-						var topology = await this.RequestProviderWithBudgetAsync(VirtualDesktopStableReason.ExplicitReconciliation, cancellationToken);
-						if (topology.Status != VirtualDesktopReconciliationStatus.Succeeded)
-							return await this.FailImportWithoutStableStateAsync(stage, topology, preImportProjection, journal);
-						this.ApplyStableBatchToPrepared(topology.Batch);
-						if (prepared.Coordinator.State.Order.Count != plan.TargetCount)
-							return await this.RecoverFailedImportAsync(stage, preImportProjection, journal, cancellationToken);
+						case DesktopImportTransactionOutcomeKind.CommitPreparedRuntime:
+							return this.CommitPreparedImportOutcome(session, outcome, ref requestReconciliation);
+						case DesktopImportTransactionOutcomeKind.ApplyRecoveredState:
+							var recoveredIngress = this.DetachImportSession(session);
+							this._persistenceProtection = outcome.PersistenceProtection;
+							this.ApplyStableBatch(outcome.RecoveryBatch);
+							this.ReplayImportIngress(recoveredIngress);
+							return outcome.Result;
+						case DesktopImportTransactionOutcomeKind.Discarded:
+							if (outcome.PersistenceProtection != null) this._persistenceProtection = outcome.PersistenceProtection;
+							return outcome.Result;
+						case DesktopImportTransactionOutcomeKind.DiscardedAndReconcile:
+							if (outcome.PersistenceProtection != null) this._persistenceProtection = outcome.PersistenceProtection;
+							requestReconciliation = true;
+							return outcome.Result;
+						default:
+							throw new InvalidOperationException("Unknown prepared import transaction outcome.");
 					}
 				}
-
-				var propertiesSucceeded = this.ApplySeedToPreparedRuntime(prepared, seed, overrideDesktops, journal, resetPositions);
-				if (overrideDesktops && DesktopStartupOverridePlan.GetTargetCount(seed) > 0)
+				catch (Exception ex)
 				{
-					var confirmation = await this.RequestProviderWithBudgetAsync(VirtualDesktopStableReason.ExplicitReconciliation, cancellationToken);
-					if (confirmation.Status != VirtualDesktopReconciliationStatus.Succeeded)
-						return await this.FailImportWithoutStableStateAsync(stage, confirmation, preImportProjection, journal);
-					journal.Confirm(confirmation.Batch, this.ReportUnconfirmedOverride);
-					if (!propertiesSucceeded || journal.HasFailures)
-						return this.CompleteFailedImportWithStableState(stage, preImportProjection, confirmation.Batch, journal);
-					this.ApplyStableBatchToPrepared(confirmation.Batch);
+					requestReconciliation = true;
+					this.ReportFault(new DesktopRuntimeFault("SettingsTransaction", ex.GetType()));
+					return SettingsImportCommitResult.Failed();
 				}
-				if (cancellationToken.IsCancellationRequested)
-				{
-					if (journal?.MayHaveMutated == true) this.ProtectFailedImportPreState(preImportProjection, journal);
-					this._settings.DiscardImport(stage);
-					return SettingsImportCommitResult.Cancelled();
-				}
-
-				this._importCommitFrozen = true;
-				frozen = true;
-				var frozenState = prepared.Coordinator.State;
-				var dictionary = stage.CreateCommitDictionary();
-				SettingsService.ApplyDesktopProjection(dictionary, CreateProjection(frozenState));
-				var result = await this._settings.CommitImportAsync(stage, dictionary);
-				if (!result.Succeeded) return result;
-				this.EnsureOwnerAccess();
-				this._persistenceProtection = null;
-				var transition = this._coordinator.CommitStagedRuntime(prepared, false);
-				this._preparedRuntime = null;
-				this._settings.PublishImportCommitted();
-				this.ApplyTransition(transition, false, false);
-				this._importCommitFrozen = false;
-				frozen = false;
-				this.ReplayFrozenProviderIngress();
-				return result;
-			}
-			catch (OperationCanceledException)
-			{
-				if (journal?.MayHaveMutated == true) this.ProtectFailedImportPreState(preImportProjection, journal);
-				this._settings.DiscardImport(stage);
-				return SettingsImportCommitResult.Cancelled();
-			}
-			catch (Exception ex)
-			{
-				if (journal?.MayHaveMutated == true) this.ProtectFailedImportPreState(preImportProjection, journal);
-				this._settings.DiscardImport(stage);
-				this.ReportFault(new DesktopRuntimeFault("SettingsTransaction", ex.GetType()));
-				return SettingsImportCommitResult.Failed();
 			}
 			finally
 			{
-				if (this._preparedRuntime != null)
-				{
-					this._preparedRuntime = null;
-					if (!this._stopping) _ = this.RequestReconciliationAsync();
-				}
-				if (frozen)
-				{
-					this._importCommitFrozen = false;
-					this.ReplayFrozenProviderIngress();
-				}
-				this._activeSettingsStage = null;
+				var frozenIngress = ReferenceEquals(this._activeImportSession, session)
+					? this.DetachImportSession(session)
+					: Array.Empty<DesktopImportProviderIngress>();
+				if (requestReconciliation && !this._stopping) _ = this.RequestReconciliationAsync();
+				this.ReplayImportIngress(frozenIngress);
 				this.ScheduleDeferredCommands();
 			}
 		}
 
-		private async Task<SettingsImportCommitResult> RecoverFailedImportAsync(StagedSettingsImport stage, DesktopSettingsProjection preImportProjection, DesktopOperationJournal journal, CancellationToken cancellationToken)
+		private SettingsImportCommitResult CommitPreparedImportOutcome(
+			DesktopPreparedImportSession session,
+			DesktopImportTransactionOutcome outcome,
+			ref bool requestReconciliation)
 		{
-			var recovery = await this.RequestProviderWithBudgetAsync(VirtualDesktopStableReason.Recovery, cancellationToken);
-			if (recovery.Status != VirtualDesktopReconciliationStatus.Succeeded)
-				return await this.FailImportWithoutStableStateAsync(stage, recovery, preImportProjection, journal);
-			return this.CompleteFailedImportWithStableState(stage, preImportProjection, recovery.Batch, journal);
+			try
+			{
+				this._persistenceProtection = null;
+				var transition = this._coordinator.CommitStagedRuntime(outcome.PreparedRuntime, false);
+				if (!transition.Accepted)
+					throw new InvalidOperationException("The prepared runtime could not be activated after the settings commit.");
+				this._settings.PublishImportCommitted();
+				this.ApplyTransition(transition, false, false);
+				this.ReplayImportIngress(this.DetachImportSession(session));
+				return outcome.Result;
+			}
+			catch (Exception ex)
+			{
+				requestReconciliation = true;
+				this.ReportFault(new DesktopRuntimeFault("SettingsTransaction.PostCommitConsistency", ex.GetType()));
+				return SettingsImportCommitResult.CompletedWithFailures(outcome.Result.SaveResult);
+			}
+		}
+		private IReadOnlyList<DesktopImportProviderIngress> DetachImportSession(DesktopPreparedImportSession session)
+		{
+			var ingress = session.Complete();
+			if (ReferenceEquals(this._activeImportSession, session)) this._activeImportSession = null;
+			return ingress;
 		}
 
-		private Task<SettingsImportCommitResult> FailImportWithoutStableStateAsync(StagedSettingsImport stage, VirtualDesktopReconciliationResult result, DesktopSettingsProjection preImportProjection, DesktopOperationJournal journal)
+		private void ReplayImportIngress(IEnumerable<DesktopImportProviderIngress> ingress)
 		{
-			if (journal?.MayHaveMutated == true) this.ProtectFailedImportPreState(preImportProjection, journal);
-			this._settings.DiscardImport(stage);
-			this._preparedRuntime = null;
-			if (result.Status == VirtualDesktopReconciliationStatus.Cancelled) return Task.FromResult(SettingsImportCommitResult.Cancelled());
-			if (result.Status == VirtualDesktopReconciliationStatus.ShuttingDown) return Task.FromResult(SettingsImportCommitResult.ShuttingDown());
-			if (result.Status == VirtualDesktopReconciliationStatus.SupersededByReset) return Task.FromResult(SettingsImportCommitResult.SupersededByReset());
-			return Task.FromResult(SettingsImportCommitResult.FailedWithoutStableState());
+			if (ingress == null || this._stopping) return;
+			foreach (var item in ingress)
+			{
+				if (this._stopping) break;
+				if (item.StableBatch != null) this.ApplyStableBatch(item.StableBatch);
+				else if (item.CurrentTransition != null) this.ApplyCurrentTransition(item.CurrentTransition);
+			}
 		}
 
-		private SettingsImportCommitResult CompleteFailedImportWithStableState(StagedSettingsImport stage, DesktopSettingsProjection preImportProjection, VirtualDesktopStableBatch batch, DesktopOperationJournal journal)
-		{
-			this._settings.DiscardImport(stage);
-			this._preparedRuntime = null;
-			this.ProtectFailedImportPreState(preImportProjection, journal);
-			this.ApplyStableBatch(batch);
-			return SettingsImportCommitResult.CompletedWithFailures();
-		}
-
-		private void ProtectFailedImportPreState(DesktopSettingsProjection preImportProjection, DesktopOperationJournal journal)
-		{
-			this._persistenceProtection = DesktopPersistenceProtection.FromProjection(preImportProjection, this.State, journal?.HasPropertyOperations == true ? journal : null);
-		}
 		internal Task<DesktopRuntimeShutdownResult> ShutdownAsync()
 		{
 			if (this._shutdownTask != null) return this._shutdownTask;
@@ -518,18 +498,16 @@ namespace SylphyHorn.Services.DesktopTransitions
 		private async Task<DesktopRuntimeShutdownResult> ShutdownCoreAsync()
 		{
 			this._shutdownStarted = true;
-			if (this._deferredCommands.Count != 0) this.DrainDeferredCommands();
 			if (this._activeImportCommit != null && !this._activeImportCommit.IsCompleted)
 				await this._activeImportCommit;
-			if (this._activeSettingsStage != null)
+			if (this._activeImportSession != null)
 			{
-				var discard = this._settings.DiscardImport(this._activeSettingsStage);
+				var session = this._activeImportSession;
+				var discard = session.DiscardForShutdown();
 				if (discard.Status != SettingsImportCommitStatus.Publishing)
-				{
-					this._activeSettingsStage = null;
-					this._preparedRuntime = null;
-				}
+					this.ReplayImportIngress(this.DetachImportSession(session));
 			}
+			if (this._deferredCommands.Count != 0) this.DrainDeferredCommands();
 
 			var final = await this._provider.RequestReconciliationAsync(VirtualDesktopStableReason.Recovery, CancellationToken.None);
 			SettingsSaveResult saveResult = null;
@@ -585,17 +563,11 @@ namespace SylphyHorn.Services.DesktopTransitions
 			this._initialized = false;
 			this._stopping = true;
 			this._preparedRuntime = null;
-			this._frozenProviderIngress.Clear();
 			this._deferredCommands.Clear();
 			this.UnsubscribeProviderEvents();
 			this._provider.Dispose();
 		}
 
-		private void ReplayFrozenProviderIngress()
-		{
-			while (!this._importCommitFrozen && this._frozenProviderIngress.Count != 0 && !this._stopping)
-				this._frozenProviderIngress.Dequeue()();
-		}
 		private DesktopRuntimeInitializationResult CompleteInitialization(VirtualDesktopReconciliationResult result, DesktopStartupPublicationMode publicationMode)
 		{
 			this.EnsureOwnerAccess();
@@ -638,10 +610,18 @@ namespace SylphyHorn.Services.DesktopTransitions
 		private void ApplyStableBatch(VirtualDesktopStableBatch batch, bool providerPublication = false)
 		{
 			this.EnsureOwnerAccess();
-			if (this._importCommitFrozen)
+			if (this._activeImportSession != null)
 			{
-				this._frozenProviderIngress.Enqueue(() => this.ApplyStableBatch(batch));
-				return;
+				var frozen = this._activeImportSession.Phase == DesktopImportSessionPhase.CommitFrozen;
+				if (this._activeImportSession.RouteStable(batch))
+				{
+					if (providerPublication && !frozen)
+					{
+						this.ReserveProviderPublication(batch);
+						this.CompleteReservedProviderPublications();
+					}
+					return;
+				}
 			}
 			var state = this.State;
 			if (state != null && batch != null && (batch.ProviderEpoch < state.ProviderEpoch || (batch.ProviderEpoch == state.ProviderEpoch && batch.SnapshotRevision <= state.ProviderSnapshotRevision))) return;
@@ -667,20 +647,15 @@ namespace SylphyHorn.Services.DesktopTransitions
 		private void ApplyCurrentTransition(VirtualDesktopCurrentTransition transition)
 		{
 			this.EnsureOwnerAccess();
-			if (this._importCommitFrozen)
-			{
-				this._frozenProviderIngress.Enqueue(() => this.ApplyCurrentTransition(transition));
-				return;
-			}
+			if (this._activeImportSession?.RouteCurrent(transition) == true) return;
 			if (this._preparedRuntime != null) this._preparedRuntime.Coordinator.ApplyCurrentTransition(transition);
 			else this.ApplyTransition(this._coordinator.ApplyCurrentTransition(transition));
 		}
-
 		private void PublishInitialization()
 		{
 			var state = this.State;
 			if (state == null) return;
-			var projection = CreateProjection(state);
+			var projection = DesktopRuntimeProjection.Create(state);
 			var changed = new DesktopStateChanged(DesktopStateChangeKind.Initialized, state, state.Order, null, null, null, null, null, null);
 			this.ApplyTransition(DesktopCoordinatorTransition.AcceptedChange(state, projection, changed, true, false, DesktopReconciliationReason.None));
 			this._suppressedTransition = null;
@@ -827,10 +802,10 @@ namespace SylphyHorn.Services.DesktopTransitions
 		{
 			if (command == null || this._shutdownStarted || this._stopping) return;
 			if (!this._owner.CheckAccess()) throw new InvalidOperationException("Desktop commands must be submitted on the owner Dispatcher.");
-			if (this._publishing || this._preparedRuntime != null || this._deferredDrainScheduled || this._deferredCommands.Count != 0)
+			if (this._publishing || this._preparedRuntime != null || this._activeImportSession != null || this._deferredDrainScheduled || this._deferredCommands.Count != 0)
 			{
 				this._deferredCommands.Enqueue(command);
-				if (!this._publishing && this._preparedRuntime == null) this.ScheduleDeferredCommands();
+				if (!this._publishing && this._preparedRuntime == null && this._activeImportSession == null) this.ScheduleDeferredCommands();
 				return;
 			}
 			command();
@@ -838,7 +813,7 @@ namespace SylphyHorn.Services.DesktopTransitions
 
 		private void ScheduleDeferredCommands()
 		{
-			if (this._deferredDrainScheduled || this._deferredCommands.Count == 0 || this._stopping) return;
+			if (this._deferredDrainScheduled || this._deferredCommands.Count == 0 || this._publishing || this._preparedRuntime != null || this._activeImportSession != null || this._shutdownStarted || this._stopping) return;
 			this._deferredDrainScheduled = true;
 			if (!this._owner.Post(this.DrainDeferredCommands))
 			{
@@ -851,6 +826,11 @@ namespace SylphyHorn.Services.DesktopTransitions
 		private void DrainDeferredCommands()
 		{
 			this.EnsureOwnerAccess();
+			if (this._publishing || this._preparedRuntime != null || this._activeImportSession != null)
+			{
+				this._deferredDrainScheduled = false;
+				return;
+			}
 			try
 			{
 				var count = this._deferredCommands.Count;
@@ -887,14 +867,7 @@ namespace SylphyHorn.Services.DesktopTransitions
 				? record.WallpaperPath.Value
 				: null;
 		}
-		private static DesktopSettingsProjection CreateProjection(DesktopRuntimeState state)
-		{
-			if (state == null) throw new InvalidOperationException("The Coordinator has not accepted an initial stable state.");
-			return new DesktopSettingsProjection(
-				state.Order.Select(id => state.Records[id].Name.HasValue ? state.Records[id].Name.Value : null),
-				state.Order.Select(id => state.Records[id].WallpaperPath.HasValue ? state.Records[id].WallpaperPath.Value : null),
-				state.Order.Select(id => state.Records[id].WallpaperPosition));
-		}
+
 	}
 
 }

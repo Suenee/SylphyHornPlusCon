@@ -202,6 +202,9 @@ namespace SylphyHorn.Services.DesktopTransitions
 			return DesktopPreparedRuntime.Create(this._ownerToken, this._state, new DesktopTransitionCoordinator(this));
 		}
 
+		internal bool CanCommitStagedRuntime(DesktopPreparedRuntime prepared)
+			=> prepared != null && this._state != null && prepared.CanConsume(this._ownerToken, this._state);
+
 		internal DesktopCoordinatorTransition CommitStagedRuntime(DesktopPreparedRuntime prepared, bool requiresSave)
 		{
 			if (prepared == null || this._state == null || !prepared.TryConsume(this._ownerToken, this._state))
@@ -405,9 +408,12 @@ namespace SylphyHorn.Services.DesktopTransitions
 			internal DesktopTransitionCoordinator Coordinator { get; }
 			internal static DesktopPreparedRuntime Create(object ownerToken, DesktopRuntimeState sourceState, DesktopTransitionCoordinator coordinator)
 				=> new DesktopPreparedRuntime(ownerToken, sourceState, coordinator);
+			internal bool CanConsume(object ownerToken, DesktopRuntimeState state)
+				=> !this._consumed && ReferenceEquals(this._ownerToken, ownerToken) && ReferenceEquals(this._sourceState, state) && this.Coordinator?.State != null;
+
 			internal bool TryConsume(object ownerToken, DesktopRuntimeState state)
 			{
-				if (this._consumed || !ReferenceEquals(this._ownerToken, ownerToken) || !ReferenceEquals(this._sourceState, state) || this.Coordinator?.State == null) return false;
+				if (!this.CanConsume(ownerToken, state)) return false;
 				this._consumed = true;
 				return true;
 			}

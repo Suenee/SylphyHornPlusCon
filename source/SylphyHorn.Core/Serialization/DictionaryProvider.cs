@@ -25,6 +25,7 @@ namespace SylphyHorn.Serialization
 		private bool _importActive;
 		private SettingsImportTransactionPhase _importPhase;
 		private StagedSettingsImport _activeStage;
+		private object _activeStageClaimToken;
 		private bool _importNotificationPending;
 		private long _settingsRevision;
 		private long _requestedSaveRevision;
@@ -179,10 +180,40 @@ namespace SylphyHorn.Serialization
 			}
 		}
 
+		internal StagedSettingsImportClaim ClaimStagedImport(StagedSettingsImport stage)
+		{
+			lock (this._sync)
+			{
+				if (!this.IsCurrentStageUnderLock(stage) || this._importPhase != SettingsImportTransactionPhase.Prepared) return null;
+				this._activeStageClaimToken = new object();
+				this._importPhase = SettingsImportTransactionPhase.Claimed;
+				return new StagedSettingsImportClaim(stage, this._activeStageClaimToken);
+			}
+		}
+
+		internal Task<SettingsImportCommitResult> CommitClaimedImportAsync(StagedSettingsImportClaim claim, IDictionary<string, object> commitDictionary)
+			=> this.CommitStagedImportCoreAsync(claim, commitDictionary);
+
+		internal SettingsImportCommitResult DiscardClaimedImport(StagedSettingsImportClaim claim)
+			=> this.DiscardStagedImportCore(claim);
+
 		public async Task<SettingsImportCommitResult> CommitStagedImportAsync(StagedSettingsImport stage, IDictionary<string, object> commitDictionary)
 		{
-			if (!this.IsCurrentStage(stage)) return new SettingsImportCommitResult(SettingsImportCommitStatus.InvalidStage, null);
+			if (commitDictionary == null)
+			{
+				if (!this.IsCurrentStage(stage)) return new SettingsImportCommitResult(SettingsImportCommitStatus.InvalidStage, null);
+				throw new ArgumentNullException(nameof(commitDictionary));
+			}
+			var claim = this.ClaimStagedImport(stage);
+			if (claim == null) return new SettingsImportCommitResult(SettingsImportCommitStatus.InvalidStage, null);
+			return await this.CommitStagedImportCoreAsync(claim, commitDictionary).ConfigureAwait(false);
+		}
+
+		private async Task<SettingsImportCommitResult> CommitStagedImportCoreAsync(StagedSettingsImportClaim claim, IDictionary<string, object> commitDictionary)
+		{
+			if (!this.IsCurrentClaim(claim)) return new SettingsImportCommitResult(SettingsImportCommitStatus.InvalidStage, null);
 			if (commitDictionary == null) throw new ArgumentNullException(nameof(commitDictionary));
+			var stage = claim.Stage;
 
 			await this._serializationGate.WaitAsync().ConfigureAwait(false);
 			try
@@ -191,7 +222,7 @@ namespace SylphyHorn.Serialization
 				long currentRevision;
 				lock (this._sync)
 				{
-					if (!this.IsCurrentStageUnderLock(stage)) return new SettingsImportCommitResult(SettingsImportCommitStatus.InvalidStage, null);
+					if (!this.IsCurrentClaimUnderLock(claim)) return new SettingsImportCommitResult(SettingsImportCommitStatus.InvalidStage, null);
 					currentFingerprint = ComputeFingerprint(this._settings);
 					currentRevision = this._settingsRevision;
 				}
@@ -204,7 +235,7 @@ namespace SylphyHorn.Serialization
 
 				lock (this._sync)
 				{
-					if (!this.IsCurrentStageUnderLock(stage) || this._importPhase != SettingsImportTransactionPhase.Prepared)
+					if (!this.IsCurrentClaimUnderLock(claim))
 						return new SettingsImportCommitResult(SettingsImportCommitStatus.InvalidStage, null);
 					this._importPhase = SettingsImportTransactionPhase.Publishing;
 				}
@@ -229,6 +260,7 @@ namespace SylphyHorn.Serialization
 					this.AdvanceSettingsRevisionUnderLock();
 					this.ApplyDeferredMutationsUnderLock();
 					this._activeStage = null;
+					this._activeStageClaimToken = null;
 					this._importActive = false;
 					this._importPhase = SettingsImportTransactionPhase.None;
 					this._importNotificationPending = true;
@@ -251,13 +283,27 @@ namespace SylphyHorn.Serialization
 		}
 		public SettingsImportCommitResult DiscardStagedImport(StagedSettingsImport stage)
 		{
+			var claim = this.ClaimStagedImport(stage);
+			if (claim == null)
+			{
+				lock (this._sync)
+				{
+					if (this.IsCurrentStageUnderLock(stage) && (this._importPhase == SettingsImportTransactionPhase.Claimed || this._importPhase == SettingsImportTransactionPhase.Publishing))
+						return new SettingsImportCommitResult(SettingsImportCommitStatus.Publishing, null);
+				}
+				return new SettingsImportCommitResult(SettingsImportCommitStatus.InvalidStage, null);
+			}
+			return this.DiscardStagedImportCore(claim);
+		}
+
+		private SettingsImportCommitResult DiscardStagedImportCore(StagedSettingsImportClaim claim)
+		{
 			var startLoop = false;
 			lock (this._sync)
 			{
-				if (!this.IsCurrentStageUnderLock(stage)) return new SettingsImportCommitResult(SettingsImportCommitStatus.InvalidStage, null);
-				if (this._importPhase == SettingsImportTransactionPhase.Publishing)
-					return new SettingsImportCommitResult(SettingsImportCommitStatus.Publishing, null);
+				if (!this.IsCurrentClaimUnderLock(claim)) return new SettingsImportCommitResult(SettingsImportCommitStatus.InvalidStage, null);
 				this._activeStage = null;
+				this._activeStageClaimToken = null;
 				this._importActive = false;
 				this._importPhase = SettingsImportTransactionPhase.None;
 				this.ApplyDeferredMutationsUnderLock();
@@ -366,6 +412,7 @@ namespace SylphyHorn.Serialization
 			{
 				if (stage != null && !this.IsCurrentStageUnderLock(stage)) return;
 				this._activeStage = null;
+				this._activeStageClaimToken = null;
 				this._importActive = false;
 				this._importPhase = SettingsImportTransactionPhase.None;
 				this.ApplyDeferredMutationsUnderLock();
@@ -397,6 +444,17 @@ namespace SylphyHorn.Serialization
 
 		private bool IsCurrentStageUnderLock(StagedSettingsImport stage)
 			=> stage != null && stage.IsOwnedBy(this._stageOwnerToken) && this._importActive && ReferenceEquals(this._activeStage, stage);
+
+		private bool IsCurrentClaim(StagedSettingsImportClaim claim)
+		{
+			lock (this._sync) return this.IsCurrentClaimUnderLock(claim);
+		}
+
+		private bool IsCurrentClaimUnderLock(StagedSettingsImportClaim claim)
+			=> claim != null
+				&& this.IsCurrentStageUnderLock(claim.Stage)
+				&& this._importPhase == SettingsImportTransactionPhase.Claimed
+				&& ReferenceEquals(this._activeStageClaimToken, claim.ClaimToken);
 
 		private void AdvanceSettingsRevisionUnderLock()
 		{

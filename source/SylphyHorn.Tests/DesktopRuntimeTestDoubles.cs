@@ -69,6 +69,7 @@ namespace SylphyHorn.Tests
 		internal bool Disposed { get; private set; }
 		internal int ReconciliationRequestCount { get; private set; }
 		internal int StablePublicationCount { get; private set; }
+		internal Action<int> RequestObserved { get; set; }
 		internal void EnqueueResult(VirtualDesktopStableBatch batch) => this._results.Enqueue(VirtualDesktopReconciliationResult.Succeeded(batch));
 		internal void EnqueueResult(VirtualDesktopReconciliationResult result) => this._results.Enqueue(result);
 		internal void PublishStable(VirtualDesktopStableBatch batch) { this.StablePublicationCount++; this.StableBatchPublished?.Invoke(this, batch); }
@@ -77,6 +78,7 @@ namespace SylphyHorn.Tests
 		public Task<VirtualDesktopReconciliationResult> RequestReconciliationAsync(VirtualDesktopStableReason reason, CancellationToken cancellationToken)
 		{
 			this.ReconciliationRequestCount++;
+			this.RequestObserved?.Invoke(this.ReconciliationRequestCount);
 			if (this.Disposed) return Task.FromResult(VirtualDesktopReconciliationResult.ShuttingDown());
 			if (this.PublishSynchronouslyBeforeRequestCompletion != null)
 			{
@@ -94,7 +96,8 @@ namespace SylphyHorn.Tests
 			}
 			return Task.FromResult(this._results.Count == 0 ? VirtualDesktopReconciliationResult.Unavailable(VirtualDesktopProviderFailureCategory.ReconciliationUnavailable) : this._results.Dequeue());
 		}
-		public void Dispose() => this.Disposed = true;
+		internal Action Disposing { get; set; }
+		public void Dispose() { this.Disposing?.Invoke(); this.Disposed = true; }
 	}
 
 	internal sealed class FakeSettings : IDesktopSettingsTransactions
@@ -110,9 +113,14 @@ namespace SylphyHorn.Tests
 		internal DesktopSettingsProjection LastProjection { get; private set; }
 		internal int ProjectionCount { get; private set; }
 		internal int SaveRequests { get; private set; }
+		internal int ImportCommitRequests { get; private set; }
+		internal int ImportDiscardRequests { get; private set; }
+		internal int ImportPublishRequests { get; private set; }
 		internal long Revision { get; private set; }
 		internal Action ProjectionApplied { get; set; }
 		internal bool BlockCommit { get; set; }
+		internal Exception CommitException { get; set; }
+		internal Exception PublishException { get; set; }
 		internal TaskCompletionSource<bool> CommitStarted { get; } = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
 		internal TaskCompletionSource<bool> CommitRelease { get; } = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
 		public DesktopStartupSeed CaptureStartupSeed() => this.Seed;
@@ -130,17 +138,29 @@ namespace SylphyHorn.Tests
 		public Task<SettingsSaveResult> RequestSaveAsync(long stateRevision) { this.SaveRequests++; return this.Provider.SaveWithResultAsync(stateRevision); }
 		public Task<StagedSettingsImport> PrepareImportAsync(string path) => this.Provider.PrepareImportAsync(path);
 		public Task<StagedSettingsImport> PrepareResetAsync() => this.Provider.PrepareResetAsync();
-		public async Task<SettingsImportCommitResult> CommitImportAsync(StagedSettingsImport stage, IDictionary<string, object> dictionary)
+		public DesktopSettingsImportClaim ClaimImport(StagedSettingsImport stage) => DesktopSettingsImportClaim.TryCreate(this.Provider, stage);
+		public async Task<SettingsImportCommitResult> CommitImportAsync(DesktopSettingsImportClaim claim, IDictionary<string, object> dictionary)
 		{
+			this.ImportCommitRequests++;
 			if (this.BlockCommit)
 			{
 				this.CommitStarted.TrySetResult(true);
 				await this.CommitRelease.Task;
 			}
-			return await this.Provider.CommitStagedImportAsync(stage, dictionary);
+			if (this.CommitException != null) throw this.CommitException;
+			return await claim.CommitAsync(this.Provider, dictionary);
 		}
-		public SettingsImportCommitResult DiscardImport(StagedSettingsImport stage) => this.Provider.DiscardStagedImport(stage);
-		public void PublishImportCommitted() => this.Provider.PublishCommittedImport();
+		public SettingsImportCommitResult DiscardImport(DesktopSettingsImportClaim claim)
+		{
+			this.ImportDiscardRequests++;
+			return claim.Discard(this.Provider);
+		}
+		public void PublishImportCommitted()
+		{
+			this.ImportPublishRequests++;
+			if (this.PublishException != null) throw this.PublishException;
+			this.Provider.PublishCommittedImport();
+		}
 	}
 
 	internal sealed class TestDictionaryProvider : DictionaryProvider

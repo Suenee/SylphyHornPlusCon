@@ -25,8 +25,9 @@ namespace SylphyHorn.Services.DesktopTransitions
 		Task<SettingsSaveResult> RequestSaveAsync(long stateRevision);
 		Task<StagedSettingsImport> PrepareImportAsync(string path);
 		Task<StagedSettingsImport> PrepareResetAsync();
-		Task<SettingsImportCommitResult> CommitImportAsync(StagedSettingsImport stage, IDictionary<string, object> dictionary);
-		SettingsImportCommitResult DiscardImport(StagedSettingsImport stage);
+		DesktopSettingsImportClaim ClaimImport(StagedSettingsImport stage);
+		Task<SettingsImportCommitResult> CommitImportAsync(DesktopSettingsImportClaim claim, IDictionary<string, object> dictionary);
+		SettingsImportCommitResult DiscardImport(DesktopSettingsImportClaim claim);
 		void PublishImportCommitted();
 	}
 

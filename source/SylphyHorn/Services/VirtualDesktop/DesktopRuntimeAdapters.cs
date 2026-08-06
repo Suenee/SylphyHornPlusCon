@@ -19,6 +19,29 @@ namespace SylphyHorn.Services.DesktopTransitions
 		public void Dispose() => this._provider.Dispose();
 	}
 
+	internal sealed class DesktopSettingsImportClaim
+	{
+		private readonly StagedSettingsImportClaim _claim;
+
+		private DesktopSettingsImportClaim(StagedSettingsImportClaim claim)
+			=> this._claim = claim ?? throw new ArgumentNullException(nameof(claim));
+
+		internal StagedSettingsImport Stage => this._claim.Stage;
+
+		internal static DesktopSettingsImportClaim TryCreate(DictionaryProvider provider, StagedSettingsImport stage)
+		{
+			if (provider == null) throw new ArgumentNullException(nameof(provider));
+			var claim = provider.ClaimStagedImport(stage);
+			return claim == null ? null : new DesktopSettingsImportClaim(claim);
+		}
+
+		internal Task<SettingsImportCommitResult> CommitAsync(DictionaryProvider provider, IDictionary<string, object> dictionary)
+			=> (provider ?? throw new ArgumentNullException(nameof(provider))).CommitClaimedImportAsync(this._claim, dictionary);
+
+		internal SettingsImportCommitResult Discard(DictionaryProvider provider)
+			=> (provider ?? throw new ArgumentNullException(nameof(provider))).DiscardClaimedImport(this._claim);
+	}
+
 	internal sealed class ApplicationDesktopSettingsTransactions : IDesktopSettingsTransactions
 	{
 		private readonly LocalSettingsProvider _provider;
@@ -29,8 +52,9 @@ namespace SylphyHorn.Services.DesktopTransitions
 		public Task<SettingsSaveResult> RequestSaveAsync(long stateRevision) => this._provider.SaveWithResultAsync(stateRevision);
 		public Task<StagedSettingsImport> PrepareImportAsync(string path) => this._provider.PrepareImportAsync(path);
 		public Task<StagedSettingsImport> PrepareResetAsync() => this._provider.PrepareResetAsync();
-		public Task<SettingsImportCommitResult> CommitImportAsync(StagedSettingsImport stage, IDictionary<string, object> dictionary) => this._provider.CommitStagedImportAsync(stage, dictionary);
-		public SettingsImportCommitResult DiscardImport(StagedSettingsImport stage) => this._provider.DiscardStagedImport(stage);
+		public DesktopSettingsImportClaim ClaimImport(StagedSettingsImport stage) => DesktopSettingsImportClaim.TryCreate(this._provider, stage);
+		public Task<SettingsImportCommitResult> CommitImportAsync(DesktopSettingsImportClaim claim, IDictionary<string, object> dictionary) => claim.CommitAsync(this._provider, dictionary);
+		public SettingsImportCommitResult DiscardImport(DesktopSettingsImportClaim claim) => claim.Discard(this._provider);
 		public void PublishImportCommitted() => this._provider.PublishCommittedImport();
 	}
 
