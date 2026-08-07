@@ -49,8 +49,9 @@ namespace SylphyHorn.Services
 		{
 			unchecked
 			{
-				var hashCode = (this.ModifiersInternal ?? this.Modifiers)?.GetHashCode() ?? 0;
-				hashCode = (hashCode * 397) ^ (int)this.Key;
+				var hashCode = (int)this.Key;
+				foreach (var modifier in GetModifiers(this).OrderBy(x => x))
+					hashCode = (hashCode * 397) ^ (int)modifier;
 				return hashCode;
 			}
 		}
@@ -67,9 +68,8 @@ namespace SylphyHorn.Services
 		public static bool operator ==(ShortcutKey key1, ShortcutKey key2)
 		{
 			return key1.Key == key2.Key
-				&& Equals(
-					key1.ModifiersInternal ?? key1.Modifiers ?? Array.Empty<VirtualKey>(),
-					key2.ModifiersInternal ?? key2.Modifiers ?? Array.Empty<VirtualKey>());
+				&& GetModifiers(key1).OrderBy(x => x).SequenceEqual(
+					GetModifiers(key2).OrderBy(x => x));
 		}
 
 		public static bool operator !=(ShortcutKey key1, ShortcutKey key2)
@@ -77,9 +77,11 @@ namespace SylphyHorn.Services
 			return !(key1 == key2);
 		}
 
-		private static bool Equals(ICollection<VirtualKey> key1, ICollection<VirtualKey> key2)
+		private static IEnumerable<VirtualKey> GetModifiers(ShortcutKey shortcutKey)
 		{
-			return key1.Count == key2.Count && !key1.Except(key2).Any();
+			return shortcutKey.ModifiersInternal
+				?? shortcutKey.Modifiers
+				?? Enumerable.Empty<VirtualKey>();
 		}
 
 
