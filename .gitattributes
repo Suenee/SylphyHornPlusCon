@@ -13,6 +13,9 @@
 #*.cs     diff=csharp
 *.cs      whitespace=cr-at-eol
 .gitattributes whitespace=cr-at-eol
+.gitignore whitespace=cr-at-eol
+*.pubxml whitespace=cr-at-eol
+*.csproj whitespace=cr-at-eol
 
 ###############################################################################
 # Set the merge driver for project and solution files
