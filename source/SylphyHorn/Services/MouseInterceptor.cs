@@ -204,7 +204,7 @@ namespace SylphyHorn.Services.Mouse
 		{
 			if (nCode >= 0 && this._lowLevelHookEvent != null && !IsSuspended)
 			{
-				var stroke = GetStroke(msg, ref s);
+				var stroke = MouseInputClassifier.Classify(msg, s.mouseData);
 				// Skip unused events
 				if (stroke == Stroke.Move || stroke == Stroke.Unknown)
 				{
@@ -226,21 +226,10 @@ namespace SylphyHorn.Services.Mouse
 					this._state.Direction = StrokeDirection.None;
 				}
 				else */
-				if (stroke == Stroke.WheelDown || stroke == Stroke.WheelUp)
-				{
-					this._state.KeyCode = (Keys)stroke;
-					this._state.Direction = StrokeDirection.None;
-				}
-				else if((int)stroke % 2 != 0)
-				{
-					this._state.KeyCode = (Keys)(((int)stroke >> 1) + 1);
-					this._state.Direction = StrokeDirection.Down;
-				}
-				else
-				{
-					this._state.KeyCode = (Keys)((int)stroke >> 1);
-					this._state.Direction = StrokeDirection.Up;
-				}
+				MouseInputClassifier.TryGetKeyAndDirection(
+					stroke,
+					out this._state.KeyCode,
+					out this._state.Direction);
 
 				this._lowLevelHookEvent(ref this._state);
 
@@ -253,61 +242,6 @@ namespace SylphyHorn.Services.Mouse
 			}
 
 			return NativeMethods.CallNextHookEx(this._handle, nCode, msg, ref s);
-		}
-
-		private Stroke GetStroke(uint msg, ref MSLLHOOKSTRUCT s)
-		{
-			switch (msg)
-			{
-				case 0x0200:
-					// WM_MOUSEMOVE
-					return Stroke.Move;
-				case 0x0201:
-					// WM_LBUTTONDOWN
-					return Stroke.LeftDown;
-				case 0x0202:
-					// WM_LBUTTONUP
-					return Stroke.LeftUp;
-				case 0x0204:
-					// WM_RBUTTONDOWN
-					return Stroke.RightDown;
-				case 0x0205:
-					// WM_RBUTTONUP
-					return Stroke.RightUp;
-				case 0x0207:
-					// WM_MBUTTONDOWN
-					return Stroke.MiddleDown;
-				case 0x0208:
-					// WM_MBUTTONUP
-					return Stroke.MiddleUp;
-				case 0x020A:
-					// WM_MOUSEWHEE
-					return ((short)((s.mouseData >> 16) & 0xffff) > 0) ? Stroke.WheelUp : Stroke.WheelDown;
-				case 0x20B:
-					// WM_XBUTTONDOWN
-					switch (s.mouseData >> 16)
-					{
-						case 1:
-							return Stroke.X1Down;
-						case 2:
-							return Stroke.X2Down;
-						default:
-							return Stroke.Unknown;
-					}
-				case 0x20C:
-					// WM_XBUTTONUP
-					switch (s.mouseData >> 16)
-					{
-						case 1:
-							return Stroke.X1Up;
-						case 2:
-							return Stroke.X2Up;
-						default:
-							return Stroke.Unknown;
-					}
-				default:
-					return Stroke.Unknown;
-			}
 		}
 
 		public void Dispose()
