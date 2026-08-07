@@ -45,16 +45,28 @@ namespace SylphyHorn
 
 				var dic = args
 					.Select(x => x.Split(separatorsOverride ?? attr.Separators, StringSplitOptions.RemoveEmptyEntries))
-					.GroupBy(xs => xs[0], (k, ys) => ys.Last()) // 重複の場合は後ろの引数を優先
-					.ToDictionary(xs => xs[0].ToLower(), xs => xs.Length == 1 ? null : xs[1]);
+					.Where(xs => xs.Length > 0)
+					.GroupBy(xs => xs[0], StringComparer.OrdinalIgnoreCase)
+					.Select(xs => xs.Last()) // 重複の場合は後ろの引数を優先
+					.ToDictionary(xs => xs[0], xs => xs.Length == 1 ? null : xs[1], StringComparer.OrdinalIgnoreCase);
 
 				var prefix = keyPrefixOverride ?? attr.KeyPrefix;
 				string valueString;
 
-				if ((!string.IsNullOrEmpty(attr.Key) && dic.TryGetValue(prefix + attr.Key.ToLower(), out valueString)) ||
-					(!string.IsNullOrEmpty(attr.ShortKey) && dic.TryGetValue(prefix + attr.ShortKey.ToLower(), out valueString)))
+				if ((!string.IsNullOrEmpty(attr.Key) && dic.TryGetValue(prefix + attr.Key, out valueString)) ||
+					(!string.IsNullOrEmpty(attr.ShortKey) && dic.TryGetValue(prefix + attr.ShortKey, out valueString)))
 				{
-					var option = new CommandLineOption(attr.Key, property.PropertyType, valueString, attr.KeyPrefix, attr.Separators.First());
+					CommandLineOption option;
+					try
+					{
+						option = new CommandLineOption(attr.Key, property.PropertyType, valueString, attr.KeyPrefix, attr.Separators.First());
+					}
+					catch (NotSupportedException ex)
+					{
+						System.Diagnostics.Debug.WriteLine(ex);
+						continue;
+					}
+
 					if (option.ConvertException != null)
 					{
 						System.Diagnostics.Debug.WriteLine(option.ConvertException);
