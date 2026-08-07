@@ -968,16 +968,31 @@ Assert-Condition (-not (Test-Path -LiteralPath $workRoot)) `
 New-Item -ItemType Directory -Path $workRoot | Out-Null
 
 $logsRoot = Join-Path $workRoot "logs"
-$applicationArtifacts = Join-Path $workRoot "publish/SylphyHorn/artifacts"
-$applicationPublish = Join-Path $workRoot "publish/SylphyHorn/output"
-$schedulerArtifacts = Join-Path $workRoot "publish/SchedulerManager/artifacts"
-$schedulerPublish = Join-Path $workRoot "publish/SchedulerManager/output"
-$schedulerOutput = Join-Path $workRoot "publish/SchedulerManager/bin"
+$temporaryRoot = Get-NormalizedPath ([System.IO.Path]::GetTempPath())
+$buildRoot = Join-Path `
+	$temporaryRoot `
+	("SylphyHornPlus-Build-{0}" -f ([guid]::NewGuid().ToString("N")))
+Assert-Condition `
+	((Test-IsSameOrChildPath $buildRoot $temporaryRoot) -and
+		-not $buildRoot.Equals(
+			$temporaryRoot,
+			[System.StringComparison]::OrdinalIgnoreCase)) `
+	"Build root must be a unique child of the temporary directory."
+Assert-Condition (-not (Test-Path -LiteralPath $buildRoot)) `
+	"Unique build root already exists: $buildRoot"
+$applicationArtifacts = Join-Path $buildRoot "app/a"
+$applicationPublish = Join-Path $buildRoot "app/p"
+$schedulerArtifacts = Join-Path $buildRoot "scheduler/a"
+$schedulerPublish = Join-Path $buildRoot "scheduler/p"
+$schedulerOutput = Join-Path $buildRoot "scheduler/b"
 $stagingRoot = Join-Path $workRoot "staging"
 $wrapperRoot = Join-Path $stagingRoot "SylphyHorn"
 $archiveRoot = Join-Path $workRoot "archive"
 $extractRoot = Join-Path $workRoot "extracted"
 $evidenceRoot = Join-Path $workRoot "evidence"
+$mainError = $null
+$cleanupError = $null
+try {
 foreach ($directory in @(
 	$logsRoot,
 	$applicationArtifacts,
@@ -1347,6 +1362,41 @@ Copy-Item -LiteralPath $workZipPath -Destination $finalZipPath
 Assert-Condition `
 	((Get-Sha256 $workZipPath) -ceq (Get-Sha256 $finalZipPath)) `
 	"Final ZIP hash does not match the validated work ZIP."
+}
+catch {
+	$mainError = $_
+}
+finally {
+	try {
+		if (Test-Path -LiteralPath $buildRoot) {
+			$resolvedBuildRoot = Get-NormalizedPath $buildRoot
+			Assert-Condition `
+				((Test-IsSameOrChildPath $resolvedBuildRoot $temporaryRoot) -and
+					-not $resolvedBuildRoot.Equals(
+						$temporaryRoot,
+						[System.StringComparison]::OrdinalIgnoreCase)) `
+				"Refusing to remove a build root outside the temporary directory."
+			Remove-Item -LiteralPath $resolvedBuildRoot -Recurse -Force
+		}
+	}
+	catch {
+		$cleanupError = $_
+	}
+}
+
+if ($null -ne $mainError) {
+	if ($null -ne $cleanupError) {
+		throw [AggregateException]::new(
+			"Portable release build failed and temporary build-root cleanup also failed. The first inner exception is the build failure.",
+			[Exception[]] @($mainError.Exception, $cleanupError.Exception))
+	}
+	throw $mainError
+}
+if ($null -ne $cleanupError) {
+	throw [InvalidOperationException]::new(
+		"Portable release build completed, but temporary build-root cleanup failed. No success result was published.",
+		$cleanupError.Exception)
+}
 
 $zipItem = Get-Item -LiteralPath $finalZipPath
 $result = [ordered]@{
