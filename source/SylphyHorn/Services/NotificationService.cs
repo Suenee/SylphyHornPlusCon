@@ -16,8 +16,8 @@ namespace SylphyHorn.Services
 	public class NotificationService : IDisposable
 	{
 		public static NotificationService Instance { get; } = new NotificationService();
-		private static string ResidentHeader => Settings.General.SimpleNotification ? "" : "Virtual Desktop";
-		private static string SwitchedHeader => Settings.General.SimpleNotification ? "" : "Virtual Desktop Switched";
+		private static string ResidentHeader => NotificationTextFormatter.CreateResidentHeader(Settings.General.SimpleNotification);
+		private static string SwitchedHeader => NotificationTextFormatter.CreateSwitchedHeader(Settings.General.SimpleNotification);
 		private static List<SwitchWindow> _residentWindows = new List<SwitchWindow>();
 		private readonly SerialDisposable _notificationWindow = new SerialDisposable();
 		private DesktopTransitionRuntime _runtime;
@@ -80,7 +80,7 @@ namespace SylphyHorn.Services
 				if (Settings.General.AlwaysShowDesktopNotification) this.ShowCurrentDesktop();
 				return;
 			}
-			var header = Settings.General.SimpleNotification ? $"Desktop {oldNumber} => Desktop {newNumber}" : $"Desktop {oldNumber} Moved to Desktop {newNumber}";
+			var header = NotificationTextFormatter.CreateMovedHeader(oldNumber, newNumber, Settings.General.SimpleNotification);
 			this._notificationWindow.Disposable = ShowDesktopWindow(header, CreateNotificationBody(currentNumber, currentRecord, true));
 		}
 
@@ -94,14 +94,13 @@ namespace SylphyHorn.Services
 
 		private static string CreateNotificationBody(int number, DesktopRecord record, bool moved)
 		{
-			var hasName = Settings.General.UseDesktopName && record?.Name.HasValue == true && !string.IsNullOrEmpty(record.Name.Value);
-			if (!hasName)
-			{
-				var prefix = Settings.General.SimpleNotification ? "" : moved ? "Reordered Current Desktop: " : "Current Desktop: ";
-				return prefix + "Desktop " + number;
-			}
-			if (Settings.General.SimpleNotification) return $"{number}. {record.Name.Value}";
-			return moved ? $"Reordered Desktop {number}: {record.Name.Value}" : $"Desktop {number}: {record.Name.Value}";
+			var name = record?.Name.HasValue == true ? record.Name.Value : null;
+			return NotificationTextFormatter.CreateDesktopBody(
+				number,
+				name,
+				Settings.General.UseDesktopName,
+				Settings.General.SimpleNotification,
+				moved);
 		}
 
 		private static bool TryGetCurrent(DesktopRuntimeState state, out int number, out DesktopRecord record)
@@ -196,19 +195,13 @@ namespace SylphyHorn.Services
 
 		private static IDisposable ShowPinWindow(IntPtr hWnd, PinOperations operation)
 		{
-			var vmodel = Settings.General.SimpleNotification
-				? new NotificationWindowViewModel
-				{
-					Title = ProductInfo.Title,
-					Header = "",
-					Body = $"{(operation.HasFlag(PinOperations.Window) ? "Window" : "Application")} {(operation.HasFlag(PinOperations.Pin) ? "Pinned" : "Unpinned")}",
-				}
-				: new NotificationWindowViewModel
-				{
-					Title = ProductInfo.Title,
-					Header = "Virtual Desktop",
-					Body = $"{(operation.HasFlag(PinOperations.Pin) ? "Pinned" : "Unpinned")} this {(operation.HasFlag(PinOperations.Window) ? "window" : "application")}",
-				};
+			var simple = Settings.General.SimpleNotification;
+			var vmodel = new NotificationWindowViewModel
+			{
+				Title = ProductInfo.Title,
+				Header = NotificationTextFormatter.CreatePinHeader(simple),
+				Body = NotificationTextFormatter.CreatePinBody(operation, simple),
+			};
 			var source = new CancellationTokenSource();
 			var window = new PinWindow(hWnd)
 			{
