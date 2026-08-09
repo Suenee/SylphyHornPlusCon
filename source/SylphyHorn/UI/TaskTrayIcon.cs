@@ -41,13 +41,14 @@ namespace SylphyHorn.UI
 			}
 			this._runtime = runtime;
 			runtime.StateChanged += this.OnDesktopStateChanged;
+			this.ReloadMenuAvailability();
 			this.Reload();
 		}
 
 		public void Show()
 		{
 			if (this._notifyIcon != null) return;
-			var menus = this._items.Where(x => x.CanDisplay()).Select(x => new ToolStripMenuItem(x.Text, null, (sender, args) => x.ClickAction())).ToArray();
+			var menus = this._items.Where(x => x.CanDisplay()).Select(this.CreateMenuItem).ToArray();
 			this._notifyIcon = new NotifyIcon
 			{
 				Text = ProductInfo.Title,
@@ -120,7 +121,25 @@ namespace SylphyHorn.UI
 		private void OnIconClick(object sender, MouseEventArgs e)
 		{
 			if (e.Button != MouseButtons.Left || this._items == null || this._items.Length == 0) return;
-			this._items.FirstOrDefault(i => i.Text == this._showSettingsMenuName)?.ClickAction();
+			var item = this._items.FirstOrDefault(i => i.Text == this._showSettingsMenuName);
+			if (item?.CanDisplay() == true && item.CanExecute()) item.ClickAction();
+		}
+
+		private ToolStripMenuItem CreateMenuItem(TaskTrayIconItem item)
+		{
+			var menu = new ToolStripMenuItem(item.Text, null, (sender, args) => item.ClickAction())
+			{
+				Enabled = item.CanExecute(),
+				Tag = item,
+			};
+			return menu;
+		}
+
+		private void ReloadMenuAvailability()
+		{
+			if (this._notifyIcon?.ContextMenuStrip == null) return;
+			foreach (ToolStripItem menu in this._notifyIcon.ContextMenuStrip.Items)
+				if (menu.Tag is TaskTrayIconItem item) menu.Enabled = item.CanExecute();
 		}
 
 		private void ChangeText(string newText)
@@ -154,14 +173,18 @@ namespace SylphyHorn.UI
 		public Action ClickAction { get; }
 
 		public Func<bool> CanDisplay { get; }
+		public Func<bool> CanExecute { get; }
 
-		public TaskTrayIconItem(string text, Action clickAction) : this(text, clickAction, () => true) { }
+		public TaskTrayIconItem(string text, Action clickAction) : this(text, clickAction, () => true, () => true) { }
 
-		public TaskTrayIconItem(string text, Action clickAction, Func<bool> canDisplay)
+		public TaskTrayIconItem(string text, Action clickAction, Func<bool> canDisplay) : this(text, clickAction, canDisplay, () => true) { }
+
+		public TaskTrayIconItem(string text, Action clickAction, Func<bool> canDisplay, Func<bool> canExecute)
 		{
 			this.Text = text;
 			this.ClickAction = clickAction;
 			this.CanDisplay = canDisplay;
+			this.CanExecute = canExecute;
 		}
 	}
 

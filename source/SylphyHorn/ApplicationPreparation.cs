@@ -56,7 +56,11 @@ namespace SylphyHorn
 				var lightIcon = IconHelper.GetIconFromResource(lightUri);
 				var menus = new[]
 				{
-					new TaskTrayIconItem(Resources.TaskTray_Menu_Settings, this.ShowSettings, () => Application.Args.CanSettings),
+					new TaskTrayIconItem(
+						Resources.TaskTray_Menu_Settings,
+						this.ShowSettings,
+						() => Application.Args.CanSettings,
+						() => this._desktopRuntime?.IsInitialized == true),
 					new TaskTrayIconItem(Resources.TaskTray_Menu_Exit, this._shutdownAction),
 #if DEBUG
 					new TaskTrayIconItem("Tasktray Icon Test", () => new TaskTrayTestWindow().Show()),
