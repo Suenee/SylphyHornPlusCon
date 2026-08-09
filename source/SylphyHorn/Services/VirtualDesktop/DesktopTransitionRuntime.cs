@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading;
@@ -99,6 +99,23 @@ namespace SylphyHorn.Services.DesktopTransitions
 
 	internal sealed class DesktopTransitionRuntime : IDisposable, IDesktopStartupTransactionRuntime, IDesktopImportTransactionRuntime
 	{
+		// Owner-dispatcher orchestrator for the provider, pure coordinator, settings
+		// projection/save transaction, and public StateChanged publication. It consumes
+		// only stable batches/current-only transitions; raw capture remains provider-owned.
+		//
+		// Ordered flow:
+		// provider publication -> owner Dispatcher -> coordinator transition -> settings
+		// projection/save request -> immutable StateChanged publication.
+		//
+		// Invariants:
+		// - Coordinator state has one owner and is changed only on the owner Dispatcher.
+		// - Projection and save ordering follow the accepted transition; consumers do not
+		//   reconstruct identity or infer missing provider state.
+		// - Startup and import use prepared transactions: active settings/runtime state is
+		//   exchanged only after validation and successful commit.
+		// - Accepted operations and provider waits have explicit terminal arbitration;
+		//   shutdown stops ingress, completes or classifies accepted work, performs its
+		//   bounded final reconciliation, then detaches and disposes dependencies.
 		private readonly IDesktopProviderClient _provider;
 		private readonly IDesktopSettingsTransactions _settings;
 		private readonly IDesktopOwnerContext _owner;

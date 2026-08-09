@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Linq;
 using WindowsDesktop;
@@ -7,6 +7,19 @@ namespace SylphyHorn.Services.DesktopTransitions
 {
 	internal sealed class DesktopTransitionCoordinator
 	{
+		// Pure state-machine owner between provider publications and application state.
+		// Stable batches replace topology; current-only transitions may only advance the
+		// current desktop against the exact provider epoch and snapshot revision.
+		//
+		// Invariants:
+		// - Runtime identity is Order plus Records keyed by desktop ID. Parallel settings
+		//   lists are projections only and never participate in identity decisions.
+		// - Provider epoch/snapshot revision and ingress sequence reject stale input.
+		//   StateRevision advances only when the observable domain state changes.
+		// - Local edits are prepared against the exact source-state identity and an
+		//   opaque coordinator token, then consumed once by commit.
+		// - This type performs no COM, settings I/O, Dispatcher work, or event dispatch;
+		//   every accepted transition describes those effects for the runtime owner.
 		private readonly DesktopStartupSeed _startupSeed;
 		private readonly Dictionary<SeedCandidateKey, SeedEmptyCandidate> _seedEmptyCandidates = new Dictionary<SeedCandidateKey, SeedEmptyCandidate>();
 		private readonly object _ownerToken = new object();
