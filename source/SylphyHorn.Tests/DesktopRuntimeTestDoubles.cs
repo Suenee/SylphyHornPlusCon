@@ -70,6 +70,7 @@ namespace SylphyHorn.Tests
 		internal int ReconciliationRequestCount { get; private set; }
 		internal int StablePublicationCount { get; private set; }
 		internal Action<int> RequestObserved { get; set; }
+		internal CancellationToken LastRequestCancellationToken { get; private set; }
 		internal void EnqueueResult(VirtualDesktopStableBatch batch) => this._results.Enqueue(VirtualDesktopReconciliationResult.Succeeded(batch));
 		internal void EnqueueResult(VirtualDesktopReconciliationResult result) => this._results.Enqueue(result);
 		internal void PublishStable(VirtualDesktopStableBatch batch) { this.StablePublicationCount++; this.StableBatchPublished?.Invoke(this, batch); }
@@ -77,6 +78,7 @@ namespace SylphyHorn.Tests
 		internal void PublishFault(VirtualDesktopProviderFault fault) => this.Faulted?.Invoke(this, fault);
 		public Task<VirtualDesktopReconciliationResult> RequestReconciliationAsync(VirtualDesktopStableReason reason, CancellationToken cancellationToken)
 		{
+			this.LastRequestCancellationToken = cancellationToken;
 			this.ReconciliationRequestCount++;
 			this.RequestObserved?.Invoke(this.ReconciliationRequestCount);
 			if (this.Disposed) return Task.FromResult(VirtualDesktopReconciliationResult.ShuttingDown());

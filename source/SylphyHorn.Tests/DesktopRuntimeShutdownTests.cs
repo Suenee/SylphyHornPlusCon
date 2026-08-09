@@ -64,5 +64,26 @@ namespace SylphyHorn.Tests
 			Assert.True(harness.Provider.Disposed);
 		}
 
+		[Fact]
+		public async Task ShutdownBudgetCancelsHungReconciliationAndDisposesProvider()
+		{
+			var provider = new FakeProvider(Batch(1, 1, A, Entry(A, 0, "name", "wall")));
+			var settings = new FakeSettings(DesktopStartupSeed.Empty);
+			var runtime = new DesktopTransitionRuntime(provider, settings, new FakeOwner(), new FakeOperations(), TimeSpan.FromMilliseconds(20));
+			var initialized = await runtime.InitializeAsync(false, TestContext.Current.CancellationToken);
+			Assert.Equal(DesktopRuntimeInitializationStatus.Completed, initialized.Status);
+
+			provider.NextRequest = new TaskCompletionSource<VirtualDesktopReconciliationResult>(TaskCreationOptions.RunContinuationsAsynchronously).Task;
+			var saves = settings.SaveRequests;
+
+			var result = await runtime.ShutdownAsync();
+
+			Assert.Equal(DesktopRuntimeShutdownStatus.ReconciliationUnavailable, result.Status);
+			Assert.Equal(VirtualDesktopReconciliationStatus.Unavailable, result.ReconciliationStatus);
+			Assert.True(provider.LastRequestCancellationToken.IsCancellationRequested);
+			Assert.Equal(saves, settings.SaveRequests);
+			Assert.True(provider.Disposed);
+		}
+
 	}
 }

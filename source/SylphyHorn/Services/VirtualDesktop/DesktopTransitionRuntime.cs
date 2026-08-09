@@ -509,7 +509,7 @@ namespace SylphyHorn.Services.DesktopTransitions
 			}
 			if (this._deferredCommands.Count != 0) this.DrainDeferredCommands();
 
-			var final = await this._provider.RequestReconciliationAsync(VirtualDesktopStableReason.Recovery, CancellationToken.None);
+			var final = await this.RequestProviderWithBudgetAsync(VirtualDesktopStableReason.Recovery, CancellationToken.None);
 			SettingsSaveResult saveResult = null;
 			var shutdownStatus = DesktopRuntimeShutdownStatus.ReconciliationUnavailable;
 			if (final.Status == VirtualDesktopReconciliationStatus.Succeeded)
