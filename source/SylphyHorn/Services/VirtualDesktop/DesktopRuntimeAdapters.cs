@@ -77,7 +77,7 @@ namespace SylphyHorn.Services.DesktopTransitions
 		public void Create() => VirtualDesktop.Create();
 		public void SetName(Guid desktopId, string value) => Resolve(desktopId).Name = value;
 		public void SetWallpaperPath(Guid desktopId, string value) => Resolve(desktopId).WallpaperPath = value;
-		public void ApplyWallpaper(Guid desktopId, string value, WallpaperPosition position) => WallpaperService.ApplyDesktopWallpaper(value, position);
+		public void ApplyWallpaper(Guid desktopId, string value, WallpaperPosition position) => WallpaperService.Instance.ApplyDesktopWallpaperNow(value, position);
 		public void MoveLeft(Guid desktopId) => Resolve(desktopId).MoveToLeft();
 		public void MoveRight(Guid desktopId) => Resolve(desktopId).MoveToRight();
 		public void MoveFirst(Guid desktopId) => Resolve(desktopId).MoveToFirst();

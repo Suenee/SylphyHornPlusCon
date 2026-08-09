@@ -1,5 +1,6 @@
-using System;
+﻿using System;
 using System.Linq;
+using System.Threading.Tasks;
 using System.Windows.Media;
 using SylphyHorn.Interop;
 using SylphyHorn.Properties;
@@ -30,8 +31,15 @@ namespace SylphyHorn.Services
 		public static string[] SupportedFileTypes { get; } = _defaultSupportedFormats.Select(f => f.Item1).Concat(_detectors.Where(d => d.IsSupported).Select(d => d.FileType)).ToArray();
 		public static WallpaperService Instance { get; } = new WallpaperService();
 
+		private readonly WallpaperApplyQueue _applyQueue;
 		private DesktopTransitionRuntime _runtime;
-		private WallpaperService() { }
+		private WallpaperService()
+		{
+			this._applyQueue = new WallpaperApplyQueue(
+				ApplyDesktopWallpaper,
+				exception => LoggingService.Instance.Register(exception),
+				action => Task.Run(action));
+		}
 
 		internal void BindDesktopRuntime(DesktopTransitionRuntime runtime)
 		{
@@ -61,7 +69,7 @@ namespace SylphyHorn.Services
 			if (state?.CurrentDesktopId == null || !state.Records.TryGetValue(state.CurrentDesktopId.Value, out var record)) return;
 			var path = record.WallpaperPath.HasValue ? record.WallpaperPath.Value : null;
 			if (!ProductInfo.IsWallpaperSupportBuild && !Settings.General.ChangeBackgroundEachDesktop) path = null;
-			ApplyDesktopWallpaper(path, record.WallpaperPosition);
+			this._applyQueue.Enqueue(path, record.WallpaperPosition);
 		}
 
 		internal static void ApplyDesktopWallpaper(string path, WallpaperPosition position)
@@ -72,10 +80,14 @@ namespace SylphyHorn.Services
 			if (wallpaper.GetPosition() != target) wallpaper.SetPosition(target);
 		}
 
+		internal void ApplyDesktopWallpaperNow(string path, WallpaperPosition position)
+			=> this._applyQueue.ApplyNow(path, position);
+
 		public void Dispose()
 		{
 			if (this._runtime != null) this._runtime.StateChanged -= this.OnDesktopStateChanged;
 			this._runtime = null;
+			this._applyQueue.Dispose();
 		}
 
 		public static void SetWallpaperEnabled(bool enabled)
