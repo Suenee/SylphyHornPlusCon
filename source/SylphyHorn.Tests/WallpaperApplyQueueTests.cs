@@ -339,7 +339,8 @@ namespace SylphyHorn.Tests
 			var synchronousStarted = new ManualResetEventSlim();
 			var releaseSynchronous = new ManualResetEventSlim();
 			var workerCalling = new ManualResetEventSlim();
-			var disposeCalling = new ManualResetEventSlim();
+			var disposeWaiting = new ManualResetEventSlim();
+			var waiter = new ObservableWallpaperApplyWaiter(WallpaperApplyWaitReason.Dispose, disposeWaiting);
 			var applied = new List<string>();
 			var queue = Queue((path, _) =>
 			{
@@ -349,7 +350,7 @@ namespace SylphyHorn.Tests
 					synchronousStarted.Set();
 					releaseSynchronous.Wait(TestContext.Current.CancellationToken);
 				}
-			}, action => worker = action);
+			}, action => worker = action, waiter);
 			try
 			{
 				var synchronous = Task.Run(() => queue.ApplyNow("synchronous", WallpaperPosition.Center), TestContext.Current.CancellationToken);
@@ -361,12 +362,8 @@ namespace SylphyHorn.Tests
 					worker();
 				}, TestContext.Current.CancellationToken);
 				Assert.True(workerCalling.Wait(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken));
-				var dispose = Task.Run(() =>
-				{
-					disposeCalling.Set();
-					queue.Dispose();
-				}, TestContext.Current.CancellationToken);
-				Assert.True(disposeCalling.Wait(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken));
+				var dispose = Task.Run(() => queue.Dispose(), TestContext.Current.CancellationToken);
+				Assert.True(disposeWaiting.Wait(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken));
 
 				releaseSynchronous.Set();
 				await Task.WhenAll(synchronous, automatic, dispose);
