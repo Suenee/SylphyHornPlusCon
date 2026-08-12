@@ -282,22 +282,13 @@ jobs:
           $assets = @(Get-ChildItem -LiteralPath "release-assets" -Filter '*.zip' -File |
             Sort-Object Name |
             Select-Object -ExpandProperty FullName)
-          $installationNotes = @(
-            '### Installation note',
-            '',
-            'When updating a manually extracted copy, exit SylphyHornPlus and',
-            'replace the entire extracted application folder. A WinGet installation',
-            'does not remove a separately extracted copy or its startup registration;',
-            'remove or unregister the old manual copy before switching to the',
-            'WinGet-managed package.'
-          ) -join "`n"
           $arguments = @(
             'release', 'create', $env:RELEASE_TAG,
             '--repo', $env:GITHUB_REPOSITORY,
             '--verify-tag',
             '--title', "SylphyHornPlus v$env:RELEASE_VERSION",
-            '--notes', $installationNotes,
-            '--generate-notes'
+            '--generate-notes',
+            '--draft'
           )
           if ($env:RELEASE_VERSION.Contains('-')) {
             $arguments += '--prerelease'
@@ -305,5 +296,5 @@ jobs:
           $arguments += $assets
           & gh @arguments
           if ($LASTEXITCODE -ne 0) {
-            throw "GitHub Release publication failed with exit code $LASTEXITCODE."
+            throw "GitHub Release draft creation failed with exit code $LASTEXITCODE."
           }
