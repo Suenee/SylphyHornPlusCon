@@ -29,10 +29,21 @@ your Windows CPU architecture from
 All three packages are self-contained. You do not need to install the .NET
 Desktop Runtime separately.
 
-Extract the ZIP to a new folder and start `SylphyHorn/SylphyHorn.exe`.
-When updating from the previous single-ZIP distribution, select the package
-for your architecture and replace the extracted application folder while
-SylphyHornPlus is not running.
+You can also install or update the WinGet-managed package with:
+
+```powershell
+winget upgrade --id hwtnb.SylphyHornPlus --exact
+```
+
+For a first-time WinGet installation, replace `upgrade` with `install`.
+
+To use the ZIP manually, extract it to a new folder and start
+`SylphyHorn/SylphyHorn.exe`. When updating a manually extracted copy from the
+previous single-ZIP distribution, exit SylphyHornPlus, select the package for
+your architecture, and replace the entire extracted application folder. A
+WinGet installation does not remove a separately extracted copy or its startup
+registration, so remove or unregister the old manual copy before switching to
+the WinGet-managed package.
 
 ### Note: Update from the original or other forks
 Please delete cache data (VirtualDesktop.*****.generated.dll) at %UserProfile%\AppData\Local\grabacr.net\SylphyHorn\assemblies before SylphyHornPlus starts.
