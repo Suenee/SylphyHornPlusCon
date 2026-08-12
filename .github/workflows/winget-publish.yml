@@ -77,9 +77,22 @@ jobs:
           }
 
           $releaseDate = ([DateTimeOffset] $release.published_at).UtcDateTime.ToString('yyyy-MM-dd')
+          $highlightsMatch = [regex]::Match(
+            [string] $release.body,
+            '(?ms)^## Highlights\s*\r?\n(?<Notes>.+?)(?=\r?\n## |\z)')
+          if (-not $highlightsMatch.Success) {
+            throw "Release '$env:RELEASE_TAG' does not contain a Highlights section."
+          }
+          $releaseNotes = $highlightsMatch.Groups['Notes'].Value.Trim()
+          if ([string]::IsNullOrWhiteSpace($releaseNotes)) {
+            throw "Release '$env:RELEASE_TAG' has an empty Highlights section."
+          }
+          $releaseNotesBase64 = [Convert]::ToBase64String(
+            [Text.Encoding]::UTF8.GetBytes($releaseNotes))
           "version=$version" >> $env:GITHUB_OUTPUT
           "release_date=$releaseDate" >> $env:GITHUB_OUTPUT
           "release_notes_url=$($release.html_url)" >> $env:GITHUB_OUTPUT
+          "release_notes_base64=$releaseNotesBase64" >> $env:GITHUB_OUTPUT
 
       - name: Verify WinGet credentials are configured
         shell: pwsh
@@ -216,24 +229,21 @@ jobs:
             throw "An open WinGet pull request already exists for $env:PACKAGE_VERSION."
           }
 
-      - name: Submit normal WinGet update
+      - name: Generate normal WinGet update
         if: steps.current_manifest.outputs.installer_count == '3'
+        id: normal
         shell: pwsh
         env:
-          WINGET_CREATE_GITHUB_TOKEN: ${{ secrets.WINGET_TOKEN }}
           WINGETCREATE_PATH: ${{ steps.wingetcreate.outputs.tool_path }}
           PACKAGE_VERSION: ${{ steps.release.outputs.version }}
           RELEASE_DATE: ${{ steps.release.outputs.release_date }}
           RELEASE_NOTES_URL: ${{ steps.release.outputs.release_notes_url }}
+          RELEASE_NOTES_BASE64: ${{ steps.release.outputs.release_notes_base64 }}
           URL_X86: ${{ steps.release.outputs.url_x86 }}
           URL_X64: ${{ steps.release.outputs.url_x64 }}
           URL_ARM64: ${{ steps.release.outputs.url_arm64 }}
         run: |
-          $expectedHash = '24042BD37915805615E6CF969AC57C6439124C3FE85823327F5F3FB24BD9FFEA'
-          $actualHash = (Get-FileHash -LiteralPath $env:WINGETCREATE_PATH -Algorithm SHA256).Hash
-          if ($actualHash -cne $expectedHash) {
-            throw "WinGetCreate SHA-256 changed before normal submission."
-          }
+          $manifestRoot = Join-Path $env:RUNNER_TEMP 'winget-manifests'
           $installerUrls = @(
             "$env:URL_X86|x86",
             "$env:URL_X64|x64",
@@ -244,8 +254,34 @@ jobs:
             --urls $installerUrls `
             --release-notes-url $env:RELEASE_NOTES_URL `
             --release-date $env:RELEASE_DATE `
+            --out $manifestRoot `
+            --no-open
+          if ($LASTEXITCODE -ne 0) {
+            throw "WinGetCreate generation failed with exit code $LASTEXITCODE."
+          }
+          $releaseNotes = [Text.Encoding]::UTF8.GetString(
+            [Convert]::FromBase64String($env:RELEASE_NOTES_BASE64))
+          $manifestPath = & '.github\scripts\SetWinGetReleaseNotes.ps1' `
+            -ManifestDirectory $manifestRoot `
+            -ReleaseNotes $releaseNotes
+          "manifest_path=$manifestPath" >> $env:GITHUB_OUTPUT
+
+      - name: Submit normal WinGet update
+        if: steps.current_manifest.outputs.installer_count == '3'
+        shell: pwsh
+        env:
+          WINGET_CREATE_GITHUB_TOKEN: ${{ secrets.WINGET_TOKEN }}
+          WINGETCREATE_PATH: ${{ steps.wingetcreate.outputs.tool_path }}
+          MANIFEST_PATH: ${{ steps.normal.outputs.manifest_path }}
+          PACKAGE_VERSION: ${{ steps.release.outputs.version }}
+        run: |
+          $expectedHash = '24042BD37915805615E6CF969AC57C6439124C3FE85823327F5F3FB24BD9FFEA'
+          $actualHash = (Get-FileHash -LiteralPath $env:WINGETCREATE_PATH -Algorithm SHA256).Hash
+          if ($actualHash -cne $expectedHash) {
+            throw "WinGetCreate SHA-256 changed before normal submission."
+          }
+          & $env:WINGETCREATE_PATH submit $env:MANIFEST_PATH `
             --prtitle "New version: hwtnb.SylphyHornPlus version $env:PACKAGE_VERSION" `
-            --submit `
             --no-open
           if ($LASTEXITCODE -ne 0) {
             throw "WinGetCreate submission failed with exit code $LASTEXITCODE."
@@ -259,6 +295,7 @@ jobs:
           PACKAGE_VERSION: ${{ steps.release.outputs.version }}
           RELEASE_DATE: ${{ steps.release.outputs.release_date }}
           RELEASE_NOTES_URL: ${{ steps.release.outputs.release_notes_url }}
+          RELEASE_NOTES_BASE64: ${{ steps.release.outputs.release_notes_base64 }}
           URL_X86: ${{ steps.release.outputs.url_x86 }}
           URL_X64: ${{ steps.release.outputs.url_x64 }}
           URL_ARM64: ${{ steps.release.outputs.url_arm64 }}
@@ -284,7 +321,12 @@ jobs:
             -UrlArm64 $env:URL_ARM64 `
             -PathArm64 $pathArm64 `
             -OutputDirectory $manifestRoot
-          "manifest_path=$manifestRoot" >> $env:GITHUB_OUTPUT
+          $releaseNotes = [Text.Encoding]::UTF8.GetString(
+            [Convert]::FromBase64String($env:RELEASE_NOTES_BASE64))
+          $manifestPath = & '.github\scripts\SetWinGetReleaseNotes.ps1' `
+            -ManifestDirectory $manifestRoot `
+            -ReleaseNotes $releaseNotes
+          "manifest_path=$manifestPath" >> $env:GITHUB_OUTPUT
 
       - name: Submit initial three-architecture WinGet manifests
         if: steps.current_manifest.outputs.installer_count == '1'
