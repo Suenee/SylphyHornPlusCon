@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: Existing release tag to build and publish (for example, v4.0.0-beta.14)
+        description: Existing release tag to build and publish
         required: true
         type: string
 
@@ -29,7 +29,7 @@ jobs:
 
     steps:
       - name: Checkout the tagged source
-        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
           ref: ${{ inputs.tag }}
@@ -79,13 +79,13 @@ jobs:
 
     steps:
       - name: Checkout the tagged source
-        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ needs.metadata.outputs.commit }}
           submodules: recursive
 
       - name: Set up the pinned .NET SDK
-        uses: actions/setup-dotnet@26b0ec14cb23fa6904739307f278c14f94c95bf1 # v5
+        uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
         with:
           dotnet-version: 10.0.302
 
@@ -142,14 +142,14 @@ jobs:
 
     steps:
       - name: Checkout the tagged source
-        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
           ref: ${{ needs.metadata.outputs.commit }}
           submodules: recursive
 
       - name: Set up the pinned .NET SDK
-        uses: actions/setup-dotnet@26b0ec14cb23fa6904739307f278c14f94c95bf1 # v5
+        uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
         with:
           dotnet-version: 10.0.302
 
@@ -178,7 +178,7 @@ jobs:
           Copy-Item -LiteralPath $zip.FullName -Destination "release-assets\$($zip.Name)"
 
       - name: Upload validated package
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: release-${{ matrix.rid }}
           path: release-assets/*.zip
@@ -198,7 +198,7 @@ jobs:
 
     steps:
       - name: Download validated packages
-        uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0 # v5
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           pattern: release-*
           path: release-assets
@@ -282,11 +282,21 @@ jobs:
           $assets = @(Get-ChildItem -LiteralPath "release-assets" -Filter '*.zip' -File |
             Sort-Object Name |
             Select-Object -ExpandProperty FullName)
+          $installationNotes = @(
+            '### Installation note',
+            '',
+            'When updating a manually extracted copy, exit SylphyHornPlus and',
+            'replace the entire extracted application folder. A WinGet installation',
+            'does not remove a separately extracted copy or its startup registration;',
+            'remove or unregister the old manual copy before switching to the',
+            'WinGet-managed package.'
+          ) -join "`n"
           $arguments = @(
             'release', 'create', $env:RELEASE_TAG,
             '--repo', $env:GITHUB_REPOSITORY,
             '--verify-tag',
             '--title', "SylphyHornPlus v$env:RELEASE_VERSION",
+            '--notes', $installationNotes,
             '--generate-notes'
           )
           if ($env:RELEASE_VERSION.Contains('-')) {

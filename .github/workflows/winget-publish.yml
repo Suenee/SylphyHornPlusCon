@@ -1,14 +1,10 @@
 name: Publish to WinGet
 
 on:
-  release:
-    # "published" covers both stable releases and pre-releases, including drafts
-    # that are later published.
-    types: [published]
   workflow_dispatch:
     inputs:
       tag:
-        description: Published release tag to submit (for example, v4.0.0-beta.14)
+        description: Published and upgrade-tested release tag to submit
         required: true
         type: string
 
@@ -16,7 +12,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: winget-${{ github.event.release.tag_name || inputs.tag }}
+  group: winget-${{ inputs.tag }}
   cancel-in-progress: false
 
 jobs:
@@ -24,11 +20,11 @@ jobs:
     name: Submit WinGet manifest update
     runs-on: windows-2025
     env:
-      RELEASE_TAG: ${{ github.event.release.tag_name || inputs.tag }}
+      RELEASE_TAG: ${{ inputs.tag }}
 
     steps:
       - name: Checkout the workflow source
-        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ github.workflow_sha }}
           persist-credentials: false
