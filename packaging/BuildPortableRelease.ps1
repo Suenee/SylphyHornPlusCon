@@ -1220,7 +1220,14 @@ Assert-Condition ($runtimePackVersions.Count -ge 2) `
 
 $parentCommit = (& git -C $repositoryRoot rev-parse HEAD).Trim()
 Assert-Condition ($LASTEXITCODE -eq 0) "Cannot read parent commit."
-$parentBranch = (& git -C $repositoryRoot branch --show-current).Trim()
+$parentBranchOutput = @(& git -C $repositoryRoot branch --show-current)
+Assert-Condition ($LASTEXITCODE -eq 0) "Cannot read parent branch."
+$parentBranch = if ($parentBranchOutput.Count -eq 0) {
+	$null
+}
+else {
+	$parentBranchOutput[0].Trim()
+}
 $virtualDesktopGitlink = (
 	& git -C $repositoryRoot ls-tree HEAD source/VirtualDesktop).
 	Split("`t")[0].

@@ -73,9 +73,15 @@ jobs:
           "version=$version" >> $env:GITHUB_OUTPUT
 
   validation:
-    name: Run release regression tests
+    name: Run release regression tests (${{ matrix.platform }})
     needs: metadata
     runs-on: windows-2025
+    strategy:
+      fail-fast: false
+      matrix:
+        platform:
+          - x86
+          - x64
 
     steps:
       - name: Checkout the tagged source
@@ -88,41 +94,42 @@ jobs:
         uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
         with:
           dotnet-version: 10.0.302
+          architecture: ${{ matrix.platform }}
 
       - name: Run unit-test matrix
         shell: pwsh
         run: |
           $solutionDirectory = Join-Path $env:GITHUB_WORKSPACE "source\"
           $runtimeIdentifiers = '-p:RuntimeIdentifiers="win-x86;win-x64;win-arm64"'
-          foreach ($platform in @('x86', 'x64')) {
-            $runtimeIdentifier = "win-$platform"
-            dotnet restore "source\SylphyHorn.Tests\SylphyHorn.Tests.csproj" `
-              -p:Configuration=Release `
+          $platform = '${{ matrix.platform }}'
+          $runtimeIdentifier = "win-$platform"
+          dotnet restore "source\SylphyHorn.Tests\SylphyHorn.Tests.csproj" `
+            -p:Configuration=Release `
+            -p:Platform=$platform `
+            $runtimeIdentifiers `
+            -p:RuntimeIdentifier=$runtimeIdentifier `
+            -p:RunSylphyHornPostBuild=false `
+            -p:SolutionDir="$solutionDirectory" `
+            --locked-mode
+          if ($LASTEXITCODE -ne 0) {
+            throw "Unit-test restore failed for $platform."
+          }
+
+          foreach ($framework in @('net48', 'net10.0-windows10.0.26100.0')) {
+            dotnet test "source\SylphyHorn.Tests\SylphyHorn.Tests.csproj" `
+              -c Release `
+              -f $framework `
               -p:Platform=$platform `
-              $runtimeIdentifiers `
-              -p:RuntimeIdentifier=$runtimeIdentifier `
               -p:RunSylphyHornPostBuild=false `
               -p:SolutionDir="$solutionDirectory" `
-              --locked-mode
+              --no-restore
             if ($LASTEXITCODE -ne 0) {
-              throw "Unit-test restore failed for $platform."
-            }
-
-            foreach ($framework in @('net48', 'net10.0-windows10.0.26100.0')) {
-              dotnet test "source\SylphyHorn.Tests\SylphyHorn.Tests.csproj" `
-                -c Release `
-                -f $framework `
-                -p:Platform=$platform `
-                -p:RunSylphyHornPostBuild=false `
-                -p:SolutionDir="$solutionDirectory" `
-                --no-restore
-              if ($LASTEXITCODE -ne 0) {
-                throw "Unit tests failed for $framework / $platform."
-              }
+              throw "Unit tests failed for $framework / $platform."
             }
           }
 
       - name: Run environment-independent Windows integration tests
+        if: matrix.platform == 'x64'
         shell: pwsh
         run: |
           & ".github\scripts\RunHostedIntegrationTests.ps1" `
