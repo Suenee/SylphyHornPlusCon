@@ -26,7 +26,7 @@ param(
 Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
 
-$RequiredSdkVersion = "10.0.302"
+$RequiredSdkVersion = "10.0.400"
 $TargetFramework = "net10.0-windows10.0.26100.0"
 $Configuration = "Release"
 $ApprovedRuntimeIdentifiersArgument =
