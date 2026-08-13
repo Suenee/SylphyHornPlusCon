@@ -1,10 +1,10 @@
-name: Build and publish release
+name: Build release draft
 
 on:
   workflow_dispatch:
     inputs:
       tag:
-        description: Existing release tag to build and publish
+        description: Existing release tag to build as a draft
         required: true
         type: string
 
@@ -194,7 +194,7 @@ jobs:
           retention-days: 7
 
   publish:
-    name: Publish GitHub Release
+    name: Create GitHub Release draft
     needs:
       - metadata
       - package
@@ -232,7 +232,7 @@ jobs:
           Get-FileHash "release-assets\*.zip" -Algorithm SHA256 |
             Format-Table Path, Hash
 
-      - name: Publish release from the existing tag
+      - name: Create draft release from the existing tag
         shell: pwsh
         env:
           GH_TOKEN: ${{ github.token }}
