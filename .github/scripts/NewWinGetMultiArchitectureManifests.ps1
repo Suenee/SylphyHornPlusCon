@@ -107,7 +107,7 @@ PackageVersion: $(ConvertTo-YamlString $Version)
 InstallerType: zip
 NestedInstallerType: portable
 NestedInstallerFiles:
-- RelativeFilePath: SylphyHorn/SylphyHorn.exe
+- RelativeFilePath: SylphyHorn/SylphyHorn.WinGetLauncher.exe
   PortableCommandAlias: SylphyHornPlus
 UpgradeBehavior: install
 ReleaseDate: $ReleaseDate
@@ -184,7 +184,7 @@ foreach ($installer in $installers) {
 }
 foreach ($requiredText in @(
 	"NestedInstallerType: portable",
-	"RelativeFilePath: SylphyHorn/SylphyHorn.exe",
+	"RelativeFilePath: SylphyHorn/SylphyHorn.WinGetLauncher.exe",
 	"PortableCommandAlias: SylphyHornPlus",
 	"UpgradeBehavior: install"
 )) {
