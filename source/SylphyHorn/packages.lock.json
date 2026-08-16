@@ -43,15 +43,6 @@
           "Microsoft.Xaml.Behaviors.Wpf": "1.1.31"
         }
       },
-      "Microsoft.ApplicationInsights": {
-        "type": "Direct",
-        "requested": "[2.22.0, )",
-        "resolved": "2.22.0",
-        "contentHash": "3AOM9bZtku7RQwHyMEY3tQMrHIgjcfRDa6YQpd/QG2LDGvMydSlL9Di+8LLMt7J2RDdfJ7/2jdYv6yHcMJAnNw==",
-        "dependencies": {
-          "System.Diagnostics.DiagnosticSource": "5.0.0"
-        }
-      },
       "Microsoft.CSharp": {
         "type": "Direct",
         "requested": "[4.7.0, )",
@@ -287,12 +278,6 @@
           "LivetCask": "4.0.2",
           "Microsoft.Xaml.Behaviors.Wpf": "1.1.31"
         }
-      },
-      "Microsoft.ApplicationInsights": {
-        "type": "Direct",
-        "requested": "[2.22.0, )",
-        "resolved": "2.22.0",
-        "contentHash": "3AOM9bZtku7RQwHyMEY3tQMrHIgjcfRDa6YQpd/QG2LDGvMydSlL9Di+8LLMt7J2RDdfJ7/2jdYv6yHcMJAnNw=="
       },
       "Microsoft.CSharp": {
         "type": "Direct",

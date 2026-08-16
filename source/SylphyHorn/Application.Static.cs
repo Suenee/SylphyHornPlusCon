@@ -5,8 +5,6 @@ using System.IO;
 using System.Linq;
 using System.Threading.Tasks;
 using MetroTrilithon.Linq;
-using Microsoft.ApplicationInsights;
-using Microsoft.ApplicationInsights.DataContracts;
 using SylphyHorn.Interop;
 using SylphyHorn.Properties;
 
@@ -16,25 +14,12 @@ namespace SylphyHorn
 	{
 		public static CommandLineArgs Args { get; private set; }
 
-		public static TelemetryClient TelemetryClient { get; }
-
 		public new static Application Current => (Application)System.Windows.Application.Current;
 
 		static Application()
 		{
 			AppDomain.CurrentDomain.UnhandledException += HandleUnhandledException;
-
-			TelemetryClient = new TelemetryClient();
-			TelemetryClient.Context.Session.Id = Guid.NewGuid().ToString();
-			TelemetryClient.Context.Device.OperatingSystem = Environment.OSVersion.ToString();
-			TelemetryClient.Context.Component.Version = ProductInfo.VersionString;
-#if DEBUG
-			TelemetryClient.Context.User.Id = Environment.UserName;
-#endif
-			SetInstrumentationKey();
 		}
-
-		static partial void SetInstrumentationKey();
 
 		private static void HandleUnhandledException(object sender, UnhandledExceptionEventArgs args)
 		{
@@ -99,9 +84,6 @@ Exception: {exception?.GetType().FullName}
 				// ReSharper disable once AssignNullToNotNullAttribute
 				Directory.CreateDirectory(Path.GetDirectoryName(path));
 				File.AppendAllText(path, message);
-
-				TelemetryClient.TrackException(exception);
-				TelemetryClient.TrackTrace(message, SeverityLevel.Critical);
 			}
 			catch (Exception ex)
 			{

@@ -224,9 +224,6 @@
     <PackageReference Include="LivetExtensions">
       <Version>4.0.2</Version>
     </PackageReference>
-    <PackageReference Include="Microsoft.ApplicationInsights">
-      <Version>2.22.0</Version>
-    </PackageReference>
     <PackageReference Include="Microsoft.CSharp" Version="4.7.0" />
     <PackageReference Include="Microsoft.Windows.SDK.Contracts" Condition="'$(TargetFramework)' == 'net48'">
       <Version>10.0.26100.1742</Version>
@@ -247,9 +244,6 @@
     <Compile Update="Application.xaml.cs">
       <DependentUpon>Application.xaml</DependentUpon>
       <SubType>Code</SubType>
-    </Compile>
-    <Compile Update="Application.iKey.cs">
-      <DependentUpon>Application.xaml</DependentUpon>
     </Compile>
     <Compile Update="Application.Static.cs">
       <DependentUpon>Application.xaml</DependentUpon>

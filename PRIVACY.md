@@ -1,11 +1,26 @@
 # Privacy Policy
 
-## Personal information
+## Data collection and network transmission
 
-This application will access any file or folder on your device.
-These are used only in the application, and does not collect or publish any personal information.
+SylphyHornPlus does not transmit telemetry, usage data, crash reports, or
+personal information to the developer or any external analytics service.
 
-## Error information
+## Local data
 
-This application sends error information for debugging at crash.
-Personal information is not included in the send data.
+SylphyHornPlus stores its settings, generated virtual desktop interface cache,
+and error reports in the current user's local application data folder under
+`%LocalAppData%\hwtnb.net\SylphyHornPlus`.
+
+Error reports may contain exception details, stack traces, operating system and
+runtime information, CPU and memory information, and file paths or other data
+included in an exception message. Error reports remain on the device and are
+not uploaded automatically. They can be deleted from the `ErrorReports`
+subfolder when they are no longer needed.
+
+## File and Windows access
+
+SylphyHornPlus accesses files selected or configured by the user, such as
+wallpaper images and imported or exported settings. It also uses Windows
+features required for virtual desktop management, global shortcuts, startup
+registration, and optional Task Scheduler integration. It does not scan or
+publish arbitrary files from the device.

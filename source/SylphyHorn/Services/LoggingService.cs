@@ -1,5 +1,4 @@
 ﻿using System;
-using System.Collections.Generic;
 using System.Linq;
 using Livet;
 using MetroTrilithon.Threading.Tasks;
@@ -55,8 +54,6 @@ namespace SylphyHorn.Services
 			{
 				this.Header = ex.GetType().Name;
 				this.Content = ex.ToString();
-
-				Application.TelemetryClient.TrackException(ex);
 			}
 
 			public Log(TaskLog log)
@@ -66,14 +63,6 @@ namespace SylphyHorn.Services
 {log.CallerMemberName} ({System.IO.Path.GetFileName(log.CallerFilePath)}#{log.CallerLineNumber})
 -----
 {log.Exception}";
-
-				Application.TelemetryClient.TrackException(
-					log.Exception,
-					properties: new Dictionary<string, string>()
-					{
-						{ "CallerMemberName", log.CallerMemberName },
-						{ "CallerFilePath&LineNumber", $"{log.CallerFilePath}#{log.CallerLineNumber}" },
-					});
 			}
 		}
 	}
