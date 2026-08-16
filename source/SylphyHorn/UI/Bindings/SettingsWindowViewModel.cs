@@ -143,15 +143,6 @@ namespace SylphyHorn.UI.Bindings
 
 		#endregion
 
-		#region IsStartupSchedulerEnabled notification property
-
-		public bool IsStartupSchedulerEnabled
-		{
-			get => this._startupScheduler.IsEnabled;
-		}
-
-		#endregion
-
 		#region Culture notification property
 
 		public string Culture

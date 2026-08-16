@@ -246,7 +246,7 @@
 							</CheckBox>
 						</StackPanel>
 						<StackPanel Margin="8,0,0,0">
-							<CheckBox IsChecked="{Binding HasStartupScheduler, Mode=TwoWay}" IsEnabled="{Binding IsStartupSchedulerEnabled}">
+							<CheckBox IsChecked="{Binding HasStartupScheduler, Mode=TwoWay}">
 								<TextBlock Text="{Binding Source={x:Static services:ResourceService.Current}, Path=Resources.Settings_Startup_Automaticaly_As_Admin}" />
 							</CheckBox>
 						</StackPanel>
@@ -2355,12 +2355,6 @@
 							<Run Text="{x:Static properties:ProductInfo.VersionString}" />
 							<Run Text="{x:Static properties:ProductInfo.ExtraVersionString}" />
 						</TextBlock>
-
-						<TextBlock Text="Built using the Desktop Bridge."
-								   Foreground="{DynamicResource ForegroundBrushKey}"
-								   FontFamily="Segoe UI, Meiryo UI"
-								   Visibility="{Binding Source={x:Static root:Application.IsWindowsBridge}, Converter={StaticResource BooleanToVisibilityConverter}}"
-								   Margin="2,6" />
 
 						<TextBlock Foreground="{DynamicResource ForegroundBrushKey}"
 								   FontFamily="Segoe UI, Meiryo UI"

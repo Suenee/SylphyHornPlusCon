@@ -9,9 +9,6 @@ namespace SylphyHorn.Properties
 			() => new DirectoryInfo(
 				Path.Combine(
 					Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-#if APPX
-					@"Packages\46846grabacr.net.SylphyHorn_vwznf8jfphrrc\LocalCache\Local",
-#endif
 					ProductInfo.Company,
 					ProductInfo.Product)
 			));

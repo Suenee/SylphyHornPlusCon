@@ -49,17 +49,6 @@
         "resolved": "4.7.0",
         "contentHash": "pTj+D3uJWyN3My70i2Hqo+OXixq3Os2D1nJ2x92FFo6sk8fYS1m1WLNTs0Dc1uPaViH0YvEEwvzddQ7y4rhXmA=="
       },
-      "Microsoft.Windows.SDK.Contracts": {
-        "type": "Direct",
-        "requested": "[10.0.26100.1742, )",
-        "resolved": "10.0.26100.1742",
-        "contentHash": "i7FoN7nBn805fgMhkQlSMUNvJVgUXMquDco3ItGc/h3jil9lOPdtoFSpx/NDNdlkNbBh1LW1shbAAeUpEnYZNw==",
-        "dependencies": {
-          "System.Runtime.InteropServices.WindowsRuntime": "4.3.0",
-          "System.Runtime.WindowsRuntime": "4.6.0",
-          "System.Runtime.WindowsRuntime.UI.Xaml": "4.6.0"
-        }
-      },
       "Microsoft.Xaml.Behaviors.Wpf": {
         "type": "Direct",
         "requested": "[1.1.142, )",
@@ -202,24 +191,6 @@
         "type": "Transitive",
         "resolved": "6.1.2",
         "contentHash": "2hBr6zdbIBTDE3EhK7NSVNdX58uTK6iHW/P/Axmm9sl1xoGSLqDvMtpecn226TNwHByFokYwJmt/aQQNlO5CRw=="
-      },
-      "System.Runtime.InteropServices.WindowsRuntime": {
-        "type": "Transitive",
-        "resolved": "4.3.0",
-        "contentHash": "J4GUi3xZQLUBasNwZnjrffN8i5wpHrBtZoLG+OhRyGo/+YunMRWWtwoMDlUAIdmX0uRfpHIBDSV6zyr3yf00TA=="
-      },
-      "System.Runtime.WindowsRuntime": {
-        "type": "Transitive",
-        "resolved": "4.6.0",
-        "contentHash": "IWrs1TmbxP65ZZjIglNyvDkFNoV5q2Pofg5WO7I8RKQOpLdFprQSh3xesOoClBqR4JHr4nEB1Xk1MqLPW1jPuQ=="
-      },
-      "System.Runtime.WindowsRuntime.UI.Xaml": {
-        "type": "Transitive",
-        "resolved": "4.6.0",
-        "contentHash": "r4tNw5v5kqRJ9HikWpcyNf3suGw7DjX93svj9iBjtdeLqL8jt9Z+7f+s4wrKZJr84u8IMsrIjt8K6jYvkRqMSg==",
-        "dependencies": {
-          "System.Runtime.WindowsRuntime": "4.6.0"
-        }
       },
       "sylphyhorn.core": {
         "type": "Project"

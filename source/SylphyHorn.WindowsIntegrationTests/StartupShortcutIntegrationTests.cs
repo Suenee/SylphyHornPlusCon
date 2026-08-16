@@ -41,7 +41,51 @@ namespace SylphyHorn.WindowsIntegrationTests
 			}
 		}
 
+		[Fact]
+		[Trait(
+			IntegrationTestExecutionEnvironment.TraitName,
+			IntegrationTestExecutionEnvironment.HostedCI)]
+		public void ShellLinkProductionOverloadPreservesShortcutContract()
+		{
+			var directory = Path.Combine(
+				Path.GetTempPath(),
+				$"SylphyHornPlus-StartupShortcut-{Guid.NewGuid():N}");
+			Directory.CreateDirectory(directory);
+
+			try
+			{
+				var shortcutPath = Path.Combine(directory, "SylphyHorn.lnk");
+				var executablePath = Process.GetCurrentProcess().MainModule.FileName;
+
+#if NETFRAMEWORK
+				ShellLink.Create(shortcutPath);
+#else
+				ShellLink.Create(shortcutPath, Environment.ProcessPath);
+#endif
+
+				Assert.True(File.Exists(shortcutPath));
+				var shortcut = ReadShortcut(shortcutPath);
+				Assert.Equal(
+					Path.GetFullPath(executablePath),
+					Path.GetFullPath(shortcut.Target),
+					StringComparer.OrdinalIgnoreCase);
+				Assert.Equal(string.Empty, shortcut.Arguments);
+				Assert.Equal(string.Empty, shortcut.WorkingDirectory);
+
+				File.Delete(shortcutPath);
+				Assert.False(File.Exists(shortcutPath));
+			}
+			finally
+			{
+				Directory.Delete(directory, recursive: true);
+			}
+		}
+
 		private static string ReadShortcutTarget(string shortcutPath)
+			=> ReadShortcut(shortcutPath).Target;
+
+		private static (string Target, string Arguments, string WorkingDirectory) ReadShortcut(
+			string shortcutPath)
 		{
 			var shellLink = (IShellLink)new ShellLinkObject();
 			try
@@ -50,7 +94,11 @@ namespace SylphyHorn.WindowsIntegrationTests
 
 				var targetPath = new StringBuilder(32768);
 				shellLink.GetPath(targetPath, targetPath.Capacity, IntPtr.Zero, 4);
-				return targetPath.ToString();
+				var arguments = new StringBuilder(32768);
+				shellLink.GetArguments(arguments, arguments.Capacity);
+				var workingDirectory = new StringBuilder(32768);
+				shellLink.GetWorkingDirectory(workingDirectory, workingDirectory.Capacity);
+				return (targetPath.ToString(), arguments.ToString(), workingDirectory.ToString());
 			}
 			finally
 			{
@@ -74,6 +122,26 @@ namespace SylphyHorn.WindowsIntegrationTests
 				int maximumPathLength,
 				IntPtr findData,
 				uint flags);
+
+			void GetIDList(out IntPtr itemIdentifierList);
+
+			void SetIDList(IntPtr itemIdentifierList);
+
+			void GetDescription(
+				[Out, MarshalAs(UnmanagedType.LPWStr)] StringBuilder description,
+				int maximumLength);
+
+			void SetDescription([MarshalAs(UnmanagedType.LPWStr)] string description);
+
+			void GetWorkingDirectory(
+				[Out, MarshalAs(UnmanagedType.LPWStr)] StringBuilder workingDirectory,
+				int maximumPathLength);
+
+			void SetWorkingDirectory([MarshalAs(UnmanagedType.LPWStr)] string workingDirectory);
+
+			void GetArguments(
+				[Out, MarshalAs(UnmanagedType.LPWStr)] StringBuilder arguments,
+				int maximumLength);
 		}
 	}
 }

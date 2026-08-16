@@ -17,7 +17,7 @@ if ( $TargetFramework -ne "net48" ) {
 
 $targets = $TargetDir
 $lib = Join-Path $TargetDir "lib"
-$excludes = ".assets", "AppxManifest.xml", "SylphyHorn.exe*", "SylphyHorn.pdb", "SchedulerManager.exe*", "SchedulerManager.pdb", "lib"
+$excludes = ".assets", "SylphyHorn.exe*", "SylphyHorn.pdb", "SchedulerManager.exe*", "SchedulerManager.pdb", "lib"
 
 if ( Test-Path $lib ) {
     Remove-Item $lib -Recurse

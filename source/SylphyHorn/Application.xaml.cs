@@ -20,13 +20,6 @@ namespace SylphyHorn
 {
 	sealed partial class Application : IDisposableHolder
 	{
-		public static bool IsWindowsBridge { get; }
-#if APPX
-			= true;
-#else
-			= false;
-#endif
-
 		private readonly LivetCompositeDisposable _compositeDisposable = new LivetCompositeDisposable();
 		private ApplicationPreparation _preparation;
 		private int _shutdownStarted;

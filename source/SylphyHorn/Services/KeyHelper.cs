@@ -4,12 +4,8 @@ using System.Linq;
 using System.Threading.Tasks;
 using SylphyHorn.Serialization;
 
-#if WINDOWS_UWP
-using Windows.System;
-#else
 using VirtualKey = System.Windows.Forms.Keys;
 using System.Windows.Input;
-#endif
 
 namespace SylphyHorn.Services
 {
@@ -32,7 +28,6 @@ namespace SylphyHorn.Services
 			return IsModifyKey((uint)key);
 		}
 
-#if !WINDOWS_UWP
 		public static bool IsModifyKey(this Key key)
 		{
 			return IsModifyKey((uint)key.ToVirtualKey());
@@ -42,7 +37,6 @@ namespace SylphyHorn.Services
 		{
 			return (VirtualKey)KeyInterop.VirtualKeyFromKey(key);
 		}
-#endif
 
 		private static bool IsModifyKey(uint keyCode)
 		{

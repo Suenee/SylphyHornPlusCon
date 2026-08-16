@@ -76,43 +76,6 @@
     <CodeAnalysisRuleSet>MinimumRecommendedRules.ruleset</CodeAnalysisRuleSet>
   </PropertyGroup>
 
-  <PropertyGroup Condition="'$(Configuration)|$(Platform)' == 'Release %28AppX%29|AnyCPU'">
-    <PlatformTarget>AnyCPU</PlatformTarget>
-    <DefineConstants>TRACE;APPX</DefineConstants>
-    <CodeAnalysisRuleSet>MinimumRecommendedRules.ruleset</CodeAnalysisRuleSet>
-  </PropertyGroup>
-
-  <PropertyGroup Condition="'$(Configuration)|$(Platform)' == 'Release %28AppX%29|x64'">
-    <PlatformTarget>x64</PlatformTarget>
-    <DefineConstants>TRACE;APPX</DefineConstants>
-    <CodeAnalysisRuleSet>MinimumRecommendedRules.ruleset</CodeAnalysisRuleSet>
-  </PropertyGroup>
-
-  <PropertyGroup Condition="'$(Configuration)|$(Platform)' == 'Release %28AppX%29|x86'">
-    <PlatformTarget>x86</PlatformTarget>
-    <DefineConstants>TRACE;APPX</DefineConstants>
-    <CodeAnalysisRuleSet>MinimumRecommendedRules.ruleset</CodeAnalysisRuleSet>
-  </PropertyGroup>
-
-  <PropertyGroup Condition="'$(Configuration)|$(Platform)' == 'Debug %28AppX%29|AnyCPU'">
-    <PlatformTarget>AnyCPU</PlatformTarget>
-    <DefineConstants>TRACE;DEBUG;APPX</DefineConstants>
-    <UseVSHostingProcess>false</UseVSHostingProcess>
-    <CodeAnalysisRuleSet>MinimumRecommendedRules.ruleset</CodeAnalysisRuleSet>
-  </PropertyGroup>
-
-  <PropertyGroup Condition="'$(Configuration)|$(Platform)' == 'Debug %28AppX%29|x64'">
-    <PlatformTarget>x64</PlatformTarget>
-    <DefineConstants>TRACE;DEBUG;APPX</DefineConstants>
-    <CodeAnalysisRuleSet>MinimumRecommendedRules.ruleset</CodeAnalysisRuleSet>
-  </PropertyGroup>
-
-  <PropertyGroup Condition="'$(Configuration)|$(Platform)' == 'Debug %28AppX%29|x86'">
-    <PlatformTarget>x86</PlatformTarget>
-    <DefineConstants>TRACE;DEBUG;APPX</DefineConstants>
-    <CodeAnalysisRuleSet>MinimumRecommendedRules.ruleset</CodeAnalysisRuleSet>
-  </PropertyGroup>
-
   <ItemGroup>
     <Reference Include="MetroRadiance">
       <HintPath>..\libraries\MetroTrilithon.Desktop\$(MetroBinaryTfm)\MetroRadiance.dll</HintPath>
@@ -225,9 +188,6 @@
       <Version>4.0.2</Version>
     </PackageReference>
     <PackageReference Include="Microsoft.CSharp" Version="4.7.0" />
-    <PackageReference Include="Microsoft.Windows.SDK.Contracts" Condition="'$(TargetFramework)' == 'net48'">
-      <Version>10.0.26100.1742</Version>
-    </PackageReference>
     <PackageReference Include="Tavis.UriTemplates" Version="2.0.0" Condition="'$(TargetFramework)' == 'net10.0-windows10.0.26100.0'" />
     <PackageReference Include="Microsoft.Xaml.Behaviors.Wpf">
       <Version>1.1.142</Version>

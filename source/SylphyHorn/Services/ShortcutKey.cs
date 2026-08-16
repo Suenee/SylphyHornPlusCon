@@ -3,11 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using MetroTrilithon.Linq;
 
-#if WINDOWS_UWP
-using Windows.System;
-#else
 using VirtualKey = System.Windows.Forms.Keys;
-#endif
 
 namespace SylphyHorn.Services
 {

@@ -3,7 +3,6 @@ using System.Diagnostics;
 using System.IO;
 using System.Reflection;
 using System.Security.Principal;
-using SylphyHorn.Interop;
 
 namespace SylphyHorn
 {
@@ -18,8 +17,6 @@ namespace SylphyHorn
 		public bool IsExists => this.HasStartupTask();
 
 		public bool IsRunning => this.IsTaskRunning();
-
-		public bool IsEnabled => !Platform.IsUwp;
 
 		public bool IsAdministrator => _principal.IsInRole(WindowsBuiltInRole.Administrator);
 
@@ -40,11 +37,6 @@ namespace SylphyHorn
 
 		public void Register()
 		{
-			if (Platform.IsUwp)
-			{
-				return;
-			}
-
 			var processInfo = this.CreateStartInfo(isRequiredAdmin: true);
 			processInfo.Arguments = "register " + $"\"{this._appPath}\"";
 
@@ -76,7 +68,7 @@ namespace SylphyHorn
 
 		public void Unregister()
 		{
-			if (Platform.IsUwp || !this.IsExists)
+			if (!this.IsExists)
 			{
 				return;
 			}
@@ -112,7 +104,7 @@ namespace SylphyHorn
 
 		public void Restart()
 		{
-			if (Platform.IsUwp || !this.IsExists)
+			if (!this.IsExists)
 			{
 				return;
 			}
@@ -148,11 +140,6 @@ namespace SylphyHorn
 
 		private bool HasStartupTask()
 		{
-			if (Platform.IsUwp)
-			{
-				return false;
-			}
-
 			var processInfo = this.CreateStartInfo(isRequiredAdmin: false);
 			processInfo.Arguments = "hastask " + $"\"{this._appPath}\"";
 
@@ -177,11 +164,6 @@ namespace SylphyHorn
 
 		private bool IsTaskRunning()
 		{
-			if (Platform.IsUwp)
-			{
-				return false;
-			}
-
 			var processInfo = this.CreateStartInfo(isRequiredAdmin: false);
 			processInfo.Arguments = "isrunning " + $"\"{this._appPath}\"";
 

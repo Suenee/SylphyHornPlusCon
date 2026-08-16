@@ -4,11 +4,7 @@ using System.Linq;
 using System.Threading.Tasks;
 using SylphyHorn.Services;
 
-#if WINDOWS_UWP
-using Windows.System;
-#else
 using VirtualKey = System.Windows.Forms.Keys;
-#endif
 
 namespace SylphyHorn.Serialization
 {
