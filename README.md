@@ -1,7 +1,8 @@
 # SylphyHornPlus
 
-SylphyHornPlus is Virtual Desktop Tools for Windows 11 and 10.  
-Provides global hotkeys, switching notification, change background and several functions to virtual desktop.
+SylphyHornPlus is a virtual desktop enhancement tool for Windows 11 and 10.
+It provides global hotkeys, desktop-switch notifications, per-desktop
+wallpapers, mouse gestures, and tools for managing virtual desktops.
 
 This app is a fork of SylphyHorn with better support for Windows 11.  
 New features are below:
@@ -16,37 +17,68 @@ New features are below:
 * Add Mouse shortcuts (rocker and wheel gestures) on both Windows 11 and 10.
 
 
-## Installations
+## Installation
 
-SylphyHornPlus is a Windows-only application. Download the ZIP that matches
-your Windows CPU architecture from
+### Install with WinGet
+
+For a new WinGet-managed installation, run:
+
+```powershell
+winget install --id hwtnb.SylphyHornPlus --exact
+```
+
+To update an existing WinGet-managed installation, run:
+
+```powershell
+winget upgrade --id hwtnb.SylphyHornPlus --exact
+```
+
+To uninstall a WinGet-managed installation, run:
+
+```powershell
+winget uninstall --id hwtnb.SylphyHornPlus --exact
+```
+
+The `SylphyHornPlus` command alias starts the WinGet-managed application.
+WinGet removes the managed application files and command alias when
+uninstalling, but it does not remove SylphyHornPlus settings stored in your
+user profile.
+
+### Install from a ZIP
+
+Download the ZIP that matches your Windows CPU architecture from
 [Releases](https://github.com/hwtnb/SylphyHornPlusWin11/releases):
 
 * `SylphyHornPlus-v{version}-x86.zip` for 32-bit Windows
 * `SylphyHornPlus-v{version}-x64.zip` for 64-bit Intel/AMD Windows
 * `SylphyHornPlus-v{version}-arm64.zip` for ARM64 Windows
 
-All three packages are self-contained. You do not need to install the .NET
-Desktop Runtime separately.
-
-You can also install or update the WinGet-managed package with:
-
-```powershell
-winget upgrade --id hwtnb.SylphyHornPlus --exact
-```
-
-For a first-time WinGet installation, replace `upgrade` with `install`.
+All three packages are self-contained. The .NET Desktop Runtime does not need
+to be installed separately.
 
 To use the ZIP manually, extract it to a new folder and start
-`SylphyHorn/SylphyHorn.exe`. When updating a manually extracted copy from the
-previous single-ZIP distribution, exit SylphyHornPlus, select the package for
-your architecture, and replace the entire extracted application folder. A
-WinGet installation does not remove a separately extracted copy or its startup
-registration, so remove or unregister the old manual copy before switching to
-the WinGet-managed package.
+`SylphyHorn/SylphyHorn.exe`. For every manual ZIP update, exit SylphyHornPlus
+and replace the entire extracted application folder; do not overwrite the old
+folder in place. When migrating from the previous single-ZIP distribution,
+also select the package that matches your Windows CPU architecture. A WinGet
+installation does not remove a separately extracted copy or its startup
+registration. Remove or unregister the old manual copy before switching to the
+WinGet-managed package.
 
-### Note: Update from the original or other forks
-Please delete cache data (VirtualDesktop.*****.generated.dll) at %UserProfile%\AppData\Local\grabacr.net\SylphyHorn\assemblies before SylphyHornPlus starts.
+### Virtual desktop interface cache
+
+Normal updates do not require manual cache removal.
+
+If virtual desktop initialization fails after migrating from the original
+SylphyHorn or another fork, exit all related applications and remove the old
+cache if present:
+
+`%LocalAppData%\grabacr.net\SylphyHorn\assemblies`
+
+To force the current SylphyHornPlus installation to regenerate its virtual
+desktop interface cache, exit SylphyHornPlus and remove:
+
+`%LocalAppData%\hwtnb.net\SylphyHornPlus\assemblies`
 
 
 ## Requirements
