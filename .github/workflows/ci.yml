@@ -17,6 +17,23 @@ env:
   DOTNET_CLI_TELEMETRY_OPTOUT: true
 
 jobs:
+  release-contract-tests:
+    name: Release and WinGet contract tests
+    runs-on: windows-2025
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          submodules: false
+
+      - name: Run release contract fixtures
+        shell: pwsh
+        run: |
+          & ".github\scripts\Test-WinGetManifestTopology.ps1"
+          & ".github\scripts\Test-WinGetReleaseNotes.ps1"
+
   unit-tests:
     name: Unit tests (${{ matrix.framework }}, ${{ matrix.platform }})
     runs-on: windows-2025

@@ -77,16 +77,9 @@ jobs:
           }
 
           $releaseDate = ([DateTimeOffset] $release.published_at).UtcDateTime.ToString('yyyy-MM-dd')
-          $highlightsMatch = [regex]::Match(
-            [string] $release.body,
-            '(?ms)^## Highlights\s*\r?\n(?<Notes>.+?)(?=\r?\n## |\z)')
-          if (-not $highlightsMatch.Success) {
-            throw "Release '$env:RELEASE_TAG' does not contain a Highlights section."
-          }
-          $releaseNotes = $highlightsMatch.Groups['Notes'].Value.Trim()
-          if ([string]::IsNullOrWhiteSpace($releaseNotes)) {
-            throw "Release '$env:RELEASE_TAG' has an empty Highlights section."
-          }
+          & '.github\scripts\Test-WinGetReleaseNotes.ps1'
+          $releaseNotes = & '.github\scripts\Get-WinGetReleaseNotes.ps1' `
+            -ReleaseBody ([string] $release.body)
           $releaseNotesBase64 = [Convert]::ToBase64String(
             [Text.Encoding]::UTF8.GetBytes($releaseNotes))
           "version=$version" >> $env:GITHUB_OUTPUT

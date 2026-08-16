@@ -14,7 +14,7 @@ param(
 Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
 
-$normalizedNotes = $ReleaseNotes.Replace("`r`n", "`n").Trim()
+$normalizedNotes = $ReleaseNotes.Replace("`r`n", "`n").Trim([char[]] "`r`n")
 if ([string]::IsNullOrWhiteSpace($normalizedNotes)) {
 	throw "Release notes must not be empty."
 }
@@ -42,7 +42,7 @@ if ($releaseNotesUrlMatches.Count -ne 1) {
 }
 
 $indentedNotes = ($normalizedNotes -split "`n" | ForEach-Object { "  $_" }) -join "`n"
-$releaseNotesBlock = "ReleaseNotes: |-`n$indentedNotes`n"
+$releaseNotesBlock = "ReleaseNotes: |2-`n$indentedNotes`n"
 $updated = [regex]::Replace(
 	$manifest,
 	'(?m)^ReleaseNotesUrl\s*:',
