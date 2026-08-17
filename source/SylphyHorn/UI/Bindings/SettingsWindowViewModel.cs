@@ -1,19 +1,22 @@
 using System;
 using System.Collections.Generic;
+using System.Collections.Concurrent;
+using System.Collections.ObjectModel;
 using System.IO;
 using System.Linq;
+using System.Threading;
+using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Media;
+using System.Windows.Threading;
+using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
-using Livet;
-using Livet.EventListeners;
-using Livet.Messaging;
-using Livet.Messaging.IO;
 using MetroRadiance.Platform;
 using MetroRadiance.UI.Controls;
 using MetroTrilithon.Lifetime;
 using MetroTrilithon.Mvvm;
 using MetroTrilithon.Threading.Tasks;
+using SylphyHorn.Lifetime;
 using SylphyHorn.Properties;
 using SylphyHorn.Serialization;
 using SylphyHorn.Services;
@@ -23,7 +26,7 @@ using WindowsDesktop;
 
 namespace SylphyHorn.UI.Bindings
 {
-	public class SettingsWindowViewModel : WindowViewModel
+	public class SettingsWindowViewModel : ObservableObject, IDisposableHolder, IDisposable
 	{
 		private static bool _restartRequired;
 		private static readonly string _defaultCulture = Settings.General.Culture;
@@ -31,8 +34,15 @@ namespace SylphyHorn.UI.Bindings
 
 		private readonly HookService _hookService;
 		private readonly DesktopTransitionRuntime _desktopRuntime;
+		private readonly ISettingsDialogService _dialogService;
 		private readonly Startup _startup;
 		private readonly StartupScheduler _startupScheduler;
+		private readonly object _lifecycleGate = new object();
+		private readonly DisposableCollection _compositeDisposable = new DisposableCollection();
+		private bool _initialized;
+		private bool _disposed;
+
+		ICollection<IDisposable> IDisposableHolder.CompositeDisposable => this._compositeDisposable;
 
 		public IReadOnlyCollection<DisplayItem<string>> Cultures { get; }
 
@@ -91,7 +101,7 @@ namespace SylphyHorn.UI.Bindings
 					}
 
 					this._HasStartupLink = this._startup.IsExists;
-					this.RaisePropertyChanged();
+					this.OnPropertyChanged();
 				}
 			}
 		}
@@ -135,7 +145,7 @@ namespace SylphyHorn.UI.Bindings
 					finally
 					{
 						this._HasStartupScheduler = this._startupScheduler.IsExists;
-						this.RaisePropertyChanged();
+						this.OnPropertyChanged();
 					}
 				}
 			}
@@ -155,8 +165,8 @@ namespace SylphyHorn.UI.Bindings
 					Settings.General.Culture.Value = value;
 					_restartRequired = value != _defaultCulture;
 
-					this.RaisePropertyChanged();
-					this.RaisePropertyChanged(nameof(this.RestartRequired));
+					this.OnPropertyChanged();
+					this.OnPropertyChanged(nameof(this.RestartRequired));
 				}
 			}
 		}
@@ -175,15 +185,15 @@ namespace SylphyHorn.UI.Bindings
 				if (this._Desktops != value)
 				{
 					this._Desktops = value;
-					this.RaisePropertyChanged();
-					this.RaisePropertyChanged(nameof(this.IsShortcutKeyOfSwitchToIndicesLarger));
-					this.RaisePropertyChanged(nameof(this.IsShortcutKeyOfMoveToIndicesLarger));
-					this.RaisePropertyChanged(nameof(this.IsShortcutKeyOfMoveToIndicesAndSwitchLarger));
-					this.RaisePropertyChanged(nameof(this.IsShortcutKeyOfSwapDesktopIndicesLarger));
-					this.RaisePropertyChanged(nameof(this.IsMouseOfSwitchToIndicesLarger));
-					this.RaisePropertyChanged(nameof(this.IsMouseOfMoveToIndicesLarger));
-					this.RaisePropertyChanged(nameof(this.IsMouseOfMoveToIndicesAndSwitchLarger));
-					this.RaisePropertyChanged(nameof(this.IsMouseOfSwapDesktopIndicesLarger));
+					this.OnPropertyChanged();
+					this.OnPropertyChanged(nameof(this.IsShortcutKeyOfSwitchToIndicesLarger));
+					this.OnPropertyChanged(nameof(this.IsShortcutKeyOfMoveToIndicesLarger));
+					this.OnPropertyChanged(nameof(this.IsShortcutKeyOfMoveToIndicesAndSwitchLarger));
+					this.OnPropertyChanged(nameof(this.IsShortcutKeyOfSwapDesktopIndicesLarger));
+					this.OnPropertyChanged(nameof(this.IsMouseOfSwitchToIndicesLarger));
+					this.OnPropertyChanged(nameof(this.IsMouseOfMoveToIndicesLarger));
+					this.OnPropertyChanged(nameof(this.IsMouseOfMoveToIndicesAndSwitchLarger));
+					this.OnPropertyChanged(nameof(this.IsMouseOfSwapDesktopIndicesLarger));
 				}
 			}
 		}
@@ -202,8 +212,8 @@ namespace SylphyHorn.UI.Bindings
 				if (this._CurrentDesktop != value)
 				{
 					this._CurrentDesktop = value;
-					this.RaisePropertyChanged();
-					this.RaisePropertyChanged(nameof(this.PreviewNotificationText));
+					this.OnPropertyChanged();
+					this.OnPropertyChanged(nameof(this.PreviewNotificationText));
 				}
 			}
 		}
@@ -221,7 +231,7 @@ namespace SylphyHorn.UI.Bindings
 				{
 					Settings.General.Placement.Value = (uint)value;
 
-					this.RaisePropertyChanged();
+					this.OnPropertyChanged();
 				}
 			}
 		}
@@ -239,7 +249,7 @@ namespace SylphyHorn.UI.Bindings
 				{
 					Settings.General.Display.Value = value;
 
-					this.RaisePropertyChanged();
+					this.OnPropertyChanged();
 				}
 			}
 		}
@@ -257,7 +267,7 @@ namespace SylphyHorn.UI.Bindings
 				{
 					Settings.General.NotificationWindowStyle.Value = (uint)value;
 
-					this.RaisePropertyChanged();
+					this.OnPropertyChanged();
 				}
 			}
 		}
@@ -275,7 +285,7 @@ namespace SylphyHorn.UI.Bindings
 				{
 					Settings.General.NotificationCornerStyle.Value = (uint)value;
 
-					this.RaisePropertyChanged();
+					this.OnPropertyChanged();
 				}
 			}
 		}
@@ -293,7 +303,7 @@ namespace SylphyHorn.UI.Bindings
 				{
 					Settings.General.NotificationHeaderAlignment.Value = (uint)value;
 
-					this.RaisePropertyChanged();
+					this.OnPropertyChanged();
 				}
 			}
 		}
@@ -311,7 +321,7 @@ namespace SylphyHorn.UI.Bindings
 				{
 					Settings.General.NotificationBodyAlignment.Value = (uint)value;
 
-					this.RaisePropertyChanged();
+					this.OnPropertyChanged();
 				}
 			}
 		}
@@ -331,7 +341,7 @@ namespace SylphyHorn.UI.Bindings
 				{
 					Settings.General.NotificationOffsetX.Value = param;
 
-					this.RaisePropertyChanged();
+					this.OnPropertyChanged();
 				}
 			}
 		}
@@ -351,7 +361,7 @@ namespace SylphyHorn.UI.Bindings
 				{
 					Settings.General.NotificationOffsetY.Value = param;
 
-					this.RaisePropertyChanged();
+					this.OnPropertyChanged();
 				}
 			}
 		}
@@ -371,7 +381,7 @@ namespace SylphyHorn.UI.Bindings
 				{
 					Settings.General.PinWindowOffsetX.Value = param;
 
-					this.RaisePropertyChanged();
+					this.OnPropertyChanged();
 				}
 			}
 		}
@@ -391,7 +401,7 @@ namespace SylphyHorn.UI.Bindings
 				{
 					Settings.General.PinWindowOffsetY.Value = param;
 
-					this.RaisePropertyChanged();
+					this.OnPropertyChanged();
 				}
 			}
 		}
@@ -415,7 +425,7 @@ namespace SylphyHorn.UI.Bindings
 				{
 					Settings.General.NotificationMinWidth.Value = param;
 
-					this.RaisePropertyChanged();
+					this.OnPropertyChanged();
 				}
 			}
 		}
@@ -439,7 +449,7 @@ namespace SylphyHorn.UI.Bindings
 				{
 					Settings.General.SimpleNotificationMinWidth.Value = param;
 
-					this.RaisePropertyChanged();
+					this.OnPropertyChanged();
 				}
 			}
 		}
@@ -463,7 +473,7 @@ namespace SylphyHorn.UI.Bindings
 				{
 					Settings.General.PinWindowMinWidth.Value = param;
 
-					this.RaisePropertyChanged();
+					this.OnPropertyChanged();
 				}
 			}
 		}
@@ -487,7 +497,7 @@ namespace SylphyHorn.UI.Bindings
 				{
 					Settings.General.NotificationMinHeight.Value = param;
 
-					this.RaisePropertyChanged();
+					this.OnPropertyChanged();
 				}
 			}
 		}
@@ -505,8 +515,8 @@ namespace SylphyHorn.UI.Bindings
 				{
 					Settings.General.NotificationFontFamily.Value = value;
 
-					this.RaisePropertyChanged();
-					this.RaisePropertyChanged(nameof(this.NotificationFontFamilyOrDefault));
+					this.OnPropertyChanged();
+					this.OnPropertyChanged(nameof(this.NotificationFontFamilyOrDefault));
 				}
 			}
 		}
@@ -542,7 +552,7 @@ namespace SylphyHorn.UI.Bindings
 				{
 					Settings.General.NotificationHeaderFontSize.Value = param;
 
-					this.RaisePropertyChanged();
+					this.OnPropertyChanged();
 				}
 			}
 		}
@@ -566,7 +576,7 @@ namespace SylphyHorn.UI.Bindings
 				{
 					Settings.General.NotificationBodyFontSize.Value = param;
 
-					this.RaisePropertyChanged();
+					this.OnPropertyChanged();
 				}
 			}
 		}
@@ -585,7 +595,7 @@ namespace SylphyHorn.UI.Bindings
 				{
 					Settings.General.NotificationLineSpacing.Value = param;
 
-					this.RaisePropertyChanged();
+					this.OnPropertyChanged();
 				}
 			}
 		}
@@ -607,7 +617,7 @@ namespace SylphyHorn.UI.Bindings
 				{
 					this._PreviewBackgroundBrush = value;
 
-					this.RaisePropertyChanged();
+					this.OnPropertyChanged();
 				}
 			}
 		}
@@ -627,8 +637,8 @@ namespace SylphyHorn.UI.Bindings
 				{
 					this._PreviewBackgroundPath = value;
 
-					this.RaisePropertyChanged();
-					this.RaisePropertyChanged(nameof(this.HasPreviewWallpaper));
+					this.OnPropertyChanged();
+					this.OnPropertyChanged(nameof(this.HasPreviewWallpaper));
 				}
 			}
 		}
@@ -653,7 +663,7 @@ namespace SylphyHorn.UI.Bindings
 				{
 					this._PreviewCornerRadius = value;
 
-					this.RaisePropertyChanged();
+					this.OnPropertyChanged();
 				}
 			}
 		}
@@ -697,8 +707,8 @@ namespace SylphyHorn.UI.Bindings
 				{
 					this._NotificationBackgroundColor = value;
 
-					this.RaisePropertyChanged();
-					this.RaisePropertyChanged(nameof(this.NotificationBackground));
+					this.OnPropertyChanged();
+					this.OnPropertyChanged(nameof(this.NotificationBackground));
 				}
 			}
 		}
@@ -721,8 +731,8 @@ namespace SylphyHorn.UI.Bindings
 				{
 					this._NotificationForegroundColor = value;
 
-					this.RaisePropertyChanged();
-					this.RaisePropertyChanged(nameof(this.NotificationForeground));
+					this.OnPropertyChanged();
+					this.OnPropertyChanged(nameof(this.NotificationForeground));
 				}
 			}
 		}
@@ -773,9 +783,12 @@ namespace SylphyHorn.UI.Bindings
 		public RelayCommand<string> RemoveLastMouseListCommand { get; }
 
 		public RelayCommand<string> ResizeMouseListToFitCommand { get; }
-		public ReadOnlyDispatcherCollection<LogViewModel> Logs { get; }
+		public ObservableCollection<LogViewModel> Logs { get; }
 
-		internal SettingsWindowViewModel(HookService hookService, DesktopTransitionRuntime desktopRuntime)
+		internal SettingsWindowViewModel(
+			HookService hookService,
+			DesktopTransitionRuntime desktopRuntime,
+			ISettingsDialogService dialogService)
 		{
 			this.OpenExportPathDialogCommand = new RelayCommand(this.OpenExportPathDialog);
 			this.OpenImportPathDialogCommand = new RelayCommand(this.OpenImportPathDialog);
@@ -790,6 +803,7 @@ namespace SylphyHorn.UI.Bindings
 			this.ResizeMouseListToFitCommand = new RelayCommand<string>(this.ResizeMouseListToFit);
 			this._hookService = hookService;
 			this._desktopRuntime = desktopRuntime ?? throw new ArgumentNullException(nameof(desktopRuntime));
+			this._dialogService = dialogService ?? throw new ArgumentNullException(nameof(dialogService));
 			ShortcutKeyBox.HookService = hookService;
 			MouseShortcutBox.HookService = hookService;
 
@@ -886,10 +900,12 @@ namespace SylphyHorn.UI.Bindings
 			this.UpdateNotificationColor(this.NotificationWindowStyle);
 			this.UpdateNotificationCornerRadius(this.NotificationCornerStyle);
 
-			this.Logs = ViewModelHelper.CreateReadOnlyDispatcherCollection(
-				LoggingService.Instance.Logs,
-				log => new LogViewModel(log),
-				DispatcherHelper.UIDispatcher);
+			this.Logs = new ObservableCollection<LogViewModel>();
+			var logProjection = new SettingsLogProjection(
+				LoggingService.Instance,
+				Dispatcher.CurrentDispatcher,
+				this.Logs);
+			logProjection.AddTo(this);
 
 			Settings.General.AlwaysShowDesktopNotification
 				.Subscribe(alwaysShow =>
@@ -913,13 +929,13 @@ namespace SylphyHorn.UI.Bindings
 				.AddTo(this);
 
 			Settings.General.SimpleNotification
-				.Subscribe(_ => this.RaisePropertyChanged(nameof(this.PreviewNotificationText)))
+				.Subscribe(_ => this.OnPropertyChanged(nameof(this.PreviewNotificationText)))
 				.AddTo(this);
 			Settings.General.SimpleNotification
-				.Subscribe(_ => this.RaisePropertyChanged(nameof(this.PreviewNotificationHeaderVisibility)))
+				.Subscribe(_ => this.OnPropertyChanged(nameof(this.PreviewNotificationHeaderVisibility)))
 				.AddTo(this);
 			Settings.General.UseDesktopName
-				.Subscribe(_ => this.RaisePropertyChanged(nameof(this.PreviewNotificationText)))
+				.Subscribe(_ => this.OnPropertyChanged(nameof(this.PreviewNotificationText)))
 				.AddTo(this);
 			Settings.General.NotificationWindowStyle
 				.Subscribe(mode => this.UpdateNotificationColor((BlurWindowThemeMode)mode))
@@ -929,41 +945,41 @@ namespace SylphyHorn.UI.Bindings
 				.AddTo(this);
 
 			Settings.ShortcutKey.SwitchToIndices
-				.Subscribe(_ => this.RaisePropertyChanged(nameof(this.IsShortcutKeyOfSwitchToIndicesLarger)))
+				.Subscribe(_ => this.OnPropertyChanged(nameof(this.IsShortcutKeyOfSwitchToIndicesLarger)))
 				.AddTo(this);
 			Settings.ShortcutKey.MoveToIndices
-				.Subscribe(_ => this.RaisePropertyChanged(nameof(this.IsShortcutKeyOfMoveToIndicesLarger)))
+				.Subscribe(_ => this.OnPropertyChanged(nameof(this.IsShortcutKeyOfMoveToIndicesLarger)))
 				.AddTo(this);
 			Settings.ShortcutKey.MoveToIndicesAndSwitch
-				.Subscribe(_ => this.RaisePropertyChanged(nameof(this.IsShortcutKeyOfMoveToIndicesAndSwitchLarger)))
+				.Subscribe(_ => this.OnPropertyChanged(nameof(this.IsShortcutKeyOfMoveToIndicesAndSwitchLarger)))
 				.AddTo(this);
 			Settings.ShortcutKey.SwapDesktopIndices
-				.Subscribe(_ => this.RaisePropertyChanged(nameof(this.IsShortcutKeyOfSwapDesktopIndicesLarger)))
+				.Subscribe(_ => this.OnPropertyChanged(nameof(this.IsShortcutKeyOfSwapDesktopIndicesLarger)))
 				.AddTo(this);
 			Settings.MouseShortcut.SwitchToIndices
-				.Subscribe(_ => this.RaisePropertyChanged(nameof(this.IsMouseOfSwitchToIndicesLarger)))
+				.Subscribe(_ => this.OnPropertyChanged(nameof(this.IsMouseOfSwitchToIndicesLarger)))
 				.AddTo(this);
 			Settings.MouseShortcut.MoveToIndices
-				.Subscribe(_ => this.RaisePropertyChanged(nameof(this.IsMouseOfMoveToIndicesLarger)))
+				.Subscribe(_ => this.OnPropertyChanged(nameof(this.IsMouseOfMoveToIndicesLarger)))
 				.AddTo(this);
 			Settings.MouseShortcut.MoveToIndicesAndSwitch
-				.Subscribe(_ => this.RaisePropertyChanged(nameof(this.IsMouseOfMoveToIndicesAndSwitchLarger)))
+				.Subscribe(_ => this.OnPropertyChanged(nameof(this.IsMouseOfMoveToIndicesAndSwitchLarger)))
 				.AddTo(this);
 			Settings.MouseShortcut.SwapDesktopIndices
-				.Subscribe(_ => this.RaisePropertyChanged(nameof(this.IsMouseOfSwapDesktopIndicesLarger)))
+				.Subscribe(_ => this.OnPropertyChanged(nameof(this.IsMouseOfSwapDesktopIndicesLarger)))
 				.AddTo(this);
 
 			WindowsTheme.ColorPrevalence
 				.RegisterListener(_ => this.UpdateNotificationColor(this.NotificationWindowStyle))
 				.AddTo(this);
 			WindowsTheme.ColorPrevalence
-				.RegisterListener(_ => this.RaisePropertyChanged(nameof(this.TaskbarBackground)))
+				.RegisterListener(_ => this.OnPropertyChanged(nameof(this.TaskbarBackground)))
 				.AddTo(this);
 			WindowsTheme.Transparency
 				.RegisterListener(_ => this.UpdateNotificationColor(this.NotificationWindowStyle))
 				.AddTo(this);
 			WindowsTheme.Transparency
-				.RegisterListener(_ => this.RaisePropertyChanged(nameof(this.TaskbarBackground)))
+				.RegisterListener(_ => this.OnPropertyChanged(nameof(this.TaskbarBackground)))
 				.AddTo(this);
 
 			Disposable.Create(() => LocalSettingsProvider.Instance.SaveAsync().Forget())
@@ -976,31 +992,44 @@ namespace SylphyHorn.UI.Bindings
 				.AddTo(this);
 		}
 
-		protected override void InitializeCore()
+		public void Initialize()
 		{
-			base.InitializeCore();
-			Disposable.Create(() =>
+			lock (this._lifecycleGate)
+			{
+				if (this._initialized || this._disposed) return;
+
+				this._initialized = true;
+				Disposable.Create(() =>
 				{
 					ShortcutKeyBox.HookService = null;
 					MouseShortcutBox.HookService = null;
 				})
 				.AddTo(this);
+			}
+		}
+
+		public void Dispose()
+		{
+			lock (this._lifecycleGate)
+			{
+				if (this._disposed) return;
+				this._disposed = true;
+			}
+
+			this._compositeDisposable.Dispose();
 		}
 
 		public void OpenBackgroundPathDialog(int index)
 		{
-			var message = new OpeningFileSelectionMessage("Window.OpenBackgroundImagesDialog.Open")
-			{
-				Title = Resources.Settings_Background_SelectionDialog,
-				InitialDirectory = Settings.General.DesktopBackgroundFolderPath,
-				Filter = WallpaperService.SupportedFormats,
-				MultiSelect = false,
-			};
-			this.Messenger.Raise(message);
+			var response = this._dialogService.ShowOpenFileDialog(
+				Resources.Settings_Background_SelectionDialog,
+				Settings.General.DesktopBackgroundFolderPath,
+				WallpaperService.SupportedFormats,
+				string.Empty);
 
-			if (message.Response != null && message.Response.Length > 0 && File.Exists(message.Response[0]))
+			if (response != null && response.Length > 0 && File.Exists(response[0]))
 			{
-				var filePath = message.Response[0];
+				var filePath = response[0];
 				Settings.General.DesktopBackgroundFolderPath.Value = Path.GetDirectoryName(filePath);
 				this._Desktops[index].WallpaperPath = filePath;
 			}
@@ -1009,18 +1038,15 @@ namespace SylphyHorn.UI.Bindings
 		public void OpenExportPathDialog()
 		{
 			var provider = LocalSettingsProvider.Instance;
-			var message = new SavingFileSelectionMessage("Window.OpenExportPathDialog.Open")
-			{
-				Title = Resources.Settings_ManagingSettings_ExportDialog,
-				InitialDirectory = _exportOrImportFolder,
-				FileName = provider.Filename,
-				Filter = LocalSettingsProvider.SupportedFormats,
-			};
-			this.Messenger.Raise(message);
+			var response = this._dialogService.ShowSaveFileDialog(
+				Resources.Settings_ManagingSettings_ExportDialog,
+				_exportOrImportFolder,
+				LocalSettingsProvider.SupportedFormats,
+				provider.Filename);
 
-			if (message.Response != null && message.Response.Length > 0 && !string.IsNullOrEmpty(message.Response[0]))
+			if (!string.IsNullOrEmpty(response))
 			{
-				var filePath = message.Response[0];
+				var filePath = response;
 				_exportOrImportFolder = Path.GetDirectoryName(filePath);
 				provider.ExportAsync(filePath).Forget();
 			}
@@ -1029,36 +1055,27 @@ namespace SylphyHorn.UI.Bindings
 		public async void OpenImportPathDialog()
 		{
 			var provider = LocalSettingsProvider.Instance;
-			var message = new OpeningFileSelectionMessage("Window.OpenImportPathDialog.Open")
-			{
-				Title = Resources.Settings_ManagingSettings_ImportDialog,
-				InitialDirectory = _exportOrImportFolder,
-				FileName = provider.Filename,
-				Filter = LocalSettingsProvider.SupportedFormats,
-				MultiSelect = false,
-			};
-			this.Messenger.Raise(message);
+			var response = this._dialogService.ShowOpenFileDialog(
+				Resources.Settings_ManagingSettings_ImportDialog,
+				_exportOrImportFolder,
+				LocalSettingsProvider.SupportedFormats,
+				provider.Filename);
 
-			if (message.Response == null || message.Response.Length == 0 || string.IsNullOrEmpty(message.Response[0])) return;
+			if (response == null || response.Length == 0 || string.IsNullOrEmpty(response[0])) return;
 			var hookDisposable = this._hookService?.Suspend();
 			try
 			{
-				var filePath = message.Response[0];
+				var filePath = response[0];
 				_exportOrImportFolder = Path.GetDirectoryName(filePath);
 				var stage = await provider.PrepareImportAsync(filePath);
 				var seed = SettingsService.CaptureDesktopStartupSeed(stage.Settings);
 				var overrideDesktops = false;
 				if (this.IsNameSupport && (seed.Names.Count > 0 || seed.WallpaperPaths.Count > 0))
 				{
-					var confirmation = new ConfirmationMessage("", "", "Window.OverrideDesktopsDialog.Confirm")
-					{
-						Text = Resources.Settings_ManagingSettings_OverrideDesktopsConfirmationMessage,
-						Caption = Resources.Settings_ManagingSettings_OverrideDesktopsConfirmationDialog,
-						Image = MessageBoxImage.Question,
-						Button = MessageBoxButton.OKCancel,
-					};
-					this.Messenger.Raise(confirmation);
-					overrideDesktops = confirmation.Response ?? false;
+					overrideDesktops = this._dialogService.ShowOkCancelConfirmation(
+						Resources.Settings_ManagingSettings_OverrideDesktopsConfirmationMessage,
+						Resources.Settings_ManagingSettings_OverrideDesktopsConfirmationDialog,
+						MessageBoxImage.Question);
 				}
 				var result = await this._desktopRuntime.CommitPreparedImportAsync(stage, overrideDesktops, default(System.Threading.CancellationToken));
 				if (result.Succeeded) this.NotifyOfAllPropertiesChanged();
@@ -1068,15 +1085,10 @@ namespace SylphyHorn.UI.Bindings
 
 		public async void ResetSettings()
 		{
-			var message = new ConfirmationMessage("", "", "Window.ResetSettingsDialog.Confirm")
-			{
-				Text = Resources.Settings_ManagingSettings_ResetConfirmationMessage,
-				Caption = Resources.Settings_ManagingSettings_ResetConfirmationDialog,
-				Image = MessageBoxImage.Warning,
-				Button = MessageBoxButton.OKCancel,
-			};
-			this.Messenger.Raise(message);
-			if (!(message.Response ?? false)) return;
+			if (!this._dialogService.ShowOkCancelConfirmation(
+				Resources.Settings_ManagingSettings_ResetConfirmationMessage,
+				Resources.Settings_ManagingSettings_ResetConfirmationDialog,
+				MessageBoxImage.Warning)) return;
 			var hookDisposable = this._hookService?.Suspend();
 			try
 			{
@@ -1180,7 +1192,7 @@ namespace SylphyHorn.UI.Bindings
 		private void NotifyOfAllPropertiesChanged()
 		{
 			var properties = this.GetType().GetProperties();
-			foreach (var prop in properties) this.RaisePropertyChanged(prop.Name);
+			foreach (var prop in properties) this.OnPropertyChanged(prop.Name);
 		}
 		private void UpdateNotificationColor(BlurWindowThemeMode mode)
 		{
@@ -1308,6 +1320,135 @@ namespace SylphyHorn.UI.Bindings
 				default:
 					return GeneralSettings.NotificationOffsetYDefaultValue;
 			}
+		}
+	}
+
+	internal sealed class SettingsLogProjection : IDisposable
+	{
+		private readonly Dispatcher _dispatcher;
+		private readonly ObservableCollection<LogViewModel> _logs;
+		private readonly ConcurrentQueue<LogEntry> _pending = new ConcurrentQueue<LogEntry>();
+		private readonly SingleDrainGate _drainGate = new SingleDrainGate();
+		private readonly IDisposable _subscription;
+		private long _lastAppliedSequence;
+		private int _disposed;
+
+		internal SettingsLogProjection(
+			LoggingService loggingService,
+			Dispatcher dispatcher,
+			ObservableCollection<LogViewModel> logs)
+		{
+			if (loggingService == null) throw new ArgumentNullException(nameof(loggingService));
+			this._dispatcher = dispatcher ?? throw new ArgumentNullException(nameof(dispatcher));
+			this._logs = logs ?? throw new ArgumentNullException(nameof(logs));
+
+			this._subscription = loggingService.Subscribe(this.EnqueueSnapshot, this.EnqueueAndRequestDrain);
+			this.RequestDrain();
+		}
+
+		public void Dispose()
+		{
+			if (Interlocked.Exchange(ref this._disposed, 1) != 0) return;
+
+			this._subscription.Dispose();
+			while (this._pending.TryDequeue(out _)) { }
+		}
+
+		private void EnqueueSnapshot(LogEntry[] snapshot)
+		{
+			foreach (var entry in snapshot) this._pending.Enqueue(entry);
+		}
+
+		private void EnqueueAndRequestDrain(LogEntry entry)
+		{
+			if (Volatile.Read(ref this._disposed) != 0) return;
+
+			this._pending.Enqueue(entry);
+			this.RequestDrain();
+		}
+
+		private void RequestDrain()
+		{
+			if (Volatile.Read(ref this._disposed) != 0 || !this._drainGate.TryAcquire()) return;
+
+			if (this._dispatcher.HasShutdownStarted || this._dispatcher.HasShutdownFinished)
+			{
+				this._drainGate.Release();
+				return;
+			}
+
+			try
+			{
+				this._dispatcher.BeginInvoke(new Action(this.Drain));
+			}
+			catch (InvalidOperationException)
+			{
+				this._drainGate.Release();
+			}
+			catch (TaskCanceledException)
+			{
+				this._drainGate.Release();
+			}
+		}
+
+		private void Drain()
+		{
+			if (Volatile.Read(ref this._disposed) != 0)
+			{
+				this._drainGate.Release();
+				return;
+			}
+
+			do
+			{
+				while (this._pending.TryDequeue(out var entry))
+				{
+					if (Volatile.Read(ref this._disposed) != 0)
+					{
+						this._drainGate.Release();
+						return;
+					}
+
+					if (entry.Sequence <= this._lastAppliedSequence) continue;
+					if (Volatile.Read(ref this._disposed) != 0)
+					{
+						this._drainGate.Release();
+						return;
+					}
+
+					this._logs.Add(new LogViewModel(entry.Log));
+					this._lastAppliedSequence = entry.Sequence;
+				}
+			}
+			while (this._drainGate.ReleaseAndTryAcquireIf(this.HasPendingEntries));
+		}
+
+		private bool HasPendingEntries()
+		{
+			return !this._pending.IsEmpty;
+		}
+	}
+
+	internal sealed class SingleDrainGate
+	{
+		private int _owned;
+
+		internal bool TryAcquire()
+		{
+			return Interlocked.CompareExchange(ref this._owned, 1, 0) == 0;
+		}
+
+		internal void Release()
+		{
+			Volatile.Write(ref this._owned, 0);
+		}
+
+		internal bool ReleaseAndTryAcquireIf(Func<bool> hasPending)
+		{
+			if (hasPending == null) throw new ArgumentNullException(nameof(hasPending));
+
+			this.Release();
+			return hasPending() && this.TryAcquire();
 		}
 	}
 }

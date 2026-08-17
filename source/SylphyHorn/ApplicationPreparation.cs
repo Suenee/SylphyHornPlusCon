@@ -77,8 +77,11 @@ namespace SylphyHorn
 			if (SettingsWindow.Instance != null) SettingsWindow.Instance.Activate();
 			else
 			{
-				SettingsWindow.Instance = new SettingsWindow { DataContext = new SettingsWindowViewModel(this._hookService, this._desktopRuntime) };
-				SettingsWindow.Instance.ShowDialog();
+				var window = new SettingsWindow();
+				var dialogService = new SettingsDialogService();
+				window.DataContext = new SettingsWindowViewModel(this._hookService, this._desktopRuntime, dialogService);
+				SettingsWindow.Instance = window;
+				window.ShowDialog();
 				SettingsWindow.Instance = null;
 			}
 		}

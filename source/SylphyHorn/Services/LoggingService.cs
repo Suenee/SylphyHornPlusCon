@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Linq;
-using Livet;
+using System.Collections.Generic;
+using MetroTrilithon.Lifetime;
 using MetroTrilithon.Threading.Tasks;
 
 namespace SylphyHorn.Services
@@ -12,17 +13,61 @@ namespace SylphyHorn.Services
 		string Content { get; }
 	}
 
+	public readonly struct LogEntry
+	{
+		public long Sequence { get; }
+
+		public ILog Log { get; }
+
+		public LogEntry(long sequence, ILog log)
+		{
+			this.Sequence = sequence;
+			this.Log = log;
+		}
+	}
+
 	public class LoggingService
 	{
-		public static LoggingService Instance { get; } = new LoggingService();
+		private readonly object _gate = new object();
+		private readonly List<ILog> _logs = new List<ILog>();
+		private readonly List<Action<LogEntry>> _handlers = new List<Action<LogEntry>>();
+		private long _sequence;
 
-		public ObservableSynchronizedCollection<ILog> Logs { get; } = new ObservableSynchronizedCollection<ILog>();
+		public static LoggingService Instance { get; } = new LoggingService();
 
 		private LoggingService() { }
 
 		public void Register(ILog log)
 		{
-			this.Logs.Add(log);
+			lock (this._gate)
+			{
+				var entry = new LogEntry(++this._sequence, log);
+				this._logs.Add(log);
+				foreach (var handler in this._handlers.ToArray()) handler(entry);
+			}
+		}
+
+		public IDisposable Subscribe(Action<LogEntry[]> initialize, Action<LogEntry> handler)
+		{
+			if (initialize == null) throw new ArgumentNullException(nameof(initialize));
+			if (handler == null) throw new ArgumentNullException(nameof(handler));
+
+			lock (this._gate)
+			{
+				var snapshot = this._logs
+					.Select((log, index) => new LogEntry(index + 1L, log))
+					.ToArray();
+				initialize(snapshot);
+				this._handlers.Add(handler);
+			}
+
+			return Disposable.Create(() =>
+			{
+				lock (this._gate)
+				{
+					this._handlers.Remove(handler);
+				}
+			});
 		}
 
 		public void Register(Exception exception)
