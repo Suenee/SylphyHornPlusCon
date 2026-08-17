@@ -34,21 +34,21 @@ namespace SylphyHorn.UI.Bindings
 		private readonly Startup _startup;
 		private readonly StartupScheduler _startupScheduler;
 
-		public IReadOnlyCollection<DisplayViewModel<string>> Cultures { get; }
+		public IReadOnlyCollection<DisplayItem<string>> Cultures { get; }
 
-		public IReadOnlyCollection<DisplayViewModel<WallpaperPosition>> WallpaperPositions { get; }
+		public IReadOnlyCollection<DisplayItem<WallpaperPosition>> WallpaperPositions { get; }
 
-		public IReadOnlyCollection<DisplayViewModel<WindowPlacement>> Placements { get; }
+		public IReadOnlyCollection<DisplayItem<WindowPlacement>> Placements { get; }
 
-		public IReadOnlyCollection<DisplayViewModel<BlurWindowThemeMode>> NotificationWindowStyles { get; }
+		public IReadOnlyCollection<DisplayItem<BlurWindowThemeMode>> NotificationWindowStyles { get; }
 
-		public IReadOnlyCollection<DisplayViewModel<BlurWindowCornerMode>> NotificationCornerStyles { get; }
+		public IReadOnlyCollection<DisplayItem<BlurWindowCornerMode>> NotificationCornerStyles { get; }
 
-		public IReadOnlyCollection<DisplayViewModel<HorizontalAlignment>> NotificationTextAlignments { get; }
+		public IReadOnlyCollection<DisplayItem<HorizontalAlignment>> NotificationTextAlignments { get; }
 
 		public bool IsDisplayEnabled { get; }
 
-		public IReadOnlyCollection<DisplayViewModel<uint>> Displays { get; }
+		public IReadOnlyCollection<DisplayItem<uint>> Displays { get; }
 
 		public IReadOnlyCollection<LicenseViewModel> Licenses { get; }
 
@@ -764,68 +764,68 @@ namespace SylphyHorn.UI.Bindings
 			this._startup = new Startup();
 			this._startupScheduler = new StartupScheduler();
 
-			this.Cultures = new[] { new DisplayViewModel<string> { Display = "(auto)", } }
+			this.Cultures = new[] { new DisplayItem<string> { Display = "(auto)", } }
 				.Concat(ResourceService.Current.SupportedCultures
-					.Select(x => new DisplayViewModel<string> { Display = x.NativeName, Value = x.Name, })
+					.Select(x => new DisplayItem<string> { Display = x.NativeName, Value = x.Name, })
 					.OrderBy(x => x.Display))
 				.ToList();
 
 			this.WallpaperPositions = new[]
 			{
-				new DisplayViewModel<WallpaperPosition> { Display = " " + Resources.Settings_Background_Position_Center, Value = WallpaperPosition.Center, },
-				new DisplayViewModel<WallpaperPosition> { Display = " " + Resources.Settings_Background_Position_Tile, Value = WallpaperPosition.Tile, },
-				new DisplayViewModel<WallpaperPosition> { Display = " " + Resources.Settings_Background_Position_Stretch, Value = WallpaperPosition.Stretch, },
-				new DisplayViewModel<WallpaperPosition> { Display = " " + Resources.Settings_Background_Position_Fit, Value = WallpaperPosition.Fit, },
-				new DisplayViewModel<WallpaperPosition> { Display = " " + Resources.Settings_Background_Position_Fill, Value = WallpaperPosition.Fill, },
-				new DisplayViewModel<WallpaperPosition> { Display = " " + Resources.Settings_Background_Position_Span, Value = WallpaperPosition.Span, },
+				new DisplayItem<WallpaperPosition> { Display = " " + Resources.Settings_Background_Position_Center, Value = WallpaperPosition.Center, },
+				new DisplayItem<WallpaperPosition> { Display = " " + Resources.Settings_Background_Position_Tile, Value = WallpaperPosition.Tile, },
+				new DisplayItem<WallpaperPosition> { Display = " " + Resources.Settings_Background_Position_Stretch, Value = WallpaperPosition.Stretch, },
+				new DisplayItem<WallpaperPosition> { Display = " " + Resources.Settings_Background_Position_Fit, Value = WallpaperPosition.Fit, },
+				new DisplayItem<WallpaperPosition> { Display = " " + Resources.Settings_Background_Position_Fill, Value = WallpaperPosition.Fill, },
+				new DisplayItem<WallpaperPosition> { Display = " " + Resources.Settings_Background_Position_Span, Value = WallpaperPosition.Span, },
 			}.ToList();
 
 			this.Placements = new[]
 			{
-				new DisplayViewModel<WindowPlacement> { Display = Resources.Settings_NotificationWindowPlacement_TopLeft, Value = WindowPlacement.TopLeft, },
-				new DisplayViewModel<WindowPlacement> { Display = Resources.Settings_NotificationWindowPlacement_TopCenter, Value = WindowPlacement.TopCenter, },
-				new DisplayViewModel<WindowPlacement> { Display = Resources.Settings_NotificationWindowPlacement_TopRight, Value = WindowPlacement.TopRight, },
-				new DisplayViewModel<WindowPlacement> { Display = Resources.Settings_NotificationWindowPlacement_CenterLeft, Value = WindowPlacement.CenterLeft, },
-				new DisplayViewModel<WindowPlacement> { Display = Resources.Settings_NotificationWindowPlacement_Center, Value = WindowPlacement.Center, },
-				new DisplayViewModel<WindowPlacement> { Display = Resources.Settings_NotificationWindowPlacement_CenterRight, Value = WindowPlacement.CenterRight, },
-				new DisplayViewModel<WindowPlacement> { Display = Resources.Settings_NotificationWindowPlacement_BottomLeft, Value = WindowPlacement.BottomLeft, },
-				new DisplayViewModel<WindowPlacement> { Display = Resources.Settings_NotificationWindowPlacement_BottomCenter, Value = WindowPlacement.BottomCenter, },
-				new DisplayViewModel<WindowPlacement> { Display = Resources.Settings_NotificationWindowPlacement_BottomRight, Value = WindowPlacement.BottomRight, },
+				new DisplayItem<WindowPlacement> { Display = Resources.Settings_NotificationWindowPlacement_TopLeft, Value = WindowPlacement.TopLeft, },
+				new DisplayItem<WindowPlacement> { Display = Resources.Settings_NotificationWindowPlacement_TopCenter, Value = WindowPlacement.TopCenter, },
+				new DisplayItem<WindowPlacement> { Display = Resources.Settings_NotificationWindowPlacement_TopRight, Value = WindowPlacement.TopRight, },
+				new DisplayItem<WindowPlacement> { Display = Resources.Settings_NotificationWindowPlacement_CenterLeft, Value = WindowPlacement.CenterLeft, },
+				new DisplayItem<WindowPlacement> { Display = Resources.Settings_NotificationWindowPlacement_Center, Value = WindowPlacement.Center, },
+				new DisplayItem<WindowPlacement> { Display = Resources.Settings_NotificationWindowPlacement_CenterRight, Value = WindowPlacement.CenterRight, },
+				new DisplayItem<WindowPlacement> { Display = Resources.Settings_NotificationWindowPlacement_BottomLeft, Value = WindowPlacement.BottomLeft, },
+				new DisplayItem<WindowPlacement> { Display = Resources.Settings_NotificationWindowPlacement_BottomCenter, Value = WindowPlacement.BottomCenter, },
+				new DisplayItem<WindowPlacement> { Display = Resources.Settings_NotificationWindowPlacement_BottomRight, Value = WindowPlacement.BottomRight, },
 			}.ToList();
 
 			this.NotificationWindowStyles = new[]
 			{
-				new DisplayViewModel<BlurWindowThemeMode> { Display = Resources.Settings_NotificationWindowStyle_Apps, Value = BlurWindowThemeMode.Default, },
-				new DisplayViewModel<BlurWindowThemeMode> { Display = Resources.Settings_NotificationWindowStyle_Light, Value = BlurWindowThemeMode.Light, },
-				new DisplayViewModel<BlurWindowThemeMode> { Display = Resources.Settings_NotificationWindowStyle_Dark, Value = BlurWindowThemeMode.Dark, },
-				new DisplayViewModel<BlurWindowThemeMode> { Display = Resources.Settings_NotificationWindowStyle_Accent, Value = BlurWindowThemeMode.Accent, },
-				new DisplayViewModel<BlurWindowThemeMode> { Display = Resources.Settings_NotificationWindowStyle_System, Value = BlurWindowThemeMode.System, },
+				new DisplayItem<BlurWindowThemeMode> { Display = Resources.Settings_NotificationWindowStyle_Apps, Value = BlurWindowThemeMode.Default, },
+				new DisplayItem<BlurWindowThemeMode> { Display = Resources.Settings_NotificationWindowStyle_Light, Value = BlurWindowThemeMode.Light, },
+				new DisplayItem<BlurWindowThemeMode> { Display = Resources.Settings_NotificationWindowStyle_Dark, Value = BlurWindowThemeMode.Dark, },
+				new DisplayItem<BlurWindowThemeMode> { Display = Resources.Settings_NotificationWindowStyle_Accent, Value = BlurWindowThemeMode.Accent, },
+				new DisplayItem<BlurWindowThemeMode> { Display = Resources.Settings_NotificationWindowStyle_System, Value = BlurWindowThemeMode.System, },
 			}.ToList();
 
 			this.NotificationCornerStyles = new[]
 			{
-				new DisplayViewModel<BlurWindowCornerMode> { Display = Resources.Settings_NotificationCornerStyle_NotRounded, Value = BlurWindowCornerMode.NotRounded, },
-				new DisplayViewModel<BlurWindowCornerMode> { Display = Resources.Settings_NotificationCornerStyle_Rounded, Value = BlurWindowCornerMode.Rounded, },
-				new DisplayViewModel<BlurWindowCornerMode> { Display = Resources.Settings_NotificationCornerStyle_SmallRounded, Value = BlurWindowCornerMode.SmallRounded, },
+				new DisplayItem<BlurWindowCornerMode> { Display = Resources.Settings_NotificationCornerStyle_NotRounded, Value = BlurWindowCornerMode.NotRounded, },
+				new DisplayItem<BlurWindowCornerMode> { Display = Resources.Settings_NotificationCornerStyle_Rounded, Value = BlurWindowCornerMode.Rounded, },
+				new DisplayItem<BlurWindowCornerMode> { Display = Resources.Settings_NotificationCornerStyle_SmallRounded, Value = BlurWindowCornerMode.SmallRounded, },
 			}.ToList();
 
 			this.NotificationTextAlignments = new[]
 			{
-				new DisplayViewModel<HorizontalAlignment> { Display = Resources.Settings_NotificationTextAlignment_Left, Value = HorizontalAlignment.Left, },
-				new DisplayViewModel<HorizontalAlignment> { Display = Resources.Settings_NotificationTextAlignment_Center, Value = HorizontalAlignment.Center, },
-				new DisplayViewModel<HorizontalAlignment> { Display = Resources.Settings_NotificationTextAlignment_Right, Value = HorizontalAlignment.Right, },
+				new DisplayItem<HorizontalAlignment> { Display = Resources.Settings_NotificationTextAlignment_Left, Value = HorizontalAlignment.Left, },
+				new DisplayItem<HorizontalAlignment> { Display = Resources.Settings_NotificationTextAlignment_Center, Value = HorizontalAlignment.Center, },
+				new DisplayItem<HorizontalAlignment> { Display = Resources.Settings_NotificationTextAlignment_Right, Value = HorizontalAlignment.Right, },
 			}.ToList();
 
-			this.Displays = new[] { new DisplayViewModel<uint> { Display = Resources.Settings_MultipleDisplays_CurrentDisplay, Value = 0, } }
+			this.Displays = new[] { new DisplayItem<uint> { Display = Resources.Settings_MultipleDisplays_CurrentDisplay, Value = 0, } }
 				.Concat(MonitorService.GetMonitors()
-					.Select((m, i) => new DisplayViewModel<uint>
+					.Select((m, i) => new DisplayItem<uint>
 					{
 						Display = string.Format(Resources.Settings_MultipleDisplays_EachDisplay, i + 1, m.Name),
 						Value = (uint)(i + 1),
 					}))
 				.Concat(new[]
 				{
-					new DisplayViewModel<uint>
+					new DisplayItem<uint>
 					{
 						Display = Resources.Settings_MultipleDisplays_AllDisplays,
 						Value = uint.MaxValue,

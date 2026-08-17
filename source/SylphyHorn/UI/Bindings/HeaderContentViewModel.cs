@@ -1,10 +1,10 @@
-﻿using Livet;
+﻿using CommunityToolkit.Mvvm.ComponentModel;
 using SylphyHorn.Properties;
 using SylphyHorn.Services;
 
 namespace SylphyHorn.UI.Bindings
 {
-	public class HeaderContentViewModel : ViewModel
+	public class HeaderContentViewModel : ObservableObject
 	{
 		#region Header 変更通知プロパティ
 
@@ -18,7 +18,7 @@ namespace SylphyHorn.UI.Bindings
 				if (this._Header != value)
 				{
 					this._Header = value;
-					this.RaisePropertyChanged();
+					this.OnPropertyChanged();
 				}
 			}
 		}
@@ -37,7 +37,7 @@ namespace SylphyHorn.UI.Bindings
 				if (this._Content != value)
 				{
 					this._Content = value;
-					this.RaisePropertyChanged();
+					this.OnPropertyChanged();
 				}
 			}
 		}

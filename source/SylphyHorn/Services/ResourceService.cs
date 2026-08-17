@@ -2,7 +2,7 @@
 using System.Collections.Generic;
 using System.Globalization;
 using System.Linq;
-using Livet;
+using CommunityToolkit.Mvvm.ComponentModel;
 using SylphyHorn.Properties;
 using SylphyHorn.Serialization;
 
@@ -11,7 +11,7 @@ namespace SylphyHorn.Services
 	/// <summary>
 	/// Provides access to multilingualized resources.
 	/// </summary>
-	public class ResourceService : NotificationObject
+	public class ResourceService : ObservableObject
 	{
 		#region static members
 
@@ -63,7 +63,7 @@ namespace SylphyHorn.Services
 			Resources.Culture = this.SupportedCultures.SingleOrDefault(x => x.Name == name);
 
 			Settings.General.Culture.Value = Resources.Culture?.Name;
-			this.RaisePropertyChanged(nameof(this.Resources));
+			this.OnPropertyChanged(nameof(this.Resources));
 		}
 	}
 }

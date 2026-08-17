@@ -1,15 +1,14 @@
-using Livet;
+using CommunityToolkit.Mvvm.ComponentModel;
 using SylphyHorn.Properties;
 using SylphyHorn.Serialization;
 using SylphyHorn.Services;
 using SylphyHorn.Services.DesktopTransitions;
 using System;
-using System.Linq;
 using System.Windows.Media;
 
 namespace SylphyHorn.UI.Bindings
 {
-	public class VirtualDesktopViewModel : ViewModel
+	public class VirtualDesktopViewModel : ObservableObject
 	{
 		private readonly DesktopTransitionRuntime _runtime;
 		private string _name;
@@ -54,21 +53,21 @@ namespace SylphyHorn.UI.Bindings
 			if (this.Index != index)
 			{
 				this.Index = index;
-				this.RaisePropertyChanged(nameof(this.Index));
-				this.RaisePropertyChanged(nameof(this.NumberText));
+				this.OnPropertyChanged(nameof(this.Index));
+				this.OnPropertyChanged(nameof(this.NumberText));
 			}
 			var name = record.Name.HasValue ? record.Name.Value : null;
 			if (this._name != name)
 			{
 				this._name = name;
-				this.RaisePropertyChanged(nameof(this.Name));
+				this.OnPropertyChanged(nameof(this.Name));
 			}
 			this._wallpaper.Update(record.WallpaperPath.HasValue ? record.WallpaperPath.Value : null, record.WallpaperPosition);
-			this.RaisePropertyChanged(nameof(this.WallpaperPath));
-			this.RaisePropertyChanged(nameof(this.WallpaperPathOrDefault));
-			this.RaisePropertyChanged(nameof(this.WallpaperPosition));
-			this.RaisePropertyChanged(nameof(this.HasWallpaper));
-			this.RaisePropertyChanged(nameof(this.HasNoWallpaper));
+			this.OnPropertyChanged(nameof(this.WallpaperPath));
+			this.OnPropertyChanged(nameof(this.WallpaperPathOrDefault));
+			this.OnPropertyChanged(nameof(this.WallpaperPosition));
+			this.OnPropertyChanged(nameof(this.HasWallpaper));
+			this.OnPropertyChanged(nameof(this.HasNoWallpaper));
 		}
 
 		public void MoveToPrevious() => this._runtime.MoveLeft(this.Id);
@@ -78,14 +77,9 @@ namespace SylphyHorn.UI.Bindings
 		public void Switch() => this._runtime.Switch(this.Id);
 		public void Close() => this._runtime.Remove(this.Id);
 
-		internal static VirtualDesktopViewModel[] CreateAll(DesktopTransitionRuntime runtime)
-		{
-			var state = runtime?.State ?? throw new InvalidOperationException("The desktop runtime is not initialized.");
-			return state.Order.Select((id, index) => new VirtualDesktopViewModel(runtime, index, state.Records[id])).ToArray();
-		}
 	}
 
-	public class WallpaperViewModel : ViewModel
+	public class WallpaperViewModel : ObservableObject
 	{
 		private string _path;
 		private WallpaperPosition _position;
@@ -118,13 +112,13 @@ namespace SylphyHorn.UI.Bindings
 			if (this._path != path)
 			{
 				this._path = path;
-				this.RaisePropertyChanged(nameof(this.FilePath));
-				this.RaisePropertyChanged(nameof(this.FilePathOrDefault));
+				this.OnPropertyChanged(nameof(this.FilePath));
+				this.OnPropertyChanged(nameof(this.FilePathOrDefault));
 			}
 			if (this._position != position)
 			{
 				this._position = position;
-				this.RaisePropertyChanged(nameof(this.Position));
+				this.OnPropertyChanged(nameof(this.Position));
 			}
 		}
 	}
