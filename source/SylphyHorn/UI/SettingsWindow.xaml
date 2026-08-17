@@ -281,25 +281,22 @@
 									<ColumnDefinition Width="4" />
 									<ColumnDefinition Width="Auto" />
 								</Grid.ColumnDefinitions>
-								<metro2:CallMethodButton Grid.Column="0"
+								<Button Grid.Column="0"
 														 Content="{Binding Source={x:Static services:ResourceService.Current}, Path=Resources.Settings_ManagingSettings_Export}"
 														 ToolTip="{Binding Source={x:Static services:ResourceService.Current}, Path=Resources.Settings_ManagingSettings_ExportDetail}"
-														 MethodTarget="{Binding}"
-														 MethodName="OpenExportPathDialog"
+														 Command="{Binding OpenExportPathDialogCommand}"
 														 HorizontalAlignment="Left"
 														 Margin="2" />
-								<metro2:CallMethodButton Grid.Column="2"
+								<Button Grid.Column="2"
 														 Content="{Binding Source={x:Static services:ResourceService.Current}, Path=Resources.Settings_ManagingSettings_Import}"
 														 ToolTip="{Binding Source={x:Static services:ResourceService.Current}, Path=Resources.Settings_ManagingSettings_ImportDetail}"
-														 MethodTarget="{Binding}"
-														 MethodName="OpenImportPathDialog"
+														 Command="{Binding OpenImportPathDialogCommand}"
 														 HorizontalAlignment="Left"
 														 Margin="2" />
-								<metro2:CallMethodButton Grid.Column="4"
+								<Button Grid.Column="4"
 														 Content="{Binding Source={x:Static services:ResourceService.Current}, Path=Resources.Settings_ManagingSettings_Reset}"
 														 ToolTip="{Binding Source={x:Static services:ResourceService.Current}, Path=Resources.Settings_ManagingSettings_ResetDetail}"
-														 MethodTarget="{Binding}"
-														 MethodName="ResetSettings"
+														 Command="{Binding ResetSettingsCommand}"
 														 HorizontalAlignment="Left"
 														 Margin="2" />
 							</Grid>
@@ -395,11 +392,10 @@
 																		 Prompt="{Binding Source={x:Static services:ResourceService.Current}, Path=Resources.Settings_DesktopNames}"
 																		 MaxWidth="312"
 																		 Margin="2" />
-													<metro2:CallMethodButton Grid.Row="1" Grid.Column="3"
+													<Button Grid.Row="1" Grid.Column="3"
 																			 Content="{Binding Source={x:Static services:ResourceService.Current}, Path=Resources.Settings_Desktop_CloseDesktop}"
 																			 ToolTip="{Binding Source={x:Static services:ResourceService.Current}, Path=Resources.Settings_Desktop_CloseDesktop_CloseThisDesktop}"
-																			 MethodTarget="{Binding}"
-																			 MethodName="Close"
+																			 Command="{Binding CloseCommand}"
 																			 Margin="2" />
 
 													<TextBlock Grid.Row="2"
@@ -414,11 +410,10 @@
 																		 IsEnabled="{Binding IsWallpaperEnabled}"
 																		 MaxWidth="312"
 																		 Margin="2" />
-													<metro2:CallMethodButton Grid.Row="2" Grid.Column="3"
+													<Button Grid.Row="2" Grid.Column="3"
 																			 Content="{Binding Source={x:Static services:ResourceService.Current}, Path=Resources.Common_Reference}"
-																			 MethodTarget="{Binding Path=DataContext, RelativeSource={RelativeSource FindAncestor, AncestorType={x:Type Window}}}"
-																			 MethodName="OpenBackgroundPathDialog"
-																			 MethodParameter="{Binding Index}"
+																			 Command="{Binding Path=DataContext.OpenBackgroundPathDialogCommand, RelativeSource={RelativeSource FindAncestor, AncestorType={x:Type Window}}}"
+																			 CommandParameter="{Binding Index}"
 																			 IsEnabled="{Binding IsWallpaperEnabled}"
 																			 Margin="2" />
 
@@ -457,10 +452,9 @@
 																   Visibility="{Binding Path=DataContext.IsReorderingSupport, RelativeSource={RelativeSource FindAncestor, AncestorType={x:Type Window}}, Converter={StaticResource BooleanToVisibilityConverter}}"
 																   Margin="0,0,2,0"
 																   Foreground="{DynamicResource ForegroundBrushKey}" />
-														<metro2:CallMethodButton Grid.Column="2"
+														<Button Grid.Column="2"
 																				 ToolTip="{Binding Source={x:Static services:ResourceService.Current}, Path=Resources.Settings_Desktop_MoveDesktopPrevious}"
-																				 MethodTarget="{Binding}"
-																				 MethodName="MoveToPrevious"
+																				 Command="{Binding MoveToPreviousCommand}"
 																				 IsEnabled="{Binding Path=DataContext.IsReorderingSupport, RelativeSource={RelativeSource FindAncestor, AncestorType={x:Type Window}}}"
 																				 Visibility="{Binding Path=DataContext.IsReorderingSupport, RelativeSource={RelativeSource FindAncestor, AncestorType={x:Type Window}}, Converter={StaticResource BooleanToVisibilityConverter}}"
 																				 Margin="2"
@@ -470,11 +464,10 @@
 																	  Stretch="Uniform"
 																	  Data="M0,9 L6,1 L12,9 z" />
 															</ContentControl.Content>
-														</metro2:CallMethodButton>
-														<metro2:CallMethodButton Grid.Column="3"
+														</Button>
+														<Button Grid.Column="3"
 																				 ToolTip="{Binding Source={x:Static services:ResourceService.Current}, Path=Resources.Settings_Desktop_MoveDesktopNext}"
-																				 MethodTarget="{Binding}"
-																				 MethodName="MoveToNext"
+																				 Command="{Binding MoveToNextCommand}"
 																				 IsEnabled="{Binding Path=DataContext.IsReorderingSupport, RelativeSource={RelativeSource FindAncestor, AncestorType={x:Type Window}}}"
 																				 Visibility="{Binding Path=DataContext.IsReorderingSupport, RelativeSource={RelativeSource FindAncestor, AncestorType={x:Type Window}}, Converter={StaticResource BooleanToVisibilityConverter}}"
 																				 Margin="2"
@@ -484,11 +477,10 @@
 																	  Stretch="Uniform"
 																	  Data="M0,1 L6,9 L12,1 z" />
 															</ContentControl.Content>
-														</metro2:CallMethodButton>
-														<metro2:CallMethodButton Grid.Column="4"
+														</Button>
+														<Button Grid.Column="4"
 																				 ToolTip="{Binding Source={x:Static services:ResourceService.Current}, Path=Resources.Settings_Desktop_MoveDesktopFirst}"
-																				 MethodTarget="{Binding}"
-																				 MethodName="MoveToFirst"
+																				 Command="{Binding MoveToFirstCommand}"
 																				 IsEnabled="{Binding Path=DataContext.IsReorderingSupport, RelativeSource={RelativeSource FindAncestor, AncestorType={x:Type Window}}}"
 																				 Visibility="{Binding Path=DataContext.IsReorderingSupport, RelativeSource={RelativeSource FindAncestor, AncestorType={x:Type Window}}, Converter={StaticResource BooleanToVisibilityConverter}}"
 																				 Margin="2"
@@ -498,11 +490,10 @@
 																	  Stretch="Uniform"
 																	  Data="M0,12 L6,6 L0,6 L6,0 L12,6 L6,6 L12,12 z" />
 															</ContentControl.Content>
-														</metro2:CallMethodButton>
-														<metro2:CallMethodButton Grid.Column="5"
+														</Button>
+														<Button Grid.Column="5"
 																				 ToolTip="{Binding Source={x:Static services:ResourceService.Current}, Path=Resources.Settings_Desktop_MoveDesktopLast}"
-																				 MethodTarget="{Binding}"
-																				 MethodName="MoveToLast"
+																				 Command="{Binding MoveToLastCommand}"
 																				 IsEnabled="{Binding Path=DataContext.IsReorderingSupport, RelativeSource={RelativeSource FindAncestor, AncestorType={x:Type Window}}}"
 																				 Visibility="{Binding Path=DataContext.IsReorderingSupport, RelativeSource={RelativeSource FindAncestor, AncestorType={x:Type Window}}, Converter={StaticResource BooleanToVisibilityConverter}}"
 																				 Margin="2"
@@ -512,7 +503,7 @@
 																	  Stretch="Uniform"
 																	  Data="M0,0 L6,6 L0,6 L6,12 L12,6 L6,6 L12,0 z" />
 															</ContentControl.Content>
-														</metro2:CallMethodButton>
+														</Button>
 													</Grid>
 
 													<Canvas Grid.RowSpan="3"
@@ -569,18 +560,17 @@
 																	BorderThickness="0,0,1,1"
 																	Opacity="0.5" />
 														</Grid>
-														<metro2:CallMethodButton ToolTip="{Binding Source={x:Static services:ResourceService.Current}, Path=Resources.Settings_Desktop_ClickToSwitchDesktop}"
+														<Button ToolTip="{Binding Source={x:Static services:ResourceService.Current}, Path=Resources.Settings_Desktop_ClickToSwitchDesktop}"
 																				 ToolTipService.HorizontalOffset="30"
 																				 ToolTipService.InitialShowDelay="2000"
 																				 ToolTipService.ShowDuration="2000"
-																				 MethodTarget="{Binding}"
-																				 MethodName="Switch"
+																				 Command="{Binding SwitchCommand}"
 																				 HorizontalAlignment="Center"
 																				 VerticalAlignment="Center"
 																				 Width="120"
 																				 Height="78"
 																				 Margin="0">
-															<metro2:CallMethodButton.Style>
+															<Button.Style>
 																<Style TargetType="{x:Type Button}">
 																	<Style.Setters>
 																		<Setter Property="Background" Value="Transparent" />
@@ -594,8 +584,8 @@
 																		</Trigger>
 																	</Style.Triggers>
 																</Style>
-															</metro2:CallMethodButton.Style>
-														</metro2:CallMethodButton>
+															</Button.Style>
+														</Button>
 													</Canvas>
 												</Grid>
 											</DataTemplate>
@@ -614,10 +604,9 @@
 										<ColumnDefinition SharedSizeGroup="DesktopColumn" />
 									</Grid.ColumnDefinitions>
 									<Border Grid.Row="0" Height="20" />
-									<metro2:CallMethodButton Grid.Row="1"
+									<Button Grid.Row="1"
 															 Content="{Binding Source={x:Static services:ResourceService.Current}, Path=Resources.Settings_Desktop_CreateDesktop}"
-															 MethodTarget="{Binding}"
-															 MethodName="CreateDesktop"
+															 Command="{Binding CreateDesktopCommand}"
 															 Margin="0" />
 								</Grid>
 
@@ -1109,24 +1098,21 @@
 								<ColumnDefinition Width="8" />
 								<ColumnDefinition Width="*" />
 							</Grid.ColumnDefinitions>
-							<metro2:CallMethodButton Grid.Column="0"
+							<Button Grid.Column="0"
 													 Content="{Binding Source={x:Static services:ResourceService.Current}, Path=Resources.Settings_SwitchSpecifiedDesktop_Add}"
-													 MethodTarget="{Binding}"
-													 MethodName="AddShortcutList"
-													 MethodParameter="SwitchToIndices"
+													 Command="{Binding AddShortcutListCommand}"
+													 CommandParameter="SwitchToIndices"
 													 Margin="0" />
-							<metro2:CallMethodButton Grid.Column="2"
+							<Button Grid.Column="2"
 													 Content="{Binding Source={x:Static services:ResourceService.Current}, Path=Resources.Settings_SwitchSpecifiedDesktop_RemoveLast}"
-													 MethodTarget="{Binding}"
-													 MethodName="RemoveLastShortcutList"
-													 MethodParameter="SwitchToIndices"
+													 Command="{Binding RemoveLastShortcutListCommand}"
+													 CommandParameter="SwitchToIndices"
 													 IsEnabled="{Binding IsShortcutKeyOfSwitchToIndicesLarger}"
 													 Margin="0" />
-							<metro2:CallMethodButton Grid.Column="4"
+							<Button Grid.Column="4"
 													 Content="{Binding Source={x:Static services:ResourceService.Current}, Path=Resources.Settings_SwitchSpecifiedDesktop_ResizeToFit}"
-													 MethodTarget="{Binding}"
-													 MethodName="ResizeShortcutListToFit"
-													 MethodParameter="SwitchToIndices"
+													 Command="{Binding ResizeShortcutListToFitCommand}"
+													 CommandParameter="SwitchToIndices"
 													 IsEnabled="{Binding IsShortcutKeyOfSwitchToIndicesLarger}"
 													 Margin="0" />
 						</Grid>
@@ -1298,24 +1284,21 @@
 								<ColumnDefinition Width="8" />
 								<ColumnDefinition Width="*" />
 							</Grid.ColumnDefinitions>
-							<metro2:CallMethodButton Grid.Column="0"
+							<Button Grid.Column="0"
 													 Content="{Binding Source={x:Static services:ResourceService.Current}, Path=Resources.Settings_SwitchSpecifiedDesktop_Add}"
-													 MethodTarget="{Binding}"
-													 MethodName="AddShortcutList"
-													 MethodParameter="MoveToIndices"
+													 Command="{Binding AddShortcutListCommand}"
+													 CommandParameter="MoveToIndices"
 													 Margin="0" />
-							<metro2:CallMethodButton Grid.Column="2"
+							<Button Grid.Column="2"
 													 Content="{Binding Source={x:Static services:ResourceService.Current}, Path=Resources.Settings_SwitchSpecifiedDesktop_RemoveLast}"
-													 MethodTarget="{Binding}"
-													 MethodName="RemoveLastShortcutList"
-													 MethodParameter="MoveToIndices"
+													 Command="{Binding RemoveLastShortcutListCommand}"
+													 CommandParameter="MoveToIndices"
 													 IsEnabled="{Binding IsShortcutKeyOfMoveToIndicesLarger}"
 													 Margin="0" />
-							<metro2:CallMethodButton Grid.Column="4"
+							<Button Grid.Column="4"
 													 Content="{Binding Source={x:Static services:ResourceService.Current}, Path=Resources.Settings_SwitchSpecifiedDesktop_ResizeToFit}"
-													 MethodTarget="{Binding}"
-													 MethodName="ResizeShortcutListToFit"
-													 MethodParameter="MoveToIndices"
+													 Command="{Binding ResizeShortcutListToFitCommand}"
+													 CommandParameter="MoveToIndices"
 													 IsEnabled="{Binding IsShortcutKeyOfMoveToIndicesLarger}"
 													 Margin="0" />
 						</Grid>
@@ -1391,24 +1374,21 @@
 								<ColumnDefinition Width="8" />
 								<ColumnDefinition Width="*" />
 							</Grid.ColumnDefinitions>
-							<metro2:CallMethodButton Grid.Column="0"
+							<Button Grid.Column="0"
 													 Content="{Binding Source={x:Static services:ResourceService.Current}, Path=Resources.Settings_SwitchSpecifiedDesktop_Add}"
-													 MethodTarget="{Binding}"
-													 MethodName="AddShortcutList"
-													 MethodParameter="MoveToIndicesAndSwitch"
+													 Command="{Binding AddShortcutListCommand}"
+													 CommandParameter="MoveToIndicesAndSwitch"
 													 Margin="0" />
-							<metro2:CallMethodButton Grid.Column="2"
+							<Button Grid.Column="2"
 													 Content="{Binding Source={x:Static services:ResourceService.Current}, Path=Resources.Settings_SwitchSpecifiedDesktop_RemoveLast}"
-													 MethodTarget="{Binding}"
-													 MethodName="RemoveLastShortcutList"
-													 MethodParameter="MoveToIndicesAndSwitch"
+													 Command="{Binding RemoveLastShortcutListCommand}"
+													 CommandParameter="MoveToIndicesAndSwitch"
 													 IsEnabled="{Binding IsShortcutKeyOfMoveToIndicesAndSwitchLarger}"
 													 Margin="0" />
-							<metro2:CallMethodButton Grid.Column="4"
+							<Button Grid.Column="4"
 													 Content="{Binding Source={x:Static services:ResourceService.Current}, Path=Resources.Settings_SwitchSpecifiedDesktop_ResizeToFit}"
-													 MethodTarget="{Binding}"
-													 MethodName="ResizeShortcutListToFit"
-													 MethodParameter="MoveToIndicesAndSwitch"
+													 Command="{Binding ResizeShortcutListToFitCommand}"
+													 CommandParameter="MoveToIndicesAndSwitch"
 													 IsEnabled="{Binding IsShortcutKeyOfMoveToIndicesAndSwitchLarger}"
 													 Margin="0" />
 						</Grid>
@@ -1509,25 +1489,22 @@
 								<ColumnDefinition Width="8" />
 								<ColumnDefinition Width="*" />
 							</Grid.ColumnDefinitions>
-							<metro2:CallMethodButton Grid.Column="0"
+							<Button Grid.Column="0"
 													 Content="{Binding Source={x:Static services:ResourceService.Current}, Path=Resources.Settings_SwitchSpecifiedDesktop_Add}"
-													 MethodTarget="{Binding}"
-													 MethodName="AddShortcutList"
-													 MethodParameter="SwapDesktopIndices"
+													 Command="{Binding AddShortcutListCommand}"
+													 CommandParameter="SwapDesktopIndices"
 													 IsEnabled="{Binding IsReorderingSupport}"
 													 Margin="0" />
-							<metro2:CallMethodButton Grid.Column="2"
+							<Button Grid.Column="2"
 													 Content="{Binding Source={x:Static services:ResourceService.Current}, Path=Resources.Settings_SwitchSpecifiedDesktop_RemoveLast}"
-													 MethodTarget="{Binding}"
-													 MethodName="RemoveLastShortcutList"
-													 MethodParameter="SwapDesktopIndices"
+													 Command="{Binding RemoveLastShortcutListCommand}"
+													 CommandParameter="SwapDesktopIndices"
 													 IsEnabled="{Binding IsShortcutKeyOfSwapDesktopIndicesLarger}"
 													 Margin="0" />
-							<metro2:CallMethodButton Grid.Column="4"
+							<Button Grid.Column="4"
 													 Content="{Binding Source={x:Static services:ResourceService.Current}, Path=Resources.Settings_SwitchSpecifiedDesktop_ResizeToFit}"
-													 MethodTarget="{Binding}"
-													 MethodName="ResizeShortcutListToFit"
-													 MethodParameter="SwapDesktopIndices"
+													 Command="{Binding ResizeShortcutListToFitCommand}"
+													 CommandParameter="SwapDesktopIndices"
 													 IsEnabled="{Binding IsShortcutKeyOfSwapDesktopIndicesLarger}"
 													 Margin="0" />
 						</Grid>
@@ -1764,24 +1741,21 @@
 								<ColumnDefinition Width="8" />
 								<ColumnDefinition Width="*" />
 							</Grid.ColumnDefinitions>
-							<metro2:CallMethodButton Grid.Column="0"
+							<Button Grid.Column="0"
 													 Content="{Binding Source={x:Static services:ResourceService.Current}, Path=Resources.Settings_SwitchSpecifiedDesktop_Add}"
-													 MethodTarget="{Binding}"
-													 MethodName="AddMouseList"
-													 MethodParameter="SwitchToIndices"
+													 Command="{Binding AddMouseListCommand}"
+													 CommandParameter="SwitchToIndices"
 													 Margin="0" />
-							<metro2:CallMethodButton Grid.Column="2"
+							<Button Grid.Column="2"
 													 Content="{Binding Source={x:Static services:ResourceService.Current}, Path=Resources.Settings_SwitchSpecifiedDesktop_RemoveLast}"
-													 MethodTarget="{Binding}"
-													 MethodName="RemoveLastMouseList"
-													 MethodParameter="SwitchToIndices"
+													 Command="{Binding RemoveLastMouseListCommand}"
+													 CommandParameter="SwitchToIndices"
 													 IsEnabled="{Binding IsMouseOfSwitchToIndicesLarger}"
 													 Margin="0" />
-							<metro2:CallMethodButton Grid.Column="4"
+							<Button Grid.Column="4"
 													 Content="{Binding Source={x:Static services:ResourceService.Current}, Path=Resources.Settings_SwitchSpecifiedDesktop_ResizeToFit}"
-													 MethodTarget="{Binding}"
-													 MethodName="ResizeMouseListToFit"
-													 MethodParameter="SwitchToIndices"
+													 Command="{Binding ResizeMouseListToFitCommand}"
+													 CommandParameter="SwitchToIndices"
 													 IsEnabled="{Binding IsMouseOfSwitchToIndicesLarger}"
 													 Margin="0" />
 						</Grid>
@@ -1949,24 +1923,21 @@
 								<ColumnDefinition Width="8" />
 								<ColumnDefinition Width="*" />
 							</Grid.ColumnDefinitions>
-							<metro2:CallMethodButton Grid.Column="0"
+							<Button Grid.Column="0"
 													 Content="{Binding Source={x:Static services:ResourceService.Current}, Path=Resources.Settings_SwitchSpecifiedDesktop_Add}"
-													 MethodTarget="{Binding}"
-													 MethodName="AddMouseList"
-													 MethodParameter="MoveToIndices"
+													 Command="{Binding AddMouseListCommand}"
+													 CommandParameter="MoveToIndices"
 													 Margin="0" />
-							<metro2:CallMethodButton Grid.Column="2"
+							<Button Grid.Column="2"
 													 Content="{Binding Source={x:Static services:ResourceService.Current}, Path=Resources.Settings_SwitchSpecifiedDesktop_RemoveLast}"
-													 MethodTarget="{Binding}"
-													 MethodName="RemoveLastMouseList"
-													 MethodParameter="MoveToIndices"
+													 Command="{Binding RemoveLastMouseListCommand}"
+													 CommandParameter="MoveToIndices"
 													 IsEnabled="{Binding IsMouseOfMoveToIndicesLarger}"
 													 Margin="0" />
-							<metro2:CallMethodButton Grid.Column="4"
+							<Button Grid.Column="4"
 													 Content="{Binding Source={x:Static services:ResourceService.Current}, Path=Resources.Settings_SwitchSpecifiedDesktop_ResizeToFit}"
-													 MethodTarget="{Binding}"
-													 MethodName="ResizeMouseListToFit"
-													 MethodParameter="MoveToIndices"
+													 Command="{Binding ResizeMouseListToFitCommand}"
+													 CommandParameter="MoveToIndices"
 													 IsEnabled="{Binding IsMouseOfMoveToIndicesLarger}"
 													 Margin="0" />
 						</Grid>
@@ -2042,24 +2013,21 @@
 								<ColumnDefinition Width="8" />
 								<ColumnDefinition Width="*" />
 							</Grid.ColumnDefinitions>
-							<metro2:CallMethodButton Grid.Column="0"
+							<Button Grid.Column="0"
 													 Content="{Binding Source={x:Static services:ResourceService.Current}, Path=Resources.Settings_SwitchSpecifiedDesktop_Add}"
-													 MethodTarget="{Binding}"
-													 MethodName="AddMouseList"
-													 MethodParameter="MoveToIndicesAndSwitch"
+													 Command="{Binding AddMouseListCommand}"
+													 CommandParameter="MoveToIndicesAndSwitch"
 													 Margin="0" />
-							<metro2:CallMethodButton Grid.Column="2"
+							<Button Grid.Column="2"
 													 Content="{Binding Source={x:Static services:ResourceService.Current}, Path=Resources.Settings_SwitchSpecifiedDesktop_RemoveLast}"
-													 MethodTarget="{Binding}"
-													 MethodName="RemoveLastMouseList"
-													 MethodParameter="MoveToIndicesAndSwitch"
+													 Command="{Binding RemoveLastMouseListCommand}"
+													 CommandParameter="MoveToIndicesAndSwitch"
 													 IsEnabled="{Binding IsMouseOfMoveToIndicesAndSwitchLarger}"
 													 Margin="0" />
-							<metro2:CallMethodButton Grid.Column="4"
+							<Button Grid.Column="4"
 													 Content="{Binding Source={x:Static services:ResourceService.Current}, Path=Resources.Settings_SwitchSpecifiedDesktop_ResizeToFit}"
-													 MethodTarget="{Binding}"
-													 MethodName="ResizeMouseListToFit"
-													 MethodParameter="MoveToIndicesAndSwitch"
+													 Command="{Binding ResizeMouseListToFitCommand}"
+													 CommandParameter="MoveToIndicesAndSwitch"
 													 IsEnabled="{Binding IsMouseOfMoveToIndicesAndSwitchLarger}"
 													 Margin="0" />
 						</Grid>
@@ -2160,25 +2128,22 @@
 								<ColumnDefinition Width="8" />
 								<ColumnDefinition Width="*" />
 							</Grid.ColumnDefinitions>
-							<metro2:CallMethodButton Grid.Column="0"
+							<Button Grid.Column="0"
 													 Content="{Binding Source={x:Static services:ResourceService.Current}, Path=Resources.Settings_SwitchSpecifiedDesktop_Add}"
-													 MethodTarget="{Binding}"
-													 MethodName="AddMouseList"
-													 MethodParameter="SwapDesktopIndices"
+													 Command="{Binding AddMouseListCommand}"
+													 CommandParameter="SwapDesktopIndices"
 													 IsEnabled="{Binding IsReorderingSupport}"
 													 Margin="0" />
-							<metro2:CallMethodButton Grid.Column="2"
+							<Button Grid.Column="2"
 													 Content="{Binding Source={x:Static services:ResourceService.Current}, Path=Resources.Settings_SwitchSpecifiedDesktop_RemoveLast}"
-													 MethodTarget="{Binding}"
-													 MethodName="RemoveLastMouseList"
-													 MethodParameter="SwapDesktopIndices"
+													 Command="{Binding RemoveLastMouseListCommand}"
+													 CommandParameter="SwapDesktopIndices"
 													 IsEnabled="{Binding IsMouseOfSwapDesktopIndicesLarger}"
 													 Margin="0" />
-							<metro2:CallMethodButton Grid.Column="4"
+							<Button Grid.Column="4"
 													 Content="{Binding Source={x:Static services:ResourceService.Current}, Path=Resources.Settings_SwitchSpecifiedDesktop_ResizeToFit}"
-													 MethodTarget="{Binding}"
-													 MethodName="ResizeMouseListToFit"
-													 MethodParameter="SwapDesktopIndices"
+													 Command="{Binding ResizeMouseListToFitCommand}"
+													 CommandParameter="SwapDesktopIndices"
 													 IsEnabled="{Binding IsMouseOfSwapDesktopIndicesLarger}"
 													 Margin="0" />
 						</Grid>

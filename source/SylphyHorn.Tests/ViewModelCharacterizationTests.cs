@@ -160,6 +160,58 @@ namespace SylphyHorn.Tests
 				names);
 		}
 
+		[Fact]
+		public void VirtualDesktopCommandsAreStableAlwaysExecutableAndDelegateToTheirMethods()
+		{
+			var initial = new DesktopRecord(
+				DesktopRuntimeTestData.A,
+				DesktopPropertyState.Provider("name"),
+				DesktopPropertyState.Provider("wallpaper.jpg"),
+				WallpaperPosition.Fill,
+				DesktopRecordOrigin.TrulyNewRecord);
+			var harness = Harness.Create(DesktopRuntimeTestData.Batch(
+				1,
+				1,
+				DesktopRuntimeTestData.A,
+				DesktopRuntimeTestData.Entry(DesktopRuntimeTestData.A, 0, "name", "wallpaper.jpg")));
+			var viewModel = new VirtualDesktopViewModel(harness.Runtime, 0, initial);
+
+			Assert.Same(viewModel.CloseCommand, viewModel.CloseCommand);
+			Assert.Same(viewModel.MoveToPreviousCommand, viewModel.MoveToPreviousCommand);
+			Assert.Same(viewModel.MoveToNextCommand, viewModel.MoveToNextCommand);
+			Assert.Same(viewModel.MoveToFirstCommand, viewModel.MoveToFirstCommand);
+			Assert.Same(viewModel.MoveToLastCommand, viewModel.MoveToLastCommand);
+			Assert.Same(viewModel.SwitchCommand, viewModel.SwitchCommand);
+			Assert.True(viewModel.CloseCommand.CanExecute(null));
+			Assert.True(viewModel.MoveToPreviousCommand.CanExecute(null));
+			Assert.True(viewModel.MoveToNextCommand.CanExecute(null));
+			Assert.True(viewModel.MoveToFirstCommand.CanExecute(null));
+			Assert.True(viewModel.MoveToLastCommand.CanExecute(null));
+			Assert.True(viewModel.SwitchCommand.CanExecute(null));
+
+			viewModel.CloseCommand.Execute(null);
+			viewModel.MoveToPreviousCommand.Execute(null);
+			viewModel.MoveToNextCommand.Execute(null);
+			viewModel.MoveToFirstCommand.Execute(null);
+			viewModel.MoveToLastCommand.Execute(null);
+			viewModel.SwitchCommand.Execute(null);
+
+			Assert.Equal(
+				new[] { "Remove", "MoveLeft", "MoveRight", "MoveFirst", "MoveLast", "Switch" },
+				harness.Operations.DesktopOperationNames);
+			Assert.Equal(
+				new[]
+				{
+					DesktopRuntimeTestData.A,
+					DesktopRuntimeTestData.A,
+					DesktopRuntimeTestData.A,
+					DesktopRuntimeTestData.A,
+					DesktopRuntimeTestData.A,
+					DesktopRuntimeTestData.A,
+				},
+				harness.Operations.DesktopOperationIds);
+		}
+
 		private sealed class TestLog : ILog
 		{
 			internal TestLog(DateTimeOffset dateTime, string header, string content)

@@ -232,6 +232,8 @@ namespace SylphyHorn.Tests
 
 	internal sealed class FakeOperations : IDesktopOperations
 	{
+		internal List<string> DesktopOperationNames { get; } = new List<string>();
+		internal List<Guid> DesktopOperationIds { get; } = new List<Guid>();
 		internal int NameCalls { get; private set; }
 		internal int CreateCalls { get; private set; }
 		internal List<Guid> RemovedIds { get; } = new List<Guid>();
@@ -248,11 +250,21 @@ namespace SylphyHorn.Tests
 		public void SetName(Guid desktopId, string value) { this.NameCalls++; this.NameValues.Add(value); this.BeforeName?.Invoke(); if (this.NameFailure != null || this.FailNameValue == value) throw this.NameFailure ?? new InvalidOperationException("synthetic"); }
 		public void SetWallpaperPath(Guid desktopId, string value) { this.WallpaperCalls++; if (this.FailWallpaperValue == value) throw new InvalidOperationException("synthetic"); }
 		public void ApplyWallpaper(Guid desktopId, string value, WallpaperPosition position) { this.AppliedWallpaperIds.Add(desktopId); this.AppliedWallpaperValues.Add(value); }
-		public void MoveLeft(Guid desktopId) { }
-		public void MoveRight(Guid desktopId) { }
-		public void MoveFirst(Guid desktopId) { }
-		public void MoveLast(Guid desktopId) { }
-		public void Switch(Guid desktopId) { }
-		public void Remove(Guid desktopId) => this.RemovedIds.Add(desktopId);
+		public void MoveLeft(Guid desktopId) => this.RecordDesktopOperation(nameof(this.MoveLeft), desktopId);
+		public void MoveRight(Guid desktopId) => this.RecordDesktopOperation(nameof(this.MoveRight), desktopId);
+		public void MoveFirst(Guid desktopId) => this.RecordDesktopOperation(nameof(this.MoveFirst), desktopId);
+		public void MoveLast(Guid desktopId) => this.RecordDesktopOperation(nameof(this.MoveLast), desktopId);
+		public void Switch(Guid desktopId) => this.RecordDesktopOperation(nameof(this.Switch), desktopId);
+		public void Remove(Guid desktopId)
+		{
+			this.RemovedIds.Add(desktopId);
+			this.RecordDesktopOperation(nameof(this.Remove), desktopId);
+		}
+
+		private void RecordDesktopOperation(string name, Guid desktopId)
+		{
+			this.DesktopOperationNames.Add(name);
+			this.DesktopOperationIds.Add(desktopId);
+		}
 	}
 }

@@ -1,4 +1,5 @@
 using CommunityToolkit.Mvvm.ComponentModel;
+using CommunityToolkit.Mvvm.Input;
 using SylphyHorn.Properties;
 using SylphyHorn.Serialization;
 using SylphyHorn.Services;
@@ -25,7 +26,20 @@ namespace SylphyHorn.UI.Bindings
 				record.WallpaperPosition,
 				path => this._runtime.EditWallpaperPath(this.Id, path),
 				position => this._runtime.EditWallpaperPosition(this.Id, position));
+			this.CloseCommand = new RelayCommand(this.Close);
+			this.MoveToPreviousCommand = new RelayCommand(this.MoveToPrevious);
+			this.MoveToNextCommand = new RelayCommand(this.MoveToNext);
+			this.MoveToFirstCommand = new RelayCommand(this.MoveToFirst);
+			this.MoveToLastCommand = new RelayCommand(this.MoveToLast);
+			this.SwitchCommand = new RelayCommand(this.Switch);
 		}
+
+		public RelayCommand CloseCommand { get; }
+		public RelayCommand MoveToPreviousCommand { get; }
+		public RelayCommand MoveToNextCommand { get; }
+		public RelayCommand MoveToFirstCommand { get; }
+		public RelayCommand MoveToLastCommand { get; }
+		public RelayCommand SwitchCommand { get; }
 
 		public Guid Id { get; }
 		public int Index { get; private set; }

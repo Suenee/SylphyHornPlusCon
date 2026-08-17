@@ -4,7 +4,7 @@ using System.IO;
 using System.Linq;
 using System.Windows;
 using System.Windows.Media;
-using JetBrains.Annotations;
+using CommunityToolkit.Mvvm.Input;
 using Livet;
 using Livet.EventListeners;
 using Livet.Messaging;
@@ -752,10 +752,42 @@ namespace SylphyHorn.UI.Bindings
 
 		public bool IsMouseOfSwapDesktopIndicesLarger => Settings.MouseShortcut.SwapDesktopIndices.Count > Desktops.Length;
 
+		public RelayCommand OpenExportPathDialogCommand { get; }
+
+		public RelayCommand OpenImportPathDialogCommand { get; }
+
+		public RelayCommand ResetSettingsCommand { get; }
+
+		public RelayCommand CreateDesktopCommand { get; }
+
+		public RelayCommand<int> OpenBackgroundPathDialogCommand { get; }
+
+		public RelayCommand<string> AddShortcutListCommand { get; }
+
+		public RelayCommand<string> RemoveLastShortcutListCommand { get; }
+
+		public RelayCommand<string> ResizeShortcutListToFitCommand { get; }
+
+		public RelayCommand<string> AddMouseListCommand { get; }
+
+		public RelayCommand<string> RemoveLastMouseListCommand { get; }
+
+		public RelayCommand<string> ResizeMouseListToFitCommand { get; }
 		public ReadOnlyDispatcherCollection<LogViewModel> Logs { get; }
 
 		internal SettingsWindowViewModel(HookService hookService, DesktopTransitionRuntime desktopRuntime)
 		{
+			this.OpenExportPathDialogCommand = new RelayCommand(this.OpenExportPathDialog);
+			this.OpenImportPathDialogCommand = new RelayCommand(this.OpenImportPathDialog);
+			this.ResetSettingsCommand = new RelayCommand(this.ResetSettings);
+			this.CreateDesktopCommand = new RelayCommand(this.CreateDesktop);
+			this.OpenBackgroundPathDialogCommand = new RelayCommand<int>(this.OpenBackgroundPathDialog);
+			this.AddShortcutListCommand = new RelayCommand<string>(this.AddShortcutList);
+			this.RemoveLastShortcutListCommand = new RelayCommand<string>(this.RemoveLastShortcutList);
+			this.ResizeShortcutListToFitCommand = new RelayCommand<string>(this.ResizeShortcutListToFit);
+			this.AddMouseListCommand = new RelayCommand<string>(this.AddMouseList);
+			this.RemoveLastMouseListCommand = new RelayCommand<string>(this.RemoveLastMouseList);
+			this.ResizeMouseListToFitCommand = new RelayCommand<string>(this.ResizeMouseListToFit);
 			this._hookService = hookService;
 			this._desktopRuntime = desktopRuntime ?? throw new ArgumentNullException(nameof(desktopRuntime));
 			ShortcutKeyBox.HookService = hookService;
@@ -955,7 +987,6 @@ namespace SylphyHorn.UI.Bindings
 				.AddTo(this);
 		}
 
-		[UsedImplicitly]
 		public void OpenBackgroundPathDialog(int index)
 		{
 			var message = new OpeningFileSelectionMessage("Window.OpenBackgroundImagesDialog.Open")
@@ -975,7 +1006,6 @@ namespace SylphyHorn.UI.Bindings
 			}
 		}
 
-		[UsedImplicitly]
 		public void OpenExportPathDialog()
 		{
 			var provider = LocalSettingsProvider.Instance;
@@ -996,7 +1026,6 @@ namespace SylphyHorn.UI.Bindings
 			}
 		}
 
-		[UsedImplicitly]
 		public async void OpenImportPathDialog()
 		{
 			var provider = LocalSettingsProvider.Instance;
@@ -1037,7 +1066,6 @@ namespace SylphyHorn.UI.Bindings
 			finally { hookDisposable?.Dispose(); }
 		}
 
-		[UsedImplicitly]
 		public async void ResetSettings()
 		{
 			var message = new ConfirmationMessage("", "", "Window.ResetSettingsDialog.Confirm")
@@ -1058,13 +1086,11 @@ namespace SylphyHorn.UI.Bindings
 			finally { hookDisposable?.Dispose(); }
 		}
 
-		[UsedImplicitly]
 		public void CreateDesktop()
 		{
 			VirtualDesktop.Create();
 		}
 
-		[UsedImplicitly]
 		public void AddShortcutList(string propName)
 		{
 			var propList = this.GetShortcutListFromSettings(Settings.ShortcutKey, propName);
@@ -1074,7 +1100,6 @@ namespace SylphyHorn.UI.Bindings
 			propList.Resize(propList.Count + 1);
 		}
 
-		[UsedImplicitly]
 		public void RemoveLastShortcutList(string propName)
 		{
 			var propList = this.GetShortcutListFromSettings(Settings.ShortcutKey, propName);
@@ -1084,7 +1109,6 @@ namespace SylphyHorn.UI.Bindings
 			propList.Resize(propList.Count - 1);
 		}
 
-		[UsedImplicitly]
 		public void ResizeShortcutListToFit(string propName)
 		{
 			var propList = this.GetShortcutListFromSettings(Settings.ShortcutKey, propName);
@@ -1095,7 +1119,6 @@ namespace SylphyHorn.UI.Bindings
 			propList.Resize(count);
 		}
 
-		[UsedImplicitly]
 		public void AddMouseList(string propName)
 		{
 			var propList = this.GetShortcutListFromSettings(Settings.MouseShortcut, propName);
@@ -1105,7 +1128,6 @@ namespace SylphyHorn.UI.Bindings
 			propList.Resize(propList.Count + 1);
 		}
 
-		[UsedImplicitly]
 		public void RemoveLastMouseList(string propName)
 		{
 			var propList = this.GetShortcutListFromSettings(Settings.MouseShortcut, propName);
@@ -1115,7 +1137,6 @@ namespace SylphyHorn.UI.Bindings
 			propList.Resize(propList.Count - 1);
 		}
 
-		[UsedImplicitly]
 		public void ResizeMouseListToFit(string propName)
 		{
 			var propList = this.GetShortcutListFromSettings(Settings.MouseShortcut, propName);
