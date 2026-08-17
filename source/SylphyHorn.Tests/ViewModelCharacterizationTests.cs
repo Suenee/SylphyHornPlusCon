@@ -14,6 +14,22 @@ namespace SylphyHorn.Tests
 	public class ViewModelCharacterizationTests
 	{
 		[Fact]
+		public void NotificationWindowTitleRaisesOnlyWhenItsValueChanges()
+		{
+			var viewModel = new NotificationWindowViewModel();
+			var names = new List<string>();
+			viewModel.PropertyChanged += (_, args) => names.Add(args.PropertyName);
+
+			Assert.Null(viewModel.Title);
+
+			viewModel.Title = "title";
+			viewModel.Title = "title";
+
+			Assert.Equal("title", viewModel.Title);
+			Assert.Equal(new[] { nameof(viewModel.Title) }, names);
+		}
+
+		[Fact]
 		public void NotificationWindowTextPropertiesRaiseOnlyTheirOwnNames()
 		{
 			var type = typeof(NotificationWindowViewModel);

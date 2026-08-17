@@ -6,7 +6,6 @@
 					   xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
 					   xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
 					   xmlns:i="http://schemas.microsoft.com/xaml/behaviors"
-					   xmlns:livet="http://schemas.livet-mvvm.net/2011/wpf"
 					   xmlns:ui="clr-namespace:SylphyHorn.UI"
 					   xmlns:bindings="clr-namespace:SylphyHorn.UI.Bindings"
 					   xmlns:controls="clr-namespace:SylphyHorn.UI.Controls"
@@ -55,19 +54,9 @@
 	</Window.Triggers>
 
 	<i:Interaction.Behaviors>
-		<livet:WindowCloseCancelBehavior CloseCanceledCallbackMethodTarget="{Binding}"
-										 CloseCanceledCallbackMethodName="CloseCanceledCallback"
-										 CanClose="{Binding CanClose}" />
 		<controls:ClosingStoryboardBehavior Storyboard="{StaticResource FadeOut}" />
 	</i:Interaction.Behaviors>
 	<i:Interaction.Triggers>
-		<i:EventTrigger EventName="ContentRendered">
-			<livet:LivetCallMethodAction MethodTarget="{Binding}"
-										 MethodName="Initialize" />
-		</i:EventTrigger>
-		<i:EventTrigger EventName="Closed">
-			<livet:DataContextDisposeAction />
-		</i:EventTrigger>
 		<i:EventTrigger EventName="MouseEnter">
 			<i:ChangePropertyAction TargetName="Window" PropertyName="NativeOpacity" Value="0.5" />
 		</i:EventTrigger>

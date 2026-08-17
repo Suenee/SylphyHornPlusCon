@@ -1,11 +1,30 @@
 ﻿using System.Windows;
-using MetroTrilithon.Mvvm;
+using CommunityToolkit.Mvvm.ComponentModel;
 using SylphyHorn.Serialization;
 
 namespace SylphyHorn.UI.Bindings
 {
-	public class NotificationWindowViewModel : WindowViewModel
+	public class NotificationWindowViewModel : ObservableObject
 	{
+		#region Title 変更通知プロパティ
+
+		private string _Title;
+
+		public string Title
+		{
+			get { return this._Title; }
+			set
+			{
+				if (this._Title != value)
+				{
+					this._Title = value;
+					this.OnPropertyChanged();
+				}
+			}
+		}
+
+		#endregion
+
 		#region Header 変更通知プロパティ
 
 		private string _Header;
@@ -18,7 +37,7 @@ namespace SylphyHorn.UI.Bindings
 				if (this._Header != value)
 				{
 					this._Header = value;
-					this.RaisePropertyChanged();
+					this.OnPropertyChanged();
 				}
 			}
 		}
@@ -37,7 +56,7 @@ namespace SylphyHorn.UI.Bindings
 				if (this._Body != value)
 				{
 					this._Body = value;
-					this.RaisePropertyChanged();
+					this.OnPropertyChanged();
 				}
 			}
 		}
