@@ -135,7 +135,7 @@ namespace SylphyHorn
 				this._desktopRuntime = runtime;
 				runtime.AddTo(this._disposable);
 				this.CreateTaskTrayIcon().BindDesktopRuntime(runtime);
-				NotificationService.Instance.BindDesktopRuntime(runtime);
+				NotificationService.Instance.BindDesktopRuntime(runtime, Application.Current.Dispatcher);
 				WallpaperService.Instance.BindDesktopRuntime(runtime);
 				SettingsService.StretchShortcutListsTo(runtime.State.Order.Count);
 				this.RegisterActions();

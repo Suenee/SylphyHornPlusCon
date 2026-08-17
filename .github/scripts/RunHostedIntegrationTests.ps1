@@ -10,7 +10,7 @@ param(
 Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
 
-$ExpectedTestCount = 10
+$ExpectedTestCount = 13
 $TargetFramework = "net10.0-windows10.0.26100.0"
 $Platform = "x64"
 $repositoryRoot = [System.IO.Path]::GetFullPath(

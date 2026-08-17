@@ -207,7 +207,9 @@ namespace SylphyHorn.Services
 			var target = hookActions.FirstOrDefault(x => x.GetShortcutKey() == args.ShortcutKey);
 			if (target != null && target.CanExecute())
 			{
-				VisualHelper.InvokeOnUIDispatcher(() => target.Action(InteropHelper.GetForegroundWindowEx()));
+				this._dispatcher.BeginInvoke(
+					new Action(() => target.Action(InteropHelper.GetForegroundWindowEx())),
+					DispatcherPriority.Normal);
 				args.Handled = true;
 			}
 		}

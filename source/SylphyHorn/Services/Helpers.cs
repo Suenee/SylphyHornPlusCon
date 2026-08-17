@@ -4,8 +4,6 @@ using System.Linq;
 using System.Text;
 using System.Windows;
 using System.Windows.Interop;
-using System.Windows.Threading;
-using Livet;
 using MetroRadiance.Interop.Win32;
 using SylphyHorn.Interop;
 
@@ -37,14 +35,6 @@ namespace SylphyHorn.Services
 			var hwnd = User32.GetForegroundWindow();
 			var howner = NativeMethods.GetWindow(hwnd, 4 /* GW_OWNER */);
 			return howner == IntPtr.Zero ? hwnd : howner;
-		}
-	}
-
-	internal static class VisualHelper
-	{
-		public static void InvokeOnUIDispatcher(Action action, DispatcherPriority priority = DispatcherPriority.Normal)
-		{
-			DispatcherHelper.UIDispatcher.BeginInvoke(action, priority);
 		}
 	}
 }

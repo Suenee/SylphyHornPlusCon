@@ -6,11 +6,11 @@ using System.Threading;
 using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Threading;
-using Livet;
 using MetroRadiance.UI;
 using MetroTrilithon.Lifetime;
 using MetroTrilithon.Threading.Tasks;
 using SylphyHorn.Interop;
+using SylphyHorn.Lifetime;
 using SylphyHorn.Properties;
 using SylphyHorn.Serialization;
 using SylphyHorn.Services;
@@ -20,7 +20,7 @@ namespace SylphyHorn
 {
 	sealed partial class Application : IDisposableHolder
 	{
-		private readonly LivetCompositeDisposable _compositeDisposable = new LivetCompositeDisposable();
+		private readonly DisposableCollection _compositeDisposable = new DisposableCollection();
 		private ApplicationPreparation _preparation;
 		private int _shutdownStarted;
 
@@ -72,8 +72,6 @@ Time: {now:O}"));
 			if (ProductInfo.OSBuild >= 14393)
 			{
 				this.ShutdownMode = ShutdownMode.OnExplicitShutdown;
-				DispatcherHelper.UIDispatcher = this.Dispatcher;
-
 				this.DispatcherUnhandledException += this.HandleDispatcherUnhandledException;
 				TaskLog.Occured += (sender, log) => LoggingService.Instance.Register(log);
 

@@ -1,8 +1,10 @@
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
+using System.Windows.Threading;
 using MetroTrilithon.Lifetime;
 using SylphyHorn.Properties;
 using SylphyHorn.Serialization;
@@ -20,6 +22,7 @@ namespace SylphyHorn.Services
 		private static string SwitchedHeader => NotificationTextFormatter.CreateSwitchedHeader(Settings.General.SimpleNotification);
 		private static List<SwitchWindow> _residentWindows = new List<SwitchWindow>();
 		private readonly SerialDisposable _notificationWindow = new SerialDisposable();
+		private Dispatcher _dispatcher;
 		private DesktopTransitionRuntime _runtime;
 
 		private NotificationService()
@@ -27,14 +30,16 @@ namespace SylphyHorn.Services
 			VirtualDesktopService.WindowPinned += this.VirtualDesktopServiceOnWindowPinned;
 		}
 
-		internal void BindDesktopRuntime(DesktopTransitionRuntime runtime)
+		internal void BindDesktopRuntime(DesktopTransitionRuntime runtime, Dispatcher dispatcher)
 		{
 			if (runtime == null) throw new ArgumentNullException(nameof(runtime));
+			if (dispatcher == null) throw new ArgumentNullException(nameof(dispatcher));
 			if (this._runtime != null)
 			{
 				if (ReferenceEquals(this._runtime, runtime)) return;
 				throw new InvalidOperationException("NotificationService cannot be rebound to another desktop runtime.");
 			}
+			this._dispatcher = dispatcher;
 			this._runtime = runtime;
 			runtime.StateChanged += this.OnDesktopStateChanged;
 		}
@@ -86,7 +91,12 @@ namespace SylphyHorn.Services
 
 		private void VirtualDesktopServiceOnWindowPinned(object sender, WindowPinnedEventArgs e)
 		{
-			VisualHelper.InvokeOnUIDispatcher(() => this._notificationWindow.Disposable = ShowPinWindow(e.Target, e.PinOperation));
+			var dispatcher = this._dispatcher;
+			Debug.Assert(dispatcher != null, "NotificationService must be bound before a window can be pinned.");
+			if (dispatcher == null) return;
+			dispatcher.BeginInvoke(
+				new Action(() => this._notificationWindow.Disposable = ShowPinWindow(e.Target, e.PinOperation)),
+				DispatcherPriority.Normal);
 		}
 
 		private static IDisposable ShowDesktopWindow(int number, string header, DesktopRecord record)
@@ -219,6 +229,7 @@ namespace SylphyHorn.Services
 		{
 			if (this._runtime != null) this._runtime.StateChanged -= this.OnDesktopStateChanged;
 			this._runtime = null;
+			this._dispatcher = null;
 			VirtualDesktopService.WindowPinned -= this.VirtualDesktopServiceOnWindowPinned;
 			this._notificationWindow.Dispose();
 		}

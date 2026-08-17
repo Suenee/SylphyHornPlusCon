@@ -1,6 +1,6 @@
 using System;
 using System.Collections.Generic;
-using Livet;
+using SylphyHorn.Lifetime;
 using Xunit;
 
 namespace SylphyHorn.Tests
@@ -11,7 +11,7 @@ namespace SylphyHorn.Tests
 		public void CompositeDisposableDisposesInInsertionOrderOnlyOnce()
 		{
 			var order = new List<int>();
-			var composite = new LivetCompositeDisposable
+			var composite = new DisposableCollection
 			{
 				new RecordingDisposable(1, order),
 				new RecordingDisposable(2, order),
@@ -28,7 +28,7 @@ namespace SylphyHorn.Tests
 		public void CompositeDisposableRejectsAddAfterDisposeWithoutDisposingItem()
 		{
 			var order = new List<int>();
-			var composite = new LivetCompositeDisposable();
+			var composite = new DisposableCollection();
 			var item = new RecordingDisposable(1, order);
 			composite.Dispose();
 

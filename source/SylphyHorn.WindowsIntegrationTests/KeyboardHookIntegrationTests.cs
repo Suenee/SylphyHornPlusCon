@@ -8,7 +8,6 @@ using System.Windows;
 using System.Windows.Input;
 using System.Windows.Interop;
 using System.Windows.Threading;
-using Livet;
 using SylphyHorn.Services;
 using Xunit;
 
@@ -32,7 +31,6 @@ namespace SylphyHorn.WindowsIntegrationTests
 			IntegrationTestExecutionEnvironment.PhysicalInput)]
 		public async Task KeyboardInterceptorLifecycleSmokePassesInjectedInputToIsolatedWindow()
 		{
-			DispatcherHelper.UIDispatcher = Dispatcher.CurrentDispatcher;
 			await RunWithCleanup(async cleanup =>
 			{
 				var received = new TaskCompletionSource<bool>();
@@ -67,7 +65,6 @@ namespace SylphyHorn.WindowsIntegrationTests
 			IntegrationTestExecutionEnvironment.HostedCI)]
 		public async Task ShortcutKeyDetectorLifecycleApiSmokeCompletes()
 		{
-			DispatcherHelper.UIDispatcher = Dispatcher.CurrentDispatcher;
 			await RunWithCleanup(async cleanup =>
 			{
 				var detector = new ShortcutKeyDetector();
@@ -84,7 +81,6 @@ namespace SylphyHorn.WindowsIntegrationTests
 			IntegrationTestExecutionEnvironment.HostedCI)]
 		public async Task HookServiceConstructionAndDisposeApiSmokeCompletes()
 		{
-			DispatcherHelper.UIDispatcher = Dispatcher.CurrentDispatcher;
 			await RunWithCleanup(async cleanup =>
 			{
 				var service = new HookService();
@@ -99,7 +95,6 @@ namespace SylphyHorn.WindowsIntegrationTests
 			IntegrationTestExecutionEnvironment.HostedCI)]
 		public async Task HookServiceNestedSuspendTokensResumeAfterLastTokenInEitherOrder()
 		{
-			DispatcherHelper.UIDispatcher = Dispatcher.CurrentDispatcher;
 			await RunWithCleanup(async cleanup =>
 			{
 				var service = new HookService();
@@ -132,7 +127,6 @@ namespace SylphyHorn.WindowsIntegrationTests
 			IntegrationTestExecutionEnvironment.HostedCI)]
 		public async Task HookServiceDoesNotResumeWhenSuspendTokenReturnsAfterDispose()
 		{
-			DispatcherHelper.UIDispatcher = Dispatcher.CurrentDispatcher;
 			await RunWithCleanup(async cleanup =>
 			{
 				var service = new HookService();
@@ -156,7 +150,6 @@ namespace SylphyHorn.WindowsIntegrationTests
 			IntegrationTestExecutionEnvironment.HostedCI)]
 		public async Task ShortcutKeyDetectorRepeatedLifecycleApiSmokeCompletes()
 		{
-			DispatcherHelper.UIDispatcher = Dispatcher.CurrentDispatcher;
 			await RunWithCleanup(async cleanup =>
 			{
 				for (var index = 0; index < 100; index++)
