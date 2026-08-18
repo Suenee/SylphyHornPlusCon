@@ -1184,7 +1184,7 @@ namespace SylphyHorn.UI.Bindings
 				else viewModel.Update(index, state.Records[id]);
 				return viewModel;
 			}).ToArray();
-			this.Desktops = next;
+			if (this._Desktops == null || !this._Desktops.SequenceEqual(next)) this.Desktops = next;
 			this.CurrentDesktop = state.CurrentDesktopId.HasValue ? next.FirstOrDefault(desktop => desktop.Id == state.CurrentDesktopId.Value) : null;
 		}
 

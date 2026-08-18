@@ -76,12 +76,21 @@ namespace SylphyHorn.UI.Bindings
 				this._name = name;
 				this.OnPropertyChanged(nameof(this.Name));
 			}
-			this._wallpaper.Update(record.WallpaperPath.HasValue ? record.WallpaperPath.Value : null, record.WallpaperPosition);
-			this.OnPropertyChanged(nameof(this.WallpaperPath));
-			this.OnPropertyChanged(nameof(this.WallpaperPathOrDefault));
-			this.OnPropertyChanged(nameof(this.WallpaperPosition));
-			this.OnPropertyChanged(nameof(this.HasWallpaper));
-			this.OnPropertyChanged(nameof(this.HasNoWallpaper));
+			var wallpaperPath = record.WallpaperPath.HasValue ? record.WallpaperPath.Value : null;
+			var wallpaperPathChanged = this._wallpaper.FilePath != wallpaperPath;
+			var wallpaperPositionChanged = this._wallpaper.Position != record.WallpaperPosition;
+			this._wallpaper.Update(wallpaperPath, record.WallpaperPosition);
+			if (wallpaperPathChanged)
+			{
+				this.OnPropertyChanged(nameof(this.WallpaperPath));
+				this.OnPropertyChanged(nameof(this.WallpaperPathOrDefault));
+			}
+			if (wallpaperPositionChanged) this.OnPropertyChanged(nameof(this.WallpaperPosition));
+			if (wallpaperPathChanged)
+			{
+				this.OnPropertyChanged(nameof(this.HasWallpaper));
+				this.OnPropertyChanged(nameof(this.HasNoWallpaper));
+			}
 		}
 
 		public void MoveToPrevious() => this._runtime.MoveLeft(this.Id);
