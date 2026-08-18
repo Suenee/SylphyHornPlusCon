@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Collections.Concurrent;
 using System.Collections.ObjectModel;
@@ -14,7 +14,6 @@ using CommunityToolkit.Mvvm.Input;
 using MetroRadiance.Platform;
 using MetroRadiance.UI.Controls;
 using MetroTrilithon.Lifetime;
-using MetroTrilithon.Mvvm;
 using MetroTrilithon.Threading.Tasks;
 using SylphyHorn.Lifetime;
 using SylphyHorn.Properties;
