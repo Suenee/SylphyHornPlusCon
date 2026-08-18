@@ -236,7 +236,11 @@ namespace SylphyHorn
 			taskDefinition.Settings.Compatibility = TaskCompatibility.V2;
 			taskDefinition.Settings.Hidden = false;
 			taskDefinition.Settings.Priority = ProcessPriorityClass.Normal;
-			taskDefinition.Triggers.Add(new LogonTrigger { Enabled = true });
+			taskDefinition.Triggers.Add(new LogonTrigger
+			{
+				Enabled = true,
+				Delay = TimeSpan.FromSeconds(10),
+			});
 			taskDefinition.Actions.Add(new ExecAction(this._appPath));
 			return taskDefinition;
 		}

@@ -11,7 +11,7 @@ namespace SylphyHorn.Services
 {
 	public class HookService : IDisposable
 	{
-		private readonly ShortcutKeyDetector _detector = new ShortcutKeyDetector();
+		private readonly IHookDetector _detector;
 		private readonly List<HookAction> _keyHookActions = new List<HookAction>();
 		private readonly List<HookAction> _mouseHookActions = new List<HookAction>();
 		private readonly Dispatcher _dispatcher;
@@ -19,6 +19,7 @@ namespace SylphyHorn.Services
 		private Action _reloadAction;
 		private bool _disposeRequested;
 		private bool _disposed;
+		private bool _started;
 
 		public Action Reload
 		{
@@ -44,13 +45,45 @@ namespace SylphyHorn.Services
 		public event Action Suspended;
 
 		public HookService()
+			: this(new HookDetector())
 		{
+		}
+
+		internal HookService(IHookDetector detector)
+		{
+			this._detector = detector ?? throw new ArgumentNullException(nameof(detector));
 			this._dispatcher = Dispatcher.CurrentDispatcher;
 			this._detector.KeyPressed += this.KeyHookOnPressed;
 			this._detector.KeyUp += this.KeyHookOnUp;
 			this._detector.ButtonPressed += this.MouseHookOnPressed;
 			this._detector.ButtonUp += this.MouseHookOnUp;
-			this._detector.Start();
+		}
+
+		public void Start()
+		{
+			if (!this._dispatcher.CheckAccess())
+			{
+				this._dispatcher.Invoke((Action)this.StartCore);
+				return;
+			}
+
+			this.StartCore();
+		}
+
+		private void StartCore()
+		{
+			if (this._disposeRequested)
+			{
+				throw new ObjectDisposedException(nameof(HookService));
+			}
+			if (this._started) return;
+
+			if (this._suspendRequestCount == 0)
+			{
+				this._detector.Start();
+			}
+
+			this._started = true;
 		}
 
 		public IDisposable Suspend()
@@ -71,7 +104,10 @@ namespace SylphyHorn.Services
 			}
 
 			this._suspendRequestCount++;
-			this._detector.Stop();
+			if (this._started)
+			{
+				this._detector.Stop();
+			}
 
 			this.Suspended?.Invoke();
 
@@ -134,7 +170,10 @@ namespace SylphyHorn.Services
 			if (this._suspendRequestCount == 0)
 			{
 				this.ReloadCore();
-				this._detector.Start();
+				if (this._started)
+				{
+					this._detector.Start();
+				}
 			}
 		}
 
@@ -262,6 +301,52 @@ namespace SylphyHorn.Services
 				this.Action = action;
 				this.CanExecute = canExecute;
 			}
+		}
+
+		internal interface IHookDetector : IDisposable
+		{
+			event EventHandler<ShortcutKeyPressedEventArgs> KeyPressed;
+			event EventHandler<ShortcutKeyPressedEventArgs> KeyUp;
+			event EventHandler<ShortcutKeyPressedEventArgs> ButtonPressed;
+			event EventHandler<ShortcutKeyPressedEventArgs> ButtonUp;
+
+			void Start();
+			void Stop();
+		}
+
+		private sealed class HookDetector : IHookDetector
+		{
+			private readonly ShortcutKeyDetector _detector = new ShortcutKeyDetector();
+
+			public event EventHandler<ShortcutKeyPressedEventArgs> KeyPressed
+			{
+				add => this._detector.KeyPressed += value;
+				remove => this._detector.KeyPressed -= value;
+			}
+
+			public event EventHandler<ShortcutKeyPressedEventArgs> KeyUp
+			{
+				add => this._detector.KeyUp += value;
+				remove => this._detector.KeyUp -= value;
+			}
+
+			public event EventHandler<ShortcutKeyPressedEventArgs> ButtonPressed
+			{
+				add => this._detector.ButtonPressed += value;
+				remove => this._detector.ButtonPressed -= value;
+			}
+
+			public event EventHandler<ShortcutKeyPressedEventArgs> ButtonUp
+			{
+				add => this._detector.ButtonUp += value;
+				remove => this._detector.ButtonUp -= value;
+			}
+
+			public void Start() => this._detector.Start();
+
+			public void Stop() => this._detector.Stop();
+
+			public void Dispose() => this._detector.Dispose();
 		}
 	}
 }

@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Linq;
@@ -21,7 +21,10 @@ namespace SylphyHorn
 	sealed partial class Application : IDisposableHolder
 	{
 		private readonly DisposableCollection _compositeDisposable = new DisposableCollection();
+		private readonly CancellationTokenSource _startupCancellation = new CancellationTokenSource();
 		private ApplicationPreparation _preparation;
+		private StartupTrace _startupTrace;
+		private Task _startupTask;
 		private int _shutdownStarted;
 
 		internal HookService HookService { get; private set; }
@@ -37,9 +40,16 @@ namespace SylphyHorn
 				this.SetupShortcut();
 			}
 
-			if (!this.WaitUntilExplorerStarts())
+			this.ShutdownMode = ShutdownMode.OnExplicitShutdown;
+			this.DispatcherUnhandledException += this.HandleDispatcherUnhandledException;
+			TaskLog.Occured += (sender, log) => LoggingService.Instance.Register(log);
+			this._startupTrace = new StartupTrace();
+			this._startupTrace.Write(StartupPhase.ProcessStart);
+
+			if (ProductInfo.OSBuild < 14393)
 			{
-				MessageBox.Show("This application must start after Explorer is launched.", "Not ready", MessageBoxButton.OK, MessageBoxImage.Stop);
+				this._startupTrace.Write(StartupPhase.ShutdownOrFailure, StartupTraceResult.NotSupported);
+				MessageBox.Show("This application is supported on Windows 10 Anniversary Update (build 14393) or later.", "Not supported", MessageBoxButton.OK, MessageBoxImage.Stop);
 				this.BeginShutdown();
 				return;
 			}
@@ -49,6 +59,7 @@ namespace SylphyHorn
 			var appInstance = new SingleInstance(typeof(Application).Assembly, acquireTimeout).AddTo(this);
 			if (!appInstance.IsFirst)
 			{
+				this._startupTrace.Write(StartupPhase.SingleInstance, StartupTraceResult.DuplicateInstance);
 				if (Args.Restarted.HasValue)
 				{
 					var now = DateTimeOffset.Now;
@@ -68,24 +79,61 @@ Time: {now:O}"));
 				return;
 			}
 #endif
+			this._startupTrace.Write(StartupPhase.SingleInstance, StartupTraceResult.Succeeded);
+			base.OnStartup(e);
+			this._startupTask = this.StartApplicationAsync();
+		}
 
-			if (ProductInfo.OSBuild >= 14393)
+		private async Task StartApplicationAsync()
+		{
+			try
 			{
-				this.ShutdownMode = ShutdownMode.OnExplicitShutdown;
-				this.DispatcherUnhandledException += this.HandleDispatcherUnhandledException;
-				TaskLog.Occured += (sender, log) => LoggingService.Instance.Register(log);
+				var readiness = new ShellReadiness();
+				var result = await readiness.WaitAndContinueAsync(
+					TimeSpan.FromSeconds(30),
+					TimeSpan.FromMilliseconds(250),
+					3,
+					async () =>
+					{
+						this._startupTrace.Write(StartupPhase.ShellReady, StartupTraceResult.Succeeded);
+						await this.InitializeAfterShellReadyAsync();
+					},
+					this._startupCancellation.Token);
+				if (result == ShellReadinessResult.Ready) return;
 
-				LocalSettingsProvider.Instance.LoadOrMigrateAsync().Wait();
+				this._startupTrace.Write(
+					StartupPhase.ShellReady,
+					result == ShellReadinessResult.Cancelled ? StartupTraceResult.Cancelled : StartupTraceResult.TimedOut);
+				this._startupTrace.Write(StartupPhase.ShutdownOrFailure, result == ShellReadinessResult.Cancelled ? StartupTraceResult.Cancelled : StartupTraceResult.TimedOut);
+				this.BeginShutdown();
+			}
+			catch (Exception ex)
+			{
+				this._startupTrace.Write(StartupPhase.ShutdownOrFailure, StartupTraceResult.Failed, ex.GetType(), ex.HResult);
+				LoggingService.Instance.Register(ex);
+				this.BeginShutdown();
+			}
+		}
 
-				Settings.General.Culture.Subscribe(x => ResourceService.Current.ChangeCulture(x)).AddTo(this);
-				ThemeService.Current.Register(this, Theme.Windows, Accent.Windows);
+		private async Task InitializeAfterShellReadyAsync()
+		{
+			await LocalSettingsProvider.Instance.LoadOrMigrateAsync();
+			this._startupTrace.Write(StartupPhase.SettingsLoaded, StartupTraceResult.Succeeded);
 
-				this.HookService = new HookService().AddTo(this);
+			Settings.General.Culture.Subscribe(x => ResourceService.Current.ChangeCulture(x)).AddTo(this);
+			ThemeService.Current.Register(this, Theme.Windows, Accent.Windows);
 
-				this._preparation = new ApplicationPreparation(this.HookService, this.BeginShutdown, this);
-				var preparation = this._preparation;
-				this.TaskTrayIcon = preparation.CreateTaskTrayIcon().AddTo(this);
+			this.HookService = new HookService().AddTo(this);
 
+			this._preparation = new ApplicationPreparation(this.HookService, this.BeginShutdown, this, this._startupTrace);
+			var preparation = this._preparation;
+			this.TaskTrayIcon = preparation.CreateTaskTrayIcon().AddTo(this);
+
+			preparation.VirtualDesktopInitialized += () =>
+			{
+				this.TaskTrayIcon.Show();
+				this._startupTrace.Write(StartupPhase.TrayShown, StartupTraceResult.Succeeded);
+				this.TaskTrayIcon.Reload();
 				if (Settings.General.FirstTime)
 				{
 					preparation.CreateFirstTimeBaloon().Show();
@@ -93,54 +141,49 @@ Time: {now:O}"));
 					Settings.General.FirstTime.Value = false;
 					LocalSettingsProvider.Instance.SaveAsync().Forget();
 				}
-
-				preparation.VirtualDesktopInitialized += () =>
+				if (Settings.General.AlwaysShowDesktopNotification)
 				{
-					this.TaskTrayIcon.Show();
-					this.TaskTrayIcon.Reload();
-					if (Settings.General.AlwaysShowDesktopNotification)
-					{
-						NotificationService.Instance.ShowCurrentDesktop();
-					}
-				};
-				preparation.VirtualDesktopInitializationCanceled += () => this.BeginShutdown(); // ToDo
-				preparation.VirtualDesktopInitializationFailed += (ex, autoRestart) =>
-				{
-					this.TaskTrayIcon.Show();
-					LoggingService.Instance.Register(ex);
-
-					if ((Args.Restarted == null || Args.Restarted == 0) && autoRestart)
-					{
-						try
-						{
-							Restart();
-							this.BeginShutdown();
-							return;
-						}
-						catch (Exception ex2)
-						{
-							LoggingService.Instance.Register(ex2);
-						}
-					}
-					this.RestartOrShutdown("Virtual desktop initialization is failed.", "Virtual Desktop Initialization Failed");
-				};
-				preparation.PrepareVirtualDesktop();
-
-				NotificationService.Instance.AddTo(this);
-				WallpaperService.Instance.AddTo(this);
-
-				base.OnStartup(e);
-			}
-			else
+					NotificationService.Instance.ShowCurrentDesktop();
+				}
+			};
+			preparation.VirtualDesktopInitializationCanceled += () =>
 			{
-				MessageBox.Show("This application is supported on Windows 10 Anniversary Update (build 14393) or later.", "Not supported", MessageBoxButton.OK, MessageBoxImage.Stop);
+				this._startupTrace.Write(StartupPhase.ShutdownOrFailure, StartupTraceResult.Cancelled);
 				this.BeginShutdown();
-			}
+			};
+			preparation.VirtualDesktopInitializationFailed += (ex, autoRestart) =>
+			{
+				this._startupTrace.Write(StartupPhase.ShutdownOrFailure, StartupTraceResult.Failed, ex?.GetType(), ex?.HResult ?? 0);
+				this.TaskTrayIcon.Show();
+				this._startupTrace.Write(StartupPhase.TrayShown, StartupTraceResult.Failed);
+				LoggingService.Instance.Register(ex);
+
+				if ((Args.Restarted == null || Args.Restarted == 0) && autoRestart)
+				{
+					try
+					{
+						Restart();
+						this.BeginShutdown();
+						return;
+					}
+					catch (Exception ex2)
+					{
+						LoggingService.Instance.Register(ex2);
+					}
+				}
+				this.RestartOrShutdown("Virtual desktop initialization is failed.", "Virtual Desktop Initialization Failed");
+			};
+			this._startupTrace.Write(StartupPhase.ProviderInitStarted);
+			preparation.PrepareVirtualDesktop();
+
+			NotificationService.Instance.AddTo(this);
+			WallpaperService.Instance.AddTo(this);
 		}
 
 		private async void BeginShutdown()
 		{
 			if (Interlocked.Exchange(ref this._shutdownStarted, 1) != 0) return;
+			this._startupCancellation.Cancel();
 			try
 			{
 				if (this._preparation != null) await this._preparation.ShutdownAsync();
@@ -170,28 +213,6 @@ Time: {now:O}"));
 		{
 			LoggingService.Instance.Register(args.Exception);
 			args.Handled = true;
-		}
-
-		private bool WaitUntilExplorerStarts()
-		{
-			const string explorerProcessName = "explorer";
-			if (Process.GetProcessesByName(explorerProcessName).Length > 0)
-			{
-				return true;
-			}
-
-			const int tryCount = 5;
-			const int timeout = 5000;
-			const int interval = timeout / tryCount;
-			for (var i = 0; i < tryCount; ++i)
-			{
-				Thread.Sleep(interval);
-				if (Process.GetProcessesByName(explorerProcessName).Length > 0)
-				{
-					return true;
-				}
-			}
-			return false;
 		}
 
 		private void RestartOrShutdown(string message, string caption)

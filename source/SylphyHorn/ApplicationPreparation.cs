@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
@@ -23,6 +23,7 @@ namespace SylphyHorn
 		private readonly HookService _hookService;
 		private readonly Action _shutdownAction;
 		private readonly IDisposableHolder _disposable;
+		private readonly StartupTrace _startupTrace;
 		private TaskTrayIcon _taskTrayIcon;
 		private DesktopTransitionRuntime _desktopRuntime;
 
@@ -31,10 +32,16 @@ namespace SylphyHorn
 		public event Action<Exception, bool> VirtualDesktopInitializationFailed;
 
 		public ApplicationPreparation(HookService hookService, Action shutdownAction, IDisposableHolder disposable)
+			: this(hookService, shutdownAction, disposable, null)
+		{
+		}
+
+		internal ApplicationPreparation(HookService hookService, Action shutdownAction, IDisposableHolder disposable, StartupTrace startupTrace)
 		{
 			this._hookService = hookService;
 			this._shutdownAction = shutdownAction;
 			this._disposable = disposable;
+			this._startupTrace = startupTrace;
 			this._hookService.Reload = this.RegisterActions;
 		}
 
@@ -103,21 +110,26 @@ namespace SylphyHorn
 			provider.Initialize().ContinueWith(task => this.CompleteProviderInitialization(task, provider), TaskScheduler.FromCurrentSynchronizationContext());
 		}
 
-		private async void CompleteProviderInitialization(Task initialization, VirtualDesktopProvider provider)
+		internal async void CompleteProviderInitialization(Task initialization, VirtualDesktopProvider provider)
 		{
+			var runtimeInitialized = false;
 			if (initialization.IsCanceled)
 			{
+				this._startupTrace?.Write(StartupPhase.ProviderInitCompleted, StartupTraceResult.Cancelled);
 				this.VirtualDesktopInitializationCanceled?.Invoke();
 				return;
 			}
 			if (initialization.IsFaulted)
 			{
+				var exception = initialization.Exception;
+				this._startupTrace?.Write(StartupPhase.ProviderInitCompleted, StartupTraceResult.Failed, exception?.GetType(), exception?.HResult ?? 0);
 				this.VirtualDesktopInitializationFailed?.Invoke(initialization.Exception, false);
 				return;
 			}
 
 			try
 			{
+				this._startupTrace?.Write(StartupPhase.ProviderInitCompleted, StartupTraceResult.Succeeded);
 				var runtime = new DesktopTransitionRuntime(
 					new VirtualDesktopProviderClient(provider),
 					new ApplicationDesktopSettingsTransactions(LocalSettingsProvider.Instance),
@@ -127,10 +139,17 @@ namespace SylphyHorn
 				var result = await runtime.InitializeAsync(Settings.General.OverrideDesktopsOnStartup, CancellationToken.None);
 				if (!result.Succeeded)
 				{
+					this._startupTrace?.Write(
+						StartupPhase.RuntimeInitialized,
+						result.Status == DesktopRuntimeInitializationStatus.Cancelled || result.Status == DesktopRuntimeInitializationStatus.ShuttingDown
+							? StartupTraceResult.Cancelled
+							: StartupTraceResult.Failed);
 					if (result.Status == DesktopRuntimeInitializationStatus.Cancelled || result.Status == DesktopRuntimeInitializationStatus.ShuttingDown) this.VirtualDesktopInitializationCanceled?.Invoke();
 					else this.VirtualDesktopInitializationFailed?.Invoke(new InvalidOperationException("Virtual desktop runtime initialization did not produce a stable state."), false);
 					return;
 				}
+				this._startupTrace?.Write(StartupPhase.RuntimeInitialized, StartupTraceResult.Succeeded);
+				runtimeInitialized = true;
 
 				this._desktopRuntime = runtime;
 				runtime.AddTo(this._disposable);
@@ -139,12 +158,23 @@ namespace SylphyHorn
 				WallpaperService.Instance.BindDesktopRuntime(runtime);
 				SettingsService.StretchShortcutListsTo(runtime.State.Order.Count);
 				this.RegisterActions();
-				this.VirtualDesktopInitialized?.Invoke();
+				this.CompleteSuccessfulInitialization();
 			}
 			catch (Exception ex)
 			{
+				if (!runtimeInitialized)
+				{
+					this._startupTrace?.Write(StartupPhase.RuntimeInitialized, StartupTraceResult.Failed, ex.GetType(), ex.HResult);
+				}
 				this.VirtualDesktopInitializationFailed?.Invoke(ex, false);
 			}
+		}
+
+		internal void CompleteSuccessfulInitialization()
+		{
+			this._hookService.Start();
+			this._startupTrace?.Write(StartupPhase.HookStarted, StartupTraceResult.Succeeded);
+			this.VirtualDesktopInitialized?.Invoke();
 		}
 
 		internal Task ShutdownAsync()
@@ -331,25 +361,29 @@ namespace SylphyHorn
 			{
 				register(() => shortcut, _ => VirtualDesktopService.GetByIndex(i)?.Switch())
 					.AddTo(this._disposable);
-			};
+			}
+			;
 
 			void RegisterSpecifiedDesktopSwapping(int i, ShortcutKey shortcut)
 			{
 				register(() => shortcut, _ => VirtualDesktopService.SwapCurrentByIndex(i))
 					.AddTo(this._disposable);
-			};
+			}
+			;
 
 			void RegisterMovingToSpecifiedDesktop(int i, ShortcutKey shortcut)
 			{
 				register(() => shortcut, hWnd => hWnd.MoveToIndex(i))
 					.AddTo(this._disposable);
-			};
+			}
+			;
 
 			void RegisterMovingToSpecifiedDesktopAndSwitch(int i, ShortcutKey shortcut)
 			{
 				register(() => shortcut, hWnd => hWnd.MoveToIndex(i)?.Switch())
 					.AddTo(this._disposable);
-			};
+			}
+			;
 		}
 	}
 }
