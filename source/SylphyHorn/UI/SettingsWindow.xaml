@@ -518,6 +518,16 @@
 																		<Setter Property="Background" Value="Transparent" />
 																		<Setter Property="Foreground" Value="Transparent" />
 																		<Setter Property="BorderThickness" Value="0" />
+																		<Setter Property="Template">
+																			<Setter.Value>
+																				<ControlTemplate TargetType="{x:Type Button}">
+																					<Border Background="{TemplateBinding Background}"
+																							BorderBrush="{TemplateBinding BorderBrush}"
+																							BorderThickness="{TemplateBinding BorderThickness}"
+																							SnapsToDevicePixels="True" />
+																				</ControlTemplate>
+																			</Setter.Value>
+																		</Setter>
 																	</Style.Setters>
 																	<Style.Triggers>
 																		<Trigger Property="IsMouseOver" Value="True">
