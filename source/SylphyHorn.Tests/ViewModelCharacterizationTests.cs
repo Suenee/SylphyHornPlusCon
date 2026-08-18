@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.ComponentModel;
 using System.Linq;
@@ -181,6 +181,31 @@ namespace SylphyHorn.Tests
 			viewModel.Update(0, record);
 
 			Assert.Empty(names);
+		}
+
+		[Fact]
+		public void SupportedWallpaperRejectsEmptyPathAndRestoresTheDisplayedValue()
+		{
+			var record = new DesktopRecord(
+				DesktopRuntimeTestData.A,
+				DesktopPropertyState.Provider("name"),
+				DesktopPropertyState.Provider("wallpaper.jpg"),
+				WallpaperPosition.Fill,
+				DesktopRecordOrigin.TrulyNewRecord);
+			var harness = Harness.Create(DesktopRuntimeTestData.Batch(
+				1,
+				1,
+				DesktopRuntimeTestData.A,
+				DesktopRuntimeTestData.Entry(DesktopRuntimeTestData.A, 0, "name", "wallpaper.jpg")));
+			var viewModel = new VirtualDesktopViewModel(harness.Runtime, 0, record);
+			var names = new List<string>();
+			viewModel.PropertyChanged += (_, args) => names.Add(args.PropertyName);
+
+			viewModel.WallpaperPath = string.Empty;
+
+			Assert.Equal("wallpaper.jpg", viewModel.WallpaperPath);
+			Assert.Equal(new[] { nameof(viewModel.WallpaperPath) }, names);
+			Assert.Equal(0, harness.Operations.WallpaperCalls);
 		}
 
 		[Fact]

@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
@@ -59,6 +59,42 @@ namespace SylphyHorn.Tests
 			Assert.Equal(saves, harness.Settings.SaveRequests);
 			Assert.Equal(0, events);
 			Assert.Equal(1, harness.Operations.NameCalls);
+		}
+
+		[Fact]
+		public async Task SupportedWallpaperRejectsEmptyLocalEditWithoutOperationOrPublication()
+		{
+			var harness = await Harness.Initialized();
+			var state = harness.Runtime.State;
+			var saves = harness.Settings.SaveRequests;
+			var events = 0;
+			harness.Runtime.StateChanged += (_, __) => events++;
+
+			harness.Runtime.EditWallpaperPath(A, string.Empty);
+
+			Assert.Same(state, harness.Runtime.State);
+			Assert.Equal("wall", harness.Runtime.State.Records[A].WallpaperPath.Value);
+			Assert.Equal(0, harness.Operations.WallpaperCalls);
+			Assert.Equal(saves, harness.Settings.SaveRequests);
+			Assert.Equal(0, events);
+		}
+
+		[Fact]
+		public async Task UnsupportedWallpaperPreservesEmptyApplicationAuthoritativeEdit()
+		{
+			var initial = new VirtualDesktopStableBatch(1, 1, A, VirtualDesktopReadStatus.Success, new[]
+			{
+				new VirtualDesktopStableEntry(A, 0, "name", VirtualDesktopReadStatus.Success, null, VirtualDesktopReadStatus.Unsupported),
+			}, VirtualDesktopStableReason.Initialization);
+			var harness = Harness.Create(initial);
+			await harness.Runtime.InitializeAsync(false, TestContext.Current.CancellationToken);
+
+			harness.Runtime.EditWallpaperPath(A, string.Empty);
+
+			Assert.Equal(string.Empty, harness.Runtime.State.Records[A].WallpaperPath.Value);
+			Assert.Equal(DesktopPropertyAuthority.ApplicationAuthoritative, harness.Runtime.State.Records[A].WallpaperPath.Authority);
+			Assert.Equal(0, harness.Operations.WallpaperCalls);
+			Assert.Equal(new[] { string.Empty }, harness.Operations.AppliedWallpaperValues);
 		}
 
 		[Fact]

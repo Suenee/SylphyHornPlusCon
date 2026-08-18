@@ -1,4 +1,4 @@
-using CommunityToolkit.Mvvm.ComponentModel;
+﻿using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using SylphyHorn.Properties;
 using SylphyHorn.Serialization;
@@ -6,6 +6,7 @@ using SylphyHorn.Services;
 using SylphyHorn.Services.DesktopTransitions;
 using System;
 using System.Windows.Media;
+using WindowsDesktop;
 
 namespace SylphyHorn.UI.Bindings
 {
@@ -14,6 +15,7 @@ namespace SylphyHorn.UI.Bindings
 		private readonly DesktopTransitionRuntime _runtime;
 		private string _name;
 		private WallpaperViewModel _wallpaper;
+		private bool _supportsWallpaperPath;
 
 		internal VirtualDesktopViewModel(DesktopTransitionRuntime runtime, int index, DesktopRecord record)
 		{
@@ -21,6 +23,7 @@ namespace SylphyHorn.UI.Bindings
 			this.Id = record?.Id ?? throw new ArgumentNullException(nameof(record));
 			this.Index = index;
 			this._name = record.Name.HasValue ? record.Name.Value : null;
+			this._supportsWallpaperPath = record.WallpaperPath.ReadStatus != VirtualDesktopReadStatus.Unsupported;
 			this._wallpaper = new WallpaperViewModel(
 				record.WallpaperPath.HasValue ? record.WallpaperPath.Value : null,
 				record.WallpaperPosition,
@@ -54,7 +57,20 @@ namespace SylphyHorn.UI.Bindings
 			}
 		}
 		public bool IsWallpaperEnabled => ProductInfo.IsWallpaperSupportBuild || Settings.General.ChangeBackgroundEachDesktop;
-		public string WallpaperPath { get => this._wallpaper.FilePath; set => this._wallpaper.FilePath = value; }
+		public string WallpaperPath
+		{
+			get => this._wallpaper.FilePath;
+			set
+			{
+				if (this._wallpaper.FilePath == value) return;
+				if (this._supportsWallpaperPath && string.IsNullOrEmpty(value))
+				{
+					this.OnPropertyChanged(nameof(this.WallpaperPath));
+					return;
+				}
+				this._wallpaper.FilePath = value;
+			}
+		}
 		public string WallpaperPathOrDefault => this._wallpaper.FilePathOrDefault;
 		public WallpaperPosition WallpaperPosition { get => this._wallpaper.Position; set => this._wallpaper.Position = value; }
 		public WallpaperViewModel Wallpaper => this._wallpaper;
@@ -77,6 +93,7 @@ namespace SylphyHorn.UI.Bindings
 				this.OnPropertyChanged(nameof(this.Name));
 			}
 			var wallpaperPath = record.WallpaperPath.HasValue ? record.WallpaperPath.Value : null;
+			this._supportsWallpaperPath = record.WallpaperPath.ReadStatus != VirtualDesktopReadStatus.Unsupported;
 			var wallpaperPathChanged = this._wallpaper.FilePath != wallpaperPath;
 			var wallpaperPositionChanged = this._wallpaper.Position != record.WallpaperPosition;
 			this._wallpaper.Update(wallpaperPath, record.WallpaperPosition);

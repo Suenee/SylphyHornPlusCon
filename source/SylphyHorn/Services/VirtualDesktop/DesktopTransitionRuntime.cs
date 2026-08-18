@@ -338,6 +338,7 @@ namespace SylphyHorn.Services.DesktopTransitions
 			{
 				var record = this.GetRecord(desktopId);
 				var unsupported = record.WallpaperPath.ReadStatus == VirtualDesktopReadStatus.Unsupported;
+				if (!unsupported && string.IsNullOrEmpty(value)) return;
 				this.CommitLocalEdit(
 					DesktopLocalEdit.WallpaperPath(desktopId, value, this.State),
 					() =>
