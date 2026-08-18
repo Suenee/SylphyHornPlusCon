@@ -42,15 +42,15 @@ $ArchitectureNames = @{
 	"win-arm64" = "arm64"
 }
 $MetroSourceCommits = [ordered]@{
-	MetroTrilithon = "240843208516399f41344d34907c2d8b268ea3c4"
+	MetroTrilithon = "0ba728cd535214844c0d676ef2b1ba3eedc9fd03"
 	MetroRadiance  = "f4505e7f5c025f9468aba86641bac0ba79a15618"
 }
 $ExpectedMetroHashes = [ordered]@{
 	"MetroRadiance.Chrome.dll"    = "765FAA1523907BCDB8BB783119C59BD6AB839B9C0C1FB03828877C5E92629D9A"
 	"MetroRadiance.Core.dll"      = "72B8E5D6807BCB0C2C14CC0A4AB4F9EF46968EE11311EA4187378D0B7A3E25AA"
 	"MetroRadiance.dll"           = "5C74ED8952E6A2114DCB4DCD311D7DDEDF45AACD18C5BDB4CA2A428476ED90E3"
-	"MetroTrilithon.Desktop.dll"  = "C518DF02E4AE199F87A6A0654793316FF07556325BA4103F5F729584D59F84A8"
-	"MetroTrilithon.dll"          = "C456B6E2EF66E42951B92E3A15E443B14E846C16BC394642887536719EB8CAAE"
+	"MetroTrilithon.Desktop.dll"  = "1A94E19E1F51847704D1BDE170D4EB0EC0D7DF88518BC5174A101E7EF5AE9FA3"
+	"MetroTrilithon.dll"          = "773D7ED98902977CA043C53FA7B493AD1B52AD137544052DDD3A3FA550EB0846"
 }
 
 function Assert-Condition {
@@ -684,7 +684,8 @@ function Assert-DenyList {
 		"settings.xml", "packages.lock.json")
 	$deniedFragments = @(
 		"TestHost", "Tests.dll", "TestResults", "coverage",
-		"ErrorReports", "assemblies/VirtualDesktop.", ".git/")
+		"ErrorReports", "assemblies/VirtualDesktop.", ".git/",
+		"Livet", "WindowsAPICodePack")
 
 	$violations = @()
 	foreach ($file in Get-ChildItem -LiteralPath $PayloadRoot -Recurse -File) {

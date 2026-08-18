@@ -11,7 +11,6 @@ namespace SylphyHorn.Properties
 		public static LicenseInfo[] All { get; } =
 		{
 			new LicenseInfo("VirtualDesktop"),
-			new LicenseInfo("Livet"),
 			new LicenseInfo("MetroRadiance"),
 			new LicenseInfo("MetroTrilithon"),
 			new LicenseInfo("TaskScheduler"),

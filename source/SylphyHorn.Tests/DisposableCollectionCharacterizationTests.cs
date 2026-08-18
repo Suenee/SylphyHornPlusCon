@@ -1,11 +1,11 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using SylphyHorn.Lifetime;
 using Xunit;
 
 namespace SylphyHorn.Tests
 {
-	public class LivetCharacterizationTests
+	public class DisposableCollectionCharacterizationTests
 	{
 		[Fact]
 		public void CompositeDisposableDisposesInInsertionOrderOnlyOnce()

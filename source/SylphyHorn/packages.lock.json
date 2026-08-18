@@ -30,31 +30,6 @@
         "resolved": "2026.2.0",
         "contentHash": "drvAEaI7Xf4wU6dx4UTB9MoZWXZlraaQ0qoeThPQ411FxNhId7QdUTukIC9I8aUHP0ycAaGwZNKqSvfOZQvUlg=="
       },
-      "LivetCask": {
-        "type": "Direct",
-        "requested": "[4.0.2, )",
-        "resolved": "4.0.2",
-        "contentHash": "0Vgpw9Gv0mS8vEzmbDV0cFrPAObjknz7MxbXlmS9x7JENokm43kE5lzLLsHC1zraDnfKxuVJlqjfJk+OI2R6Rg==",
-        "dependencies": {
-          "LivetCask.Behaviors": "4.0.2",
-          "LivetCask.Collections": "4.0.2",
-          "LivetCask.Converters": "4.0.2",
-          "LivetCask.EventListeners": "4.0.2",
-          "LivetCask.Messaging": "4.0.2",
-          "LivetCask.Mvvm": "4.0.2"
-        }
-      },
-      "LivetExtensions": {
-        "type": "Direct",
-        "requested": "[4.0.2, )",
-        "resolved": "4.0.2",
-        "contentHash": "PnCbgsrRMO3+J1AmhL+2cElicP+yqri6ZdREi05QBUjf77rDxU6UR64hjU7klkVVAKRQVZGz8QHQeBajixUm1Q==",
-        "dependencies": {
-          "InternalReservedAttributeGenerator": "0.1.2",
-          "LivetCask": "4.0.2",
-          "Microsoft.Xaml.Behaviors.Wpf": "1.1.31"
-        }
-      },
       "Microsoft.CSharp": {
         "type": "Direct",
         "requested": "[4.7.0, )",
@@ -111,67 +86,6 @@
         "contentHash": "ErHZNGBhPd7CmTgwpS3DI5dqNOcFKvmsR2vEo0L8te+14bdM5ZR3vfspOvCgHytC16HF1k3wuoLBF8p+iVfoiw==",
         "dependencies": {
           "ElementalAnnotations-Core": "1.0.1"
-        }
-      },
-      "InternalReservedAttributeGenerator": {
-        "type": "Transitive",
-        "resolved": "0.1.2",
-        "contentHash": "Y6ippCMbaYTWjW+hj9XMeSVxGwForOqQpDfY4Q57m3BF5iLjxDx1YiSLRPAVmMey09YsHHFZhXqanbw9zlGJQg=="
-      },
-      "LivetCask.Behaviors": {
-        "type": "Transitive",
-        "resolved": "4.0.2",
-        "contentHash": "6KNqWF5hdIVKF+UU2LAjja5PIigQSISO+g7Ixv37GjM16bIQF8Sa9PurYaeFQOhng2LUi7RQlGVYpCTfEc+dXg==",
-        "dependencies": {
-          "LivetCask.Core": "4.0.2",
-          "Microsoft.Xaml.Behaviors.Wpf": "1.1.31"
-        }
-      },
-      "LivetCask.Collections": {
-        "type": "Transitive",
-        "resolved": "4.0.2",
-        "contentHash": "svZwO3diHrYwlC+cyjTI7Y6FTKdgkQc8qemLpdkPmlTwqMCjXaXzOUCG4OZk+vCBh0qpM7SuLKITNK4/0XKdug==",
-        "dependencies": {
-          "LivetCask.EventListeners": "4.0.2"
-        }
-      },
-      "LivetCask.Converters": {
-        "type": "Transitive",
-        "resolved": "4.0.2",
-        "contentHash": "6lW9dacE9wvWmf6Dhv7ynbFXcH4hhf3tJKXo6Uei3wh6w3TF2gJGMa9XFkxc/rHH6NCb7Y9igpgq0jMy9r9jjQ==",
-        "dependencies": {
-          "Microsoft.Xaml.Behaviors.Wpf": "1.1.31"
-        }
-      },
-      "LivetCask.Core": {
-        "type": "Transitive",
-        "resolved": "4.0.2",
-        "contentHash": "/Cp5areP4R0rSxBQNCIUhrvRrT9aOFl90oW/j/t+tiXvByhjLkweVzfmrjNKQD0jRJCaxipZkK+3twVFCtKXwg=="
-      },
-      "LivetCask.EventListeners": {
-        "type": "Transitive",
-        "resolved": "4.0.2",
-        "contentHash": "bRcfcgP6Ncc2In2Jla+V5YKZ+M6fRyJwx7aMKO9MShD1r9ZsYz7UY3x7XrQoRav8Q7zIENupJJo0r7xxdEYBOQ==",
-        "dependencies": {
-          "LivetCask.Core": "4.0.2"
-        }
-      },
-      "LivetCask.Messaging": {
-        "type": "Transitive",
-        "resolved": "4.0.2",
-        "contentHash": "zyFeUvDjALJQegYqg0MV9t969uzcp3hhtsNitRttfWPdpPUZBF0GSgMG/uy+bT1olmBOjCB6/2+MwG+5pB0IYA==",
-        "dependencies": {
-          "LivetCask.Core": "4.0.2",
-          "LivetCask.EventListeners": "4.0.2",
-          "Microsoft.Xaml.Behaviors.Wpf": "1.1.31"
-        }
-      },
-      "LivetCask.Mvvm": {
-        "type": "Transitive",
-        "resolved": "4.0.2",
-        "contentHash": "lrqCgHGRC6YHmhivfF+g23c8Q4j2mgCgBkfNuhJ45SqlEdgjIzeUfMLC9BwHsdRnN6Iso6ezAWgL02OsQcZrWQ==",
-        "dependencies": {
-          "LivetCask.Messaging": "4.0.2"
         }
       },
       "Microsoft.Bcl.AsyncInterfaces": {
@@ -264,31 +178,6 @@
         "resolved": "2026.2.0",
         "contentHash": "drvAEaI7Xf4wU6dx4UTB9MoZWXZlraaQ0qoeThPQ411FxNhId7QdUTukIC9I8aUHP0ycAaGwZNKqSvfOZQvUlg=="
       },
-      "LivetCask": {
-        "type": "Direct",
-        "requested": "[4.0.2, )",
-        "resolved": "4.0.2",
-        "contentHash": "0Vgpw9Gv0mS8vEzmbDV0cFrPAObjknz7MxbXlmS9x7JENokm43kE5lzLLsHC1zraDnfKxuVJlqjfJk+OI2R6Rg==",
-        "dependencies": {
-          "LivetCask.Behaviors": "4.0.2",
-          "LivetCask.Collections": "4.0.2",
-          "LivetCask.Converters": "4.0.2",
-          "LivetCask.EventListeners": "4.0.2",
-          "LivetCask.Messaging": "4.0.2",
-          "LivetCask.Mvvm": "4.0.2"
-        }
-      },
-      "LivetExtensions": {
-        "type": "Direct",
-        "requested": "[4.0.2, )",
-        "resolved": "4.0.2",
-        "contentHash": "PnCbgsrRMO3+J1AmhL+2cElicP+yqri6ZdREi05QBUjf77rDxU6UR64hjU7klkVVAKRQVZGz8QHQeBajixUm1Q==",
-        "dependencies": {
-          "InternalReservedAttributeGenerator": "0.1.2",
-          "LivetCask": "4.0.2",
-          "Microsoft.Xaml.Behaviors.Wpf": "1.1.31"
-        }
-      },
       "Microsoft.CSharp": {
         "type": "Direct",
         "requested": "[4.7.0, )",
@@ -344,67 +233,6 @@
         "contentHash": "ErHZNGBhPd7CmTgwpS3DI5dqNOcFKvmsR2vEo0L8te+14bdM5ZR3vfspOvCgHytC16HF1k3wuoLBF8p+iVfoiw==",
         "dependencies": {
           "ElementalAnnotations-Core": "1.0.1"
-        }
-      },
-      "InternalReservedAttributeGenerator": {
-        "type": "Transitive",
-        "resolved": "0.1.2",
-        "contentHash": "Y6ippCMbaYTWjW+hj9XMeSVxGwForOqQpDfY4Q57m3BF5iLjxDx1YiSLRPAVmMey09YsHHFZhXqanbw9zlGJQg=="
-      },
-      "LivetCask.Behaviors": {
-        "type": "Transitive",
-        "resolved": "4.0.2",
-        "contentHash": "6KNqWF5hdIVKF+UU2LAjja5PIigQSISO+g7Ixv37GjM16bIQF8Sa9PurYaeFQOhng2LUi7RQlGVYpCTfEc+dXg==",
-        "dependencies": {
-          "LivetCask.Core": "4.0.2",
-          "Microsoft.Xaml.Behaviors.Wpf": "1.1.31"
-        }
-      },
-      "LivetCask.Collections": {
-        "type": "Transitive",
-        "resolved": "4.0.2",
-        "contentHash": "svZwO3diHrYwlC+cyjTI7Y6FTKdgkQc8qemLpdkPmlTwqMCjXaXzOUCG4OZk+vCBh0qpM7SuLKITNK4/0XKdug==",
-        "dependencies": {
-          "LivetCask.EventListeners": "4.0.2"
-        }
-      },
-      "LivetCask.Converters": {
-        "type": "Transitive",
-        "resolved": "4.0.2",
-        "contentHash": "6lW9dacE9wvWmf6Dhv7ynbFXcH4hhf3tJKXo6Uei3wh6w3TF2gJGMa9XFkxc/rHH6NCb7Y9igpgq0jMy9r9jjQ==",
-        "dependencies": {
-          "Microsoft.Xaml.Behaviors.Wpf": "1.1.31"
-        }
-      },
-      "LivetCask.Core": {
-        "type": "Transitive",
-        "resolved": "4.0.2",
-        "contentHash": "/Cp5areP4R0rSxBQNCIUhrvRrT9aOFl90oW/j/t+tiXvByhjLkweVzfmrjNKQD0jRJCaxipZkK+3twVFCtKXwg=="
-      },
-      "LivetCask.EventListeners": {
-        "type": "Transitive",
-        "resolved": "4.0.2",
-        "contentHash": "bRcfcgP6Ncc2In2Jla+V5YKZ+M6fRyJwx7aMKO9MShD1r9ZsYz7UY3x7XrQoRav8Q7zIENupJJo0r7xxdEYBOQ==",
-        "dependencies": {
-          "LivetCask.Core": "4.0.2"
-        }
-      },
-      "LivetCask.Messaging": {
-        "type": "Transitive",
-        "resolved": "4.0.2",
-        "contentHash": "zyFeUvDjALJQegYqg0MV9t969uzcp3hhtsNitRttfWPdpPUZBF0GSgMG/uy+bT1olmBOjCB6/2+MwG+5pB0IYA==",
-        "dependencies": {
-          "LivetCask.Core": "4.0.2",
-          "LivetCask.EventListeners": "4.0.2",
-          "Microsoft.Xaml.Behaviors.Wpf": "1.1.31"
-        }
-      },
-      "LivetCask.Mvvm": {
-        "type": "Transitive",
-        "resolved": "4.0.2",
-        "contentHash": "lrqCgHGRC6YHmhivfF+g23c8Q4j2mgCgBkfNuhJ45SqlEdgjIzeUfMLC9BwHsdRnN6Iso6ezAWgL02OsQcZrWQ==",
-        "dependencies": {
-          "LivetCask.Messaging": "4.0.2"
         }
       },
       "Microsoft.CodeAnalysis.Analyzers": {
