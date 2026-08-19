@@ -1,118 +1,178 @@
 ﻿using System;
 using System.Collections.Generic;
-using System.Linq;
-using System.Threading;
-using System.Threading.Tasks;
 using System.Windows;
-using MetroTrilithon.Lifetime;
 using SylphyHorn.UI;
 using SylphyHorn.UI.Bindings;
 
 namespace SylphyHorn.Services
 {
+	internal interface INotificationPresentation : IDisposable
+	{
+		void Update(string title, string header, string body, NotificationVisualSettings visual);
+	}
+
 	internal interface INotificationPresenter
 	{
-		IDisposable Present(DesktopNotificationRequest request);
+		INotificationPresentation Present(DesktopNotificationRequest request);
 		IDisposable Present(PinNotificationRequest request);
-		void HideCurrentDesktop();
-		IDisposable ToggleCurrentDesktop(DesktopNotificationRequest showRequest);
+	}
+
+	internal interface INotificationWindowHandle : IDisposable
+	{
+		object DataContext { set; }
+		void Show();
+	}
+
+	internal interface INotificationWindowFactory
+	{
+		IReadOnlyList<Rect> GetSwitchAreas(uint display);
+		INotificationWindowHandle CreateSwitch(Rect area, NotificationVisualSettings visual);
+		INotificationWindowHandle CreatePin(PinTargetGeometry geometry, NotificationVisualSettings visual);
 	}
 
 	internal sealed class NotificationPresenter : INotificationPresenter
 	{
-		private List<SwitchWindow> _residentWindows = new List<SwitchWindow>();
+		private readonly INotificationWindowFactory _windows;
 
-		public IDisposable Present(DesktopNotificationRequest request)
+		internal NotificationPresenter() : this(new NotificationWindowFactory()) { }
+
+		internal NotificationPresenter(INotificationWindowFactory windows)
+		{
+			this._windows = windows ?? throw new ArgumentNullException(nameof(windows));
+		}
+
+		public INotificationPresentation Present(DesktopNotificationRequest request)
 		{
 			if (request == null) throw new ArgumentNullException(nameof(request));
-			this.CloseResidentWindows();
-
-			var source = new CancellationTokenSource();
-			if (request.Resident)
+			var vmodel = new NotificationWindowViewModel(request.Title, request.Header, request.Body, request.Visual);
+			var windows = new List<INotificationWindowHandle>();
+			try
 			{
-				this._residentWindows = this.CreateSwitchWindows(request);
-				Task.Delay(TimeSpan.FromMilliseconds(request.Duration), source.Token)
-					.ContinueWith(_ => this._residentWindows.ForEach(window =>
-					{
-						window.DataContext = new NotificationWindowViewModel(
-							request.Title,
-							request.ResidentHeader,
-							request.Body,
-							request.Visual);
-					}), source.Token, TaskContinuationOptions.NotOnCanceled, TaskScheduler.FromCurrentSynchronizationContext());
+				foreach (var area in this._windows.GetSwitchAreas(request.Visual.Display))
+				{
+					var window = this._windows.CreateSwitch(area, request.Visual);
+					windows.Add(window);
+					window.DataContext = vmodel;
+					window.Show();
+				}
+				return new SwitchWindowPresentation(windows);
 			}
-			else
+			catch (Exception presentationException)
 			{
-				var windows = this.CreateSwitchWindows(request);
-				Task.Delay(TimeSpan.FromMilliseconds(request.Duration), source.Token)
-					.ContinueWith(_ => windows.ForEach(window => window.Close()), TaskScheduler.FromCurrentSynchronizationContext());
+				var cleanupException = DisposeAll(windows);
+				if (cleanupException != null)
+					throw CombineExceptions("Notification presentation and cleanup both failed.", presentationException, cleanupException);
+				throw;
 			}
-
-			return Disposable.Create(() => source.Cancel());
 		}
 
 		public IDisposable Present(PinNotificationRequest request)
 		{
 			if (request == null) throw new ArgumentNullException(nameof(request));
-			var source = new CancellationTokenSource();
-			var window = new PinWindow(request.Geometry, request.Visual)
+			if (request.Geometry == null) throw new ArgumentException("Pin geometry is required.", nameof(request));
+			var window = this._windows.CreatePin(request.Geometry, request.Visual);
+			try
 			{
-				DataContext = new NotificationWindowViewModel(request.Title, request.Header, request.Body, request.Visual),
-			};
-			window.Show();
-
-			Task.Delay(TimeSpan.FromMilliseconds(request.Duration), source.Token)
-				.ContinueWith(_ => window.Close(), TaskScheduler.FromCurrentSynchronizationContext());
-
-			return Disposable.Create(() => source.Cancel());
-		}
-
-		public void HideCurrentDesktop() => this.CloseResidentWindows();
-
-		public IDisposable ToggleCurrentDesktop(DesktopNotificationRequest showRequest)
-		{
-			if (this._residentWindows.Count(window => window.IsVisible) == 0)
-			{
-				return showRequest == null ? null : this.Present(showRequest);
-			}
-
-			this.HideCurrentDesktop();
-			return null;
-		}
-
-		private List<SwitchWindow> CreateSwitchWindows(DesktopNotificationRequest request)
-		{
-			var vmodel = new NotificationWindowViewModel(request.Title, request.Header, request.Body, request.Visual);
-			var settings = request.Visual.Display;
-			Monitor[] targets;
-			if (settings == 0)
-			{
-				targets = new[] { MonitorService.GetCurrentArea() };
-			}
-			else
-			{
-				var monitors = MonitorService.GetAreas();
-				targets = settings == uint.MaxValue
-					? monitors
-					: new[] { monitors[settings - 1] };
-			}
-
-			return targets.Select(area =>
-			{
-				var window = new SwitchWindow(area.WorkArea, request.Visual)
-				{
-					DataContext = vmodel,
-				};
+				window.DataContext = new NotificationWindowViewModel(request.Title, request.Header, request.Body, request.Visual);
 				window.Show();
 				return window;
-			}).ToList();
+			}
+			catch
+			{
+				window.Dispose();
+				throw;
+			}
 		}
 
-		private void CloseResidentWindows()
+		private sealed class SwitchWindowPresentation : INotificationPresentation
 		{
-			if (this._residentWindows.Count == 0) return;
-			this._residentWindows.ForEach(window => window.Close());
-			this._residentWindows.Clear();
+			private List<INotificationWindowHandle> _windows;
+
+			internal SwitchWindowPresentation(List<INotificationWindowHandle> windows)
+			{
+				this._windows = windows;
+			}
+
+			public void Update(string title, string header, string body, NotificationVisualSettings visual)
+			{
+				var vmodel = new NotificationWindowViewModel(title, header, body, visual);
+				foreach (var window in this._windows) window.DataContext = vmodel;
+			}
+
+			public void Dispose()
+			{
+				var windows = this._windows;
+				if (windows == null) return;
+				this._windows = null;
+				var cleanupException = DisposeAll(windows);
+				if (cleanupException != null) throw cleanupException;
+			}
+		}
+
+		private static Exception DisposeAll(IEnumerable<INotificationWindowHandle> windows)
+		{
+			List<Exception> exceptions = null;
+			foreach (var window in windows)
+			{
+				try
+				{
+					window.Dispose();
+				}
+				catch (Exception ex)
+				{
+					if (exceptions == null) exceptions = new List<Exception>();
+					exceptions.Add(ex);
+				}
+			}
+
+			if (exceptions == null) return null;
+			return exceptions.Count == 1 ? exceptions[0] : new AggregateException("Multiple notification windows failed to close.", exceptions);
+		}
+
+		private static AggregateException CombineExceptions(string message, Exception operationException, Exception cleanupException)
+		{
+			var cleanupAggregate = cleanupException as AggregateException;
+			if (cleanupAggregate == null) return new AggregateException(message, operationException, cleanupException);
+			var exceptions = new List<Exception> { operationException };
+			exceptions.AddRange(cleanupAggregate.InnerExceptions);
+			return new AggregateException(message, exceptions);
+		}
+	}
+
+	internal sealed class NotificationWindowFactory : INotificationWindowFactory
+	{
+		public IReadOnlyList<Rect> GetSwitchAreas(uint display)
+		{
+			if (display == 0) return new[] { MonitorService.GetCurrentArea().WorkArea };
+			var monitors = MonitorService.GetAreas();
+			if (display == uint.MaxValue)
+			{
+				var areas = new Rect[monitors.Length];
+				for (var index = 0; index < monitors.Length; index++) areas[index] = monitors[index].WorkArea;
+				return areas;
+			}
+			return new[] { monitors[display - 1].WorkArea };
+		}
+
+		public INotificationWindowHandle CreateSwitch(Rect area, NotificationVisualSettings visual)
+			=> new NotificationWindowHandle(new SwitchWindow(area, visual));
+
+		public INotificationWindowHandle CreatePin(PinTargetGeometry geometry, NotificationVisualSettings visual)
+			=> new NotificationWindowHandle(new PinWindow(geometry, visual));
+
+		private sealed class NotificationWindowHandle : INotificationWindowHandle
+		{
+			private Window _window;
+			internal NotificationWindowHandle(Window window) { this._window = window; }
+			public object DataContext { set { this._window.DataContext = value; } }
+			public void Show() => this._window.Show();
+			public void Dispose()
+			{
+				var window = this._window;
+				if (window == null) return;
+				this._window = null;
+				window.Close();
+			}
 		}
 	}
 }

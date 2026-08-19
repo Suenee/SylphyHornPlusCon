@@ -172,9 +172,9 @@ namespace SylphyHorn.Tests
 		}
 
 		[Fact]
-		public void TogglePresenterBoundaryAcceptsMaterializedRequestAndNoDelegate()
+		public void ToggleHostBoundaryAcceptsMaterializedRequestAndNoDelegate()
 		{
-			var method = typeof(INotificationPresenter).GetMethod(nameof(INotificationPresenter.ToggleCurrentDesktop));
+			var method = typeof(INotificationHost).GetMethod(nameof(INotificationHost.EnqueueToggle));
 
 			var parameter = Assert.Single(method.GetParameters());
 			Assert.Equal(typeof(DesktopNotificationRequest), parameter.ParameterType);

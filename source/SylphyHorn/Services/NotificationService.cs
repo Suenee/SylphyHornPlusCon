@@ -1,7 +1,6 @@
 ﻿using System;
 using System.Diagnostics;
 using System.Windows.Threading;
-using MetroTrilithon.Lifetime;
 using SylphyHorn.Serialization;
 using SylphyHorn.Services.DesktopTransitions;
 using WindowsDesktop;
@@ -11,18 +10,17 @@ namespace SylphyHorn.Services
 	public class NotificationService : IDisposable
 	{
 		public static NotificationService Instance { get; } = new NotificationService();
-		private readonly SerialDisposable _notificationWindow = new SerialDisposable();
-		private readonly INotificationPresenter _presenter;
+		private readonly INotificationHost _host;
 		private Dispatcher _dispatcher;
 		private DesktopTransitionRuntime _runtime;
 
-		private NotificationService() : this(new NotificationPresenter())
+		private NotificationService() : this(new NotificationHost())
 		{
 		}
 
-		internal NotificationService(INotificationPresenter presenter)
+		internal NotificationService(INotificationHost host)
 		{
-			this._presenter = presenter ?? throw new ArgumentNullException(nameof(presenter));
+			this._host = host ?? throw new ArgumentNullException(nameof(host));
 			VirtualDesktopService.WindowPinned += this.VirtualDesktopServiceOnWindowPinned;
 		}
 
@@ -43,16 +41,15 @@ namespace SylphyHorn.Services
 		public void ShowCurrentDesktop()
 		{
 			var request = this.CreateCurrentDesktopRequest();
-			if (request != null) this._notificationWindow.Disposable = this._presenter.Present(request);
+			if (request != null) this._host.EnqueueShow(request);
 		}
 
-		public void HideCurrentDesktop() => this._presenter.HideCurrentDesktop();
+		public void HideCurrentDesktop() => this._host.EnqueueHide();
 
 		public void ToggleCurrentDesktop()
 		{
 			var request = this.CreateCurrentDesktopRequest();
-			var disposable = this._presenter.ToggleCurrentDesktop(request);
-			if (disposable != null) this._notificationWindow.Disposable = disposable;
+			this._host.EnqueueToggle(request);
 		}
 
 		private void OnDesktopStateChanged(object sender, DesktopRuntimeStateChanged e)
@@ -74,7 +71,7 @@ namespace SylphyHorn.Services
 				return;
 			}
 			if (TryGetCurrent(state, out var number, out var record))
-				this._notificationWindow.Disposable = this._presenter.Present(
+				this._host.EnqueueState(
 					NotificationRequestMaterializer.CreateSwitched(number, GetName(record), notificationSettings));
 		}
 
@@ -85,7 +82,7 @@ namespace SylphyHorn.Services
 				if (settings.AlwaysShowDesktopNotification) this.ShowCurrentDesktop();
 				return;
 			}
-			this._notificationWindow.Disposable = this._presenter.Present(
+			this._host.EnqueueState(
 				NotificationRequestMaterializer.CreateMoved(currentNumber, currentName, oldNumber, newNumber, settings));
 		}
 
@@ -100,7 +97,7 @@ namespace SylphyHorn.Services
 					var settings = NotificationSettingsSnapshot.Capture(Settings.General);
 					var geometry = NotificationRequestMaterializer.CapturePinGeometry(e.Target);
 					var request = NotificationRequestMaterializer.CreatePin(e.PinOperation, geometry, settings);
-					this._notificationWindow.Disposable = this._presenter.Present(request);
+					this._host.EnqueuePin(request);
 				}),
 				DispatcherPriority.Normal);
 		}
@@ -131,7 +128,7 @@ namespace SylphyHorn.Services
 			this._runtime = null;
 			this._dispatcher = null;
 			VirtualDesktopService.WindowPinned -= this.VirtualDesktopServiceOnWindowPinned;
-			this._notificationWindow.Dispose();
+			this._host.Dispose();
 		}
 	}
 }
