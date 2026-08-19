@@ -2,6 +2,7 @@
 using System.Windows;
 using System.Windows.Interop;
 using MetroRadiance.Interop;
+using SylphyHorn.Services;
 using SylphyHorn.Serialization;
 using SylphyHorn.UI.Bindings;
 
@@ -10,10 +11,16 @@ namespace SylphyHorn.UI
 	partial class SwitchWindow
 	{
 		private readonly Rect _area;
+		private readonly NotificationVisualSettings _visual;
 
-		public SwitchWindow(Rect area)
+		public SwitchWindow(Rect area) : this(area, NotificationVisualSettings.Capture(Settings.General))
+		{
+		}
+
+		internal SwitchWindow(Rect area, NotificationVisualSettings visual) : base(visual)
 		{
 			this._area = area;
+			this._visual = visual ?? throw new ArgumentNullException(nameof(visual));
 			this.InitializeComponent();
 		}
 
@@ -29,10 +36,10 @@ namespace SylphyHorn.UI
 			var height = this.ActualHeight * dpi.ScaleY;
 			var area = this._area;
 
-			var offsetLeft = Settings.General.NotificationOffsetX;
-			var offsetTop = -Settings.General.NotificationOffsetY;
+			var offsetLeft = this._visual.OffsetX;
+			var offsetTop = -this._visual.OffsetY;
 
-			switch ((WindowPlacement)Settings.General.Placement.Value)
+			switch (this._visual.Placement)
 			{
 				case WindowPlacement.TopLeft:
 				case WindowPlacement.CenterLeft:
@@ -52,7 +59,7 @@ namespace SylphyHorn.UI
 					break;
 			}
 
-			switch ((WindowPlacement)Settings.General.Placement.Value)
+			switch (this._visual.Placement)
 			{
 				case WindowPlacement.TopLeft:
 				case WindowPlacement.TopCenter:

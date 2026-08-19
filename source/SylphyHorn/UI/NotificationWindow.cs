@@ -7,11 +7,23 @@ using MetroRadiance.Interop.Win32;
 using MetroRadiance.UI.Controls;
 using SylphyHorn.Interop;
 using SylphyHorn.Serialization;
+using SylphyHorn.Services;
 
 namespace SylphyHorn.UI
 {
 	public class NotificationWindow : AcrylicBlurWindow
 	{
+		private readonly NotificationVisualSettings _visual;
+
+		public NotificationWindow() : this(NotificationVisualSettings.Capture(Settings.General))
+		{
+		}
+
+		internal NotificationWindow(NotificationVisualSettings visual)
+		{
+			this._visual = visual ?? throw new ArgumentNullException(nameof(visual));
+		}
+
 		#region NativeOpacity dependency property
 
 		public static readonly DependencyProperty NativeOpacityProperty = DependencyProperty.Register(
@@ -34,8 +46,7 @@ namespace SylphyHorn.UI
 		{
 			base.OnSourceInitialized(e);
 
-			var settings = Settings.General.NotificationWindowStyle.Value;
-			this.ThemeMode = (BlurWindowThemeMode)settings;
+			this.ThemeMode = (BlurWindowThemeMode)this._visual.WindowStyle;
 
 			var source = PresentationSource.FromVisual(this) as HwndSource;
 			if (source == null) throw new InvalidOperationException();
@@ -44,13 +55,13 @@ namespace SylphyHorn.UI
 			style |= WindowExStyles.WS_EX_TOOLWINDOW | WindowExStyles.WS_EX_NOACTIVATE;
 			User32.SetWindowLongEx(source.Handle, style);
 
-			CornerMode = (BlurWindowCornerMode)Settings.General.NotificationCornerStyle.Value;
+			CornerMode = (BlurWindowCornerMode)this._visual.CornerStyle;
 		}
 
 		protected override void OnThemeModeChanged(DependencyPropertyChangedEventArgs e)
 		{
-			var settings = Settings.General.NotificationWindowStyle.Value;
-			this.ThemeMode = (BlurWindowThemeMode)settings;
+			if (this._visual == null) return;
+			this.ThemeMode = (BlurWindowThemeMode)this._visual.WindowStyle;
 		}
 
 		private void ChangeOpacity(double opacity)

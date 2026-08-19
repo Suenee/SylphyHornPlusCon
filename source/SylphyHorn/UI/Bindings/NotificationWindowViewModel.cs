@@ -1,11 +1,26 @@
 ﻿using System.Windows;
 using CommunityToolkit.Mvvm.ComponentModel;
 using SylphyHorn.Serialization;
+using SylphyHorn.Services;
 
 namespace SylphyHorn.UI.Bindings
 {
 	public class NotificationWindowViewModel : ObservableObject
 	{
+		private readonly NotificationVisualSettings _visual;
+
+		public NotificationWindowViewModel() : this(null, null, null, NotificationVisualSettings.Capture(Settings.General))
+		{
+		}
+
+		internal NotificationWindowViewModel(string title, string header, string body, NotificationVisualSettings visual)
+		{
+			this._visual = visual ?? throw new System.ArgumentNullException(nameof(visual));
+			this._Title = title;
+			this._Header = header;
+			this._Body = body;
+		}
+
 		#region Title 変更通知プロパティ
 
 		private string _Title;
@@ -65,52 +80,23 @@ namespace SylphyHorn.UI.Bindings
 
 		#region FontFamily 変更通知プロパティ
 
-		public string FontFamily
-		{
-			get
-			{
-				var fontFamily = Settings.General.NotificationFontFamily.Value;
-				var defaultFont = GeneralSettings.NotificationFontFamilyDefaultValue;
-				return !string.IsNullOrEmpty(fontFamily)
-					? fontFamily + ", " + defaultFont
-					: defaultFont;
-			}
-		}
+		public string FontFamily => this._visual.FontFamily;
 
 		#endregion
 
 		#region FontSize 変更通知プロパティ
 
-		public int HeaderFontSize => Settings.General.NotificationHeaderFontSize;
+		public int HeaderFontSize => this._visual.HeaderFontSize;
 
-		public int BodyFontSize => Settings.General.NotificationBodyFontSize;
+		public int BodyFontSize => this._visual.BodyFontSize;
 
 		#endregion
 
 		#region Margin 変更通知プロパティ
 
-		public string HeaderMargin
-		{
-			get
-			{
-				var alignment = (HorizontalAlignment)Settings.General.NotificationHeaderAlignment.Value;
-				var lineSpacing = Settings.General.NotificationLineSpacing.Value;
-				if (alignment == HorizontalAlignment.Left)
-				{
-					return $"2,0,0,{lineSpacing}";
-				}
-				else if (alignment == HorizontalAlignment.Right)
-				{
-					return $"0,0,6,{lineSpacing}";
-				}
-				else
-				{
-					return $"0,0,0,{lineSpacing}";
-				}
-			}
-		}
+		public string HeaderMargin => this._visual.HeaderMargin;
 
-		public string BodyMargin => Settings.General.SimpleNotification.Value ? "0,-4,4,0" : "0,0,4,0";
+		public string BodyMargin => this._visual.BodyMargin;
 
 		#endregion
 
@@ -124,19 +110,19 @@ namespace SylphyHorn.UI.Bindings
 
 		#region Alignment 変更通知プロパティ
 
-		public string HeaderAlignment => ((HorizontalAlignment)Settings.General.NotificationHeaderAlignment.Value).ToString();
+		public string HeaderAlignment => this._visual.HeaderAlignment.ToString();
 
-		public string BodyAlignment => ((HorizontalAlignment)Settings.General.NotificationBodyAlignment.Value).ToString();
+		public string BodyAlignment => this._visual.BodyAlignment.ToString();
 
 		#endregion
 
 		#region WindowMinSize 変更通知プロパティ
 
-		public int WindowMinWidth => Settings.General.SimpleNotification ? Settings.General.SimpleNotificationMinWidth : Settings.General.NotificationMinWidth;
+		public int WindowMinWidth => this._visual.SimpleNotification ? this._visual.SimpleNotificationMinWidth : this._visual.NotificationMinWidth;
 
-		public int PinWindowMinWidth => Settings.General.PinWindowMinWidth;
+		public int PinWindowMinWidth => this._visual.PinWindowMinWidth;
 
-		public int WindowMinHeight => Settings.General.NotificationMinHeight;
+		public int WindowMinHeight => this._visual.NotificationMinHeight;
 
 		#endregion
 	}

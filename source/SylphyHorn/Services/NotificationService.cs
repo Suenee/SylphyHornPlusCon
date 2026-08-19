@@ -1,16 +1,9 @@
-using System;
-using System.Collections.Generic;
+﻿using System;
 using System.Diagnostics;
-using System.Linq;
-using System.Threading;
-using System.Threading.Tasks;
 using System.Windows.Threading;
 using MetroTrilithon.Lifetime;
-using SylphyHorn.Properties;
 using SylphyHorn.Serialization;
 using SylphyHorn.Services.DesktopTransitions;
-using SylphyHorn.UI;
-using SylphyHorn.UI.Bindings;
 using WindowsDesktop;
 
 namespace SylphyHorn.Services
@@ -18,15 +11,18 @@ namespace SylphyHorn.Services
 	public class NotificationService : IDisposable
 	{
 		public static NotificationService Instance { get; } = new NotificationService();
-		private static string ResidentHeader => NotificationTextFormatter.CreateResidentHeader(Settings.General.SimpleNotification);
-		private static string SwitchedHeader => NotificationTextFormatter.CreateSwitchedHeader(Settings.General.SimpleNotification);
-		private static List<SwitchWindow> _residentWindows = new List<SwitchWindow>();
 		private readonly SerialDisposable _notificationWindow = new SerialDisposable();
+		private readonly INotificationPresenter _presenter;
 		private Dispatcher _dispatcher;
 		private DesktopTransitionRuntime _runtime;
 
-		private NotificationService()
+		private NotificationService() : this(new NotificationPresenter())
 		{
+		}
+
+		internal NotificationService(INotificationPresenter presenter)
+		{
+			this._presenter = presenter ?? throw new ArgumentNullException(nameof(presenter));
 			VirtualDesktopService.WindowPinned += this.VirtualDesktopServiceOnWindowPinned;
 		}
 
@@ -46,17 +42,17 @@ namespace SylphyHorn.Services
 
 		public void ShowCurrentDesktop()
 		{
-			var state = this._runtime?.State;
-			if (!TryGetCurrent(state, out var number, out var record)) return;
-			this._notificationWindow.Disposable = ShowDesktopWindow(number, ResidentHeader, record);
+			var request = this.CreateCurrentDesktopRequest();
+			if (request != null) this._notificationWindow.Disposable = this._presenter.Present(request);
 		}
 
-		public void HideCurrentDesktop() => CloseResidentWindows();
+		public void HideCurrentDesktop() => this._presenter.HideCurrentDesktop();
 
 		public void ToggleCurrentDesktop()
 		{
-			if (_residentWindows.Count(window => window.IsVisible) == 0) this.ShowCurrentDesktop();
-			else this.HideCurrentDesktop();
+			var request = this.CreateCurrentDesktopRequest();
+			var disposable = this._presenter.ToggleCurrentDesktop(request);
+			if (disposable != null) this._notificationWindow.Disposable = disposable;
 		}
 
 		private void OnDesktopStateChanged(object sender, DesktopRuntimeStateChanged e)
@@ -64,29 +60,33 @@ namespace SylphyHorn.Services
 			var state = e.Change.Snapshot;
 			if (e.Change.Moves.Count == 1)
 			{
+				var settings = NotificationSettingsSnapshot.Capture(Settings.General);
 				var move = e.Change.Moves[0];
 				if (TryGetCurrent(state, out var currentNumber, out var currentRecord))
-					this.ShowMoved(currentNumber, move.NewIndex + 1, move.OldIndex + 1, currentRecord);
+					this.ShowMoved(currentNumber, move.NewIndex + 1, move.OldIndex + 1, GetName(currentRecord), settings);
 				return;
 			}
 			if (e.Change.Kind != DesktopStateChangeKind.CurrentChanged && e.Change.Kind != DesktopStateChangeKind.Initialized && e.Change.Kind != DesktopStateChangeKind.Reset) return;
-			if (!Settings.General.NotificationWhenSwitchedDesktop)
+			var notificationSettings = NotificationSettingsSnapshot.Capture(Settings.General);
+			if (!notificationSettings.NotificationWhenSwitchedDesktop)
 			{
-				if (Settings.General.AlwaysShowDesktopNotification) this.ShowCurrentDesktop();
+				if (notificationSettings.AlwaysShowDesktopNotification) this.ShowCurrentDesktop();
 				return;
 			}
-			if (TryGetCurrent(state, out var number, out var record)) this._notificationWindow.Disposable = ShowDesktopWindow(number, SwitchedHeader, record);
+			if (TryGetCurrent(state, out var number, out var record))
+				this._notificationWindow.Disposable = this._presenter.Present(
+					NotificationRequestMaterializer.CreateSwitched(number, GetName(record), notificationSettings));
 		}
 
-		private void ShowMoved(int currentNumber, int newNumber, int oldNumber, DesktopRecord currentRecord)
+		private void ShowMoved(int currentNumber, int newNumber, int oldNumber, string currentName, NotificationSettingsSnapshot settings)
 		{
-			if (!Settings.General.NotificationWhenSwitchedDesktop)
+			if (!settings.NotificationWhenSwitchedDesktop)
 			{
-				if (Settings.General.AlwaysShowDesktopNotification) this.ShowCurrentDesktop();
+				if (settings.AlwaysShowDesktopNotification) this.ShowCurrentDesktop();
 				return;
 			}
-			var header = NotificationTextFormatter.CreateMovedHeader(oldNumber, newNumber, Settings.General.SimpleNotification);
-			this._notificationWindow.Disposable = ShowDesktopWindow(header, CreateNotificationBody(currentNumber, currentRecord, true));
+			this._notificationWindow.Disposable = this._presenter.Present(
+				NotificationRequestMaterializer.CreateMoved(currentNumber, currentName, oldNumber, newNumber, settings));
 		}
 
 		private void VirtualDesktopServiceOnWindowPinned(object sender, WindowPinnedEventArgs e)
@@ -95,23 +95,27 @@ namespace SylphyHorn.Services
 			Debug.Assert(dispatcher != null, "NotificationService must be bound before a window can be pinned.");
 			if (dispatcher == null) return;
 			dispatcher.BeginInvoke(
-				new Action(() => this._notificationWindow.Disposable = ShowPinWindow(e.Target, e.PinOperation)),
+				new Action(() =>
+				{
+					var settings = NotificationSettingsSnapshot.Capture(Settings.General);
+					var geometry = NotificationRequestMaterializer.CapturePinGeometry(e.Target);
+					var request = NotificationRequestMaterializer.CreatePin(e.PinOperation, geometry, settings);
+					this._notificationWindow.Disposable = this._presenter.Present(request);
+				}),
 				DispatcherPriority.Normal);
 		}
 
-		private static IDisposable ShowDesktopWindow(int number, string header, DesktopRecord record)
-			=> ShowDesktopWindow(header, CreateNotificationBody(number, record, false));
-
-		private static string CreateNotificationBody(int number, DesktopRecord record, bool moved)
+		private DesktopNotificationRequest CreateCurrentDesktopRequest()
 		{
-			var name = record?.Name.HasValue == true ? record.Name.Value : null;
-			return NotificationTextFormatter.CreateDesktopBody(
+			var state = this._runtime?.State;
+			if (!TryGetCurrent(state, out var number, out var record)) return null;
+			return NotificationRequestMaterializer.CreateCurrent(
 				number,
-				name,
-				Settings.General.UseDesktopName,
-				Settings.General.SimpleNotification,
-				moved);
+				GetName(record),
+				NotificationSettingsSnapshot.Capture(Settings.General));
 		}
+
+		private static string GetName(DesktopRecord record) => record?.Name.HasValue == true ? record.Name.Value : null;
 
 		private static bool TryGetCurrent(DesktopRuntimeState state, out int number, out DesktopRecord record)
 		{
@@ -121,110 +125,6 @@ namespace SylphyHorn.Services
 			number = state.Order.IndexOf(state.CurrentDesktopId.Value) + 1;
 			return number > 0;
 		}
-		private static IDisposable ShowDesktopWindow(string header, string body)
-		{
-			CloseResidentWindows();
-
-			var source = new CancellationTokenSource();
-
-			if (Settings.General.AlwaysShowDesktopNotification)
-			{
-				_residentWindows = CreateSwitchWindows(header, body);
-
-				Task.Delay(TimeSpan.FromMilliseconds(Settings.General.NotificationDuration), source.Token)
-					.ContinueWith(_ => _residentWindows.ForEach(window =>
-					{
-						window.DataContext = new NotificationWindowViewModel
-						{
-							Title = ProductInfo.Title,
-							Header = ResidentHeader,
-							Body = body,
-						};
-					}), source.Token, TaskContinuationOptions.NotOnCanceled, TaskScheduler.FromCurrentSynchronizationContext());
-
-				return Disposable.Create(() => source.Cancel());
-			}
-			else
-			{
-				var windows = CreateSwitchWindows(header, body);
-
-				Task.Delay(TimeSpan.FromMilliseconds(Settings.General.NotificationDuration), source.Token)
-					.ContinueWith(_ => windows.ForEach(window => window.Close()), TaskScheduler.FromCurrentSynchronizationContext());
-
-				return Disposable.Create(() => source.Cancel());
-			}
-		}
-
-		private static List<SwitchWindow> CreateSwitchWindows(string header, string body)
-		{
-			var vmodel = new NotificationWindowViewModel
-			{
-				Title = ProductInfo.Title,
-				Header = header,
-				Body = body,
-			};
-
-			var settings = Settings.General.Display.Value;
-			Monitor[] targets;
-			if (settings == 0)
-			{
-				targets = new[] { MonitorService.GetCurrentArea() };
-			}
-			else
-			{
-				var monitors = MonitorService.GetAreas();
-				if (settings == uint.MaxValue)
-				{
-					targets = monitors;
-				}
-				else
-				{
-					targets = new[] { monitors[settings - 1] };
-				}
-			}
-
-			return targets.Select(area =>
-			{
-				var window = new SwitchWindow(area.WorkArea)
-				{
-					DataContext = vmodel,
-				};
-				window.Show();
-				return window;
-			}).ToList();
-		}
-
-		private static void CloseResidentWindows()
-		{
-			if (_residentWindows.Count > 0)
-			{
-				_residentWindows.ForEach(window => window.Close());
-				_residentWindows.Clear();
-			}
-		}
-
-		private static IDisposable ShowPinWindow(IntPtr hWnd, PinOperations operation)
-		{
-			var simple = Settings.General.SimpleNotification;
-			var vmodel = new NotificationWindowViewModel
-			{
-				Title = ProductInfo.Title,
-				Header = NotificationTextFormatter.CreatePinHeader(simple),
-				Body = NotificationTextFormatter.CreatePinBody(operation, simple),
-			};
-			var source = new CancellationTokenSource();
-			var window = new PinWindow(hWnd)
-			{
-				DataContext = vmodel,
-			};
-			window.Show();
-
-			Task.Delay(TimeSpan.FromMilliseconds(Settings.General.NotificationDuration), source.Token)
-				.ContinueWith(_ => window.Close(), TaskScheduler.FromCurrentSynchronizationContext());
-
-			return Disposable.Create(() => source.Cancel());
-		}
-
 		public void Dispose()
 		{
 			if (this._runtime != null) this._runtime.StateChanged -= this.OnDesktopStateChanged;

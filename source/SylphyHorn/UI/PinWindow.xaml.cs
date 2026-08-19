@@ -1,20 +1,25 @@
 ﻿using System;
 using System.Windows;
 using System.Windows.Interop;
-using MetroRadiance.Interop;
-using MetroRadiance.Interop.Win32;
-using SylphyHorn.Interop;
+using SylphyHorn.Services;
 using SylphyHorn.Serialization;
 
 namespace SylphyHorn.UI
 {
 	partial class PinWindow
 	{
-		private readonly IntPtr _target;
+		private readonly PinTargetGeometry _geometry;
+		private readonly NotificationVisualSettings _visual;
 
 		public PinWindow(IntPtr target)
+			: this(NotificationRequestMaterializer.CapturePinGeometry(target), NotificationVisualSettings.Capture(Settings.General))
 		{
-			this._target = target;
+		}
+
+		internal PinWindow(PinTargetGeometry geometry, NotificationVisualSettings visual) : base(visual)
+		{
+			this._geometry = geometry;
+			this._visual = visual ?? throw new ArgumentNullException(nameof(visual));
 			this.InitializeComponent();
 		}
 
@@ -22,21 +27,13 @@ namespace SylphyHorn.UI
 		{
 			base.OnSourceInitialized(e);
 
-			RECT rect;
-			if (NativeMethods.GetWindowRect(this._target, out rect))
+			if (this._geometry != null)
 			{
-				var targetWidth = rect.Right - rect.Left;
-				var targetHeight = rect.Bottom - rect.Top;
+				var width = this.ActualWidth * this._geometry.DpiScaleX;
+				var height = this.ActualHeight * this._geometry.DpiScaleY;
 
-				var dpi = PerMonitorDpi.GetDpi(this._target);
-				var width = this.ActualWidth * dpi.ScaleX;
-				var height = this.ActualHeight * dpi.ScaleY;
-
-				var offsetLeft = Settings.General.NotificationOffsetX;
-				var offsetTop = -Settings.General.NotificationOffsetY;
-
-				this.Left = (rect.Left + (targetWidth - width) / 2) / dpi.ScaleX + offsetLeft;
-				this.Top = (rect.Top + (targetHeight - height) / 2) / dpi.ScaleY + offsetTop;
+				this.Left = (this._geometry.Left + (this._geometry.Width - width) / 2) / this._geometry.DpiScaleX + this._visual.OffsetX;
+				this.Top = (this._geometry.Top + (this._geometry.Height - height) / 2) / this._geometry.DpiScaleY - this._visual.OffsetY;
 			}
 		}
 	}
