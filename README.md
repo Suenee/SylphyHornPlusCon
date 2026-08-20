@@ -80,6 +80,18 @@ desktop interface cache, exit SylphyHornPlus and remove:
 
 `%LocalAppData%\hwtnb.net\SylphyHornPlus\assemblies`
 
+### Startup diagnostics
+
+SylphyHornPlus keeps a small startup-phase log under
+`%LocalAppData%\hwtnb.net\SylphyHornPlus\StartupTrace`. These logs help
+diagnose startup failures and contain timestamps, startup phases and results,
+elapsed time, process and session identifiers, the Windows build number, and
+limited error metadata when startup fails. The newest 20 log files are kept.
+They remain on the device and are not uploaded automatically.
+
+When reporting a startup problem, include the most recent log from this folder
+if possible.
+
 
 ## Requirements
 

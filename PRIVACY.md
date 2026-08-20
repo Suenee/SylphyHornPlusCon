@@ -8,14 +8,21 @@ personal information to the developer or any external analytics service.
 ## Local data
 
 SylphyHornPlus stores its settings, generated virtual desktop interface cache,
-and error reports in the current user's local application data folder under
-`%LocalAppData%\hwtnb.net\SylphyHornPlus`.
+error reports, and startup diagnostic logs in the current user's local
+application data folder under `%LocalAppData%\hwtnb.net\SylphyHornPlus`.
 
 Error reports may contain exception details, stack traces, operating system and
 runtime information, CPU and memory information, and file paths or other data
 included in an exception message. Error reports remain on the device and are
 not uploaded automatically. They can be deleted from the `ErrorReports`
 subfolder when they are no longer needed.
+
+Startup diagnostic logs contain timestamps, startup phases and results,
+elapsed time, process and session identifiers, the Windows build number, and
+limited error metadata such as an exception type and HRESULT. The newest 20
+logs are retained in the `StartupTrace` subfolder. They remain on the device,
+are not uploaded automatically, and can be deleted when they are no longer
+needed.
 
 ## File and Windows access
 
