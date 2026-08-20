@@ -22,6 +22,7 @@ namespace SylphyHorn.UI
 		internal NotificationWindow(NotificationVisualSettings visual)
 		{
 			this._visual = visual ?? throw new ArgumentNullException(nameof(visual));
+			this.ShowActivated = false;
 		}
 
 		#region NativeOpacity dependency property

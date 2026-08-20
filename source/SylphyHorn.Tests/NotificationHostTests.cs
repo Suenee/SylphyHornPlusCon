@@ -7,6 +7,7 @@ using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Threading;
 using SylphyHorn.Services;
+using SylphyHorn.UI;
 using SylphyHorn.UI.Bindings;
 using WindowsDesktop;
 using Xunit;
@@ -15,6 +16,36 @@ namespace SylphyHorn.Tests
 {
 	public class NotificationHostTests
 	{
+		[Fact]
+		public void NotificationWindowDoesNotRequestActivationWhenShown()
+		{
+			bool? showActivated = null;
+			Exception failure = null;
+			var thread = new Thread(() =>
+			{
+				try
+				{
+					var window = Activator.CreateInstance(
+						typeof(NotificationWindow),
+						System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic,
+						null,
+						new object[] { CreateVisual() },
+						null);
+					showActivated = (bool)typeof(Window).GetProperty(nameof(Window.ShowActivated)).GetValue(window);
+				}
+				catch (Exception ex)
+				{
+					failure = ex;
+				}
+			});
+			thread.SetApartmentState(ApartmentState.STA);
+			thread.Start();
+
+			Assert.True(thread.Join(TimeSpan.FromSeconds(5)));
+			Assert.Null(failure);
+			Assert.False(showActivated ?? true);
+		}
+
 		[Fact]
 		public void BlockedPresentationDoesNotBlockEnqueueAndLatestStateWins()
 		{
