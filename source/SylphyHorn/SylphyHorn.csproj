@@ -125,6 +125,7 @@
   </ItemGroup>
 
   <ItemGroup>
+    <EmbeddedResource Include=".licenses\CommunityToolkit.Mvvm.txt" />
     <EmbeddedResource Include=".licenses\MetroTrilithon.txt" />
     <EmbeddedResource Include=".licenses\MetroRadiance.txt" />
     <EmbeddedResource Include=".licenses\VirtualDesktop.txt" />

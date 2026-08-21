@@ -10,6 +10,7 @@ namespace SylphyHorn.Properties
 	{
 		public static LicenseInfo[] All { get; } =
 		{
+			new LicenseInfo("CommunityToolkit.Mvvm"),
 			new LicenseInfo("VirtualDesktop"),
 			new LicenseInfo("MetroRadiance"),
 			new LicenseInfo("MetroTrilithon"),
