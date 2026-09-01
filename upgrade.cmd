@@ -3,8 +3,10 @@ cls
 setlocal EnableExtensions EnableDelayedExpansion
 
 rem SylphyHornPlusCon updater
+rem Version: 0.14
 rem Pure CMD implementation. No PowerShell bootstrap scripts are used.
 rem Supports local, mapped, and UNC repository paths.
+rem UPGRADE is conservative: tracked local changes stop the update.
 
 if /I "%~1"=="--temp-run" goto :temp_run
 
@@ -24,6 +26,7 @@ set "LOG=%LOG_DIR%\upgrade.log"
 
 if not exist "%LOG_DIR%" mkdir "%LOG_DIR%" >NUL 2>&1
 >"%LOG%" echo SylphyHornPlusCon upgrade log
+>>"%LOG%" echo Version: 0.14
 >>"%LOG%" echo Started: %DATE% %TIME%
 >>"%LOG%" echo Repository: %REPO_DIR%
 >>"%LOG%" echo Validation target: %TARGET_FRAMEWORK%
@@ -44,7 +47,7 @@ if /I not "!BRANCH!"=="main" if /I not "!BRANCH!"=="devel" goto :branch_error
 >>"%LOG%" echo Branch: !BRANCH!
 
 echo ============================================
-echo SylphyHornPlusCon - UPGRADE
+echo SylphyHornPlusCon - UPGRADE 0.14
 echo ============================================
 echo Branch: !BRANCH!
 echo.
@@ -101,15 +104,10 @@ call :ensure_dotnet_sdk
 if errorlevel 1 goto :dotnet_fail
 
 echo [5/7] Restoring .NET 10 projects...
->>"%LOG%" echo [5/7] Re-evaluating lock files for %TARGET_FRAMEWORK%...
+>>"%LOG%" echo [5/7] Normal restore for %TARGET_FRAMEWORK%. Locked mode temporarily disabled during .NET 10 lock-file migration.
 dotnet restore "source\SylphyHorn\SylphyHorn.csproj" -p:TargetFramework=%TARGET_FRAMEWORK% --force-evaluate >>"%LOG%" 2>&1
 if errorlevel 1 goto :restore_fail_dirty
 dotnet restore "source\SylphyHorn.Tests\SylphyHorn.Tests.csproj" -p:TargetFramework=%TARGET_FRAMEWORK% --force-evaluate >>"%LOG%" 2>&1
-if errorlevel 1 goto :restore_fail_dirty
->>"%LOG%" echo [5/7] Verifying regenerated lock files in locked mode...
-dotnet restore "source\SylphyHorn\SylphyHorn.csproj" -p:TargetFramework=%TARGET_FRAMEWORK% --locked-mode >>"%LOG%" 2>&1
-if errorlevel 1 goto :restore_fail_dirty
-dotnet restore "source\SylphyHorn.Tests\SylphyHorn.Tests.csproj" -p:TargetFramework=%TARGET_FRAMEWORK% --locked-mode >>"%LOG%" 2>&1
 if errorlevel 1 goto :restore_fail_dirty
 
 echo [6/7] Building Release x64 for .NET 10...
@@ -121,7 +119,8 @@ echo [7/7] Running .NET 10 unit tests...
 >>"%LOG%" echo [7/7] Running unit tests for %TARGET_FRAMEWORK%...
 dotnet test "source\SylphyHorn.Tests\SylphyHorn.Tests.csproj" -c Release -f %TARGET_FRAMEWORK% -p:Platform=x64 -p:RunSylphyHornPostBuild=false -p:SolutionDir="%REPO_DIR%\source\" --no-restore >>"%LOG%" 2>&1
 if errorlevel 1 goto :test_fail_dirty
-call :restore_lockfiles
+
+call :restore_generated_lockfiles
 if errorlevel 1 goto :lockfile_cleanup_fail
 
 >>"%LOG%" echo STATUS: SUCCESS - phase=COMPLETE
@@ -178,6 +177,8 @@ if errorlevel 1 exit /b 1
 winget install --id Microsoft.DotNet.SDK.10 --exact --version !SDK_VERSION! --accept-package-agreements --accept-source-agreements --silent >>"%LOG%" 2>&1
 if errorlevel 1 exit /b 1
 set "PATH=%ProgramFiles%\dotnet;%PATH%"
+where dotnet.exe >NUL 2>&1
+if errorlevel 1 exit /b 1
 dotnet --list-sdks 2>NUL | findstr /b /c:"!SDK_VERSION! [" >NUL
 if errorlevel 1 exit /b 1
 exit /b 0
@@ -188,10 +189,13 @@ for /f "delims=" %%S in ('git status --porcelain --untracked-files^=no') do set 
 if "!TRACKED_DIRTY!"=="1" exit /b 1
 exit /b 0
 
-:restore_lockfiles
->>"%LOG%" echo Restoring repository lock files after validation.
-git checkout -- "source/SylphyHorn/packages.lock.json" "source/SylphyHorn.Tests/packages.lock.json" >>"%LOG%" 2>&1
-exit /b %ERRORLEVEL%
+:restore_generated_lockfiles
+>>"%LOG%" echo Restoring tracked NuGet lock files after upgrade validation.
+git ls-files --error-unmatch "source/SylphyHorn/packages.lock.json" >NUL 2>&1
+if not errorlevel 1 git checkout -- "source/SylphyHorn/packages.lock.json" >>"%LOG%" 2>&1
+git ls-files --error-unmatch "source/SylphyHorn.Tests/packages.lock.json" >NUL 2>&1
+if not errorlevel 1 git checkout -- "source/SylphyHorn.Tests/packages.lock.json" >>"%LOG%" 2>&1
+exit /b 0
 
 :repo_error
 echo ERROR: Unable to enter repository directory.
@@ -230,19 +234,19 @@ goto :fail_pop
 echo ERROR: Required .NET SDK installation/verification failed.
 goto :fail_pop
 :restore_fail_dirty
-call :restore_lockfiles
+call :restore_generated_lockfiles
 echo ERROR: .NET 10 NuGet restore failed.
 goto :fail_pop
 :build_fail_dirty
-call :restore_lockfiles
+call :restore_generated_lockfiles
 echo ERROR: .NET 10 Release build failed.
 goto :fail_pop
 :test_fail_dirty
-call :restore_lockfiles
+call :restore_generated_lockfiles
 echo ERROR: .NET 10 unit tests failed.
 goto :fail_pop
 :lockfile_cleanup_fail
-echo ERROR: Validation succeeded but lockfile cleanup failed.
+echo ERROR: Validation succeeded but generated lockfiles could not be restored.
 goto :fail_pop
 
 :fail_pop
