@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.21 - 02.09.2026
+
+- Fixed a CMD parser failure in the `dubious ownership` bootstrap recovery path.
+- Removed the complex inline `powershell.exe -Command` expression from inside a parenthesized CMD block; `cmd.exe` could parse PowerShell parentheses as batch block delimiters and abort with `was unexpected at this time.` before PowerShell started.
+- The launcher now parses Git's own suggested `safe.directory` value directly from the captured Git diagnostic and registers only that exact path.
+- Kept wildcard `safe.directory=*` prohibited.
+- Moved repository-detection recovery into simple bootstrap labels so the launcher stays predictable while the authoritative upgrade logic remains in temporary `upgrade.ps1`.
+- Added this failure signature, root cause, prevention rule, and regression test to `UPGRADE.md`.
+
 ## 0.20 - 02.09.2026
 
 - Replaced the monolithic self-modifying CMD updater with the proven bootstrap architecture documented in `FolderHeatMap/UPGRADE.md`.
