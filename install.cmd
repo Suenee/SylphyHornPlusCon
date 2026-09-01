@@ -1,4 +1,5 @@
 @echo off
+cls
 setlocal EnableExtensions EnableDelayedExpansion
 
 rem SylphyHornPlusCon fresh-PC installer
@@ -98,21 +99,28 @@ call :ensure_dotnet_sdk
 if errorlevel 1 goto :dotnet_fail
 
 echo [4/6] Restoring .NET 10 projects...
->>"%LOG%" echo [4/6] Restoring target %TARGET_FRAMEWORK%...
+>>"%LOG%" echo [4/6] Re-evaluating lock files for %TARGET_FRAMEWORK%...
+dotnet restore "source\SylphyHorn\SylphyHorn.csproj" -p:TargetFramework=%TARGET_FRAMEWORK% --force-evaluate >>"%LOG%" 2>&1
+if errorlevel 1 goto :restore_fail_dirty
+dotnet restore "source\SylphyHorn.Tests\SylphyHorn.Tests.csproj" -p:TargetFramework=%TARGET_FRAMEWORK% --force-evaluate >>"%LOG%" 2>&1
+if errorlevel 1 goto :restore_fail_dirty
+>>"%LOG%" echo [4/6] Verifying regenerated lock files in locked mode...
 dotnet restore "source\SylphyHorn\SylphyHorn.csproj" -p:TargetFramework=%TARGET_FRAMEWORK% --locked-mode >>"%LOG%" 2>&1
-if errorlevel 1 goto :restore_fail
+if errorlevel 1 goto :restore_fail_dirty
 dotnet restore "source\SylphyHorn.Tests\SylphyHorn.Tests.csproj" -p:TargetFramework=%TARGET_FRAMEWORK% --locked-mode >>"%LOG%" 2>&1
-if errorlevel 1 goto :restore_fail
+if errorlevel 1 goto :restore_fail_dirty
 
 echo [5/6] Building Release x64 for .NET 10...
 >>"%LOG%" echo [5/6] Building Release x64 for %TARGET_FRAMEWORK%...
 dotnet build "source\SylphyHorn\SylphyHorn.csproj" -c Release -f %TARGET_FRAMEWORK% -p:Platform=x64 -p:RunSylphyHornPostBuild=false --no-restore >>"%LOG%" 2>&1
-if errorlevel 1 goto :build_fail
+if errorlevel 1 goto :build_fail_dirty
 
 echo [6/6] Running .NET 10 unit tests and verifying Git state...
 >>"%LOG%" echo [6/6] Running unit tests for %TARGET_FRAMEWORK%...
 dotnet test "source\SylphyHorn.Tests\SylphyHorn.Tests.csproj" -c Release -f %TARGET_FRAMEWORK% -p:Platform=x64 -p:RunSylphyHornPostBuild=false -p:SolutionDir="%TARGET%\source\" --no-restore >>"%LOG%" 2>&1
-if errorlevel 1 goto :test_fail
+if errorlevel 1 goto :test_fail_dirty
+call :restore_lockfiles
+if errorlevel 1 goto :lockfile_cleanup_fail
 
 set "HEAD_SHA="
 set "ORIGIN_SHA="
@@ -147,15 +155,10 @@ if errorlevel 1 exit /b 1
 exit /b 0
 
 :register_safe_directory
-rem Git safe.directory is only honored from protected configuration. Register the
-rem exact repository path globally, never the unsafe wildcard '*'.
 set "SAFE_TARGET=%TARGET:\=/%"
 git config --global --add safe.directory "%SAFE_TARGET%" >>"%LOG%" 2>&1
 if errorlevel 1 exit /b 1
 >>"%LOG%" echo Registered Git safe.directory: %SAFE_TARGET%
-
-rem A mapped drive can be canonicalized by Git to its UNC path. Resolve persistent
-rem mappings from HKCU\Network so the same repository is trusted in both forms.
 if "%TARGET:~1,1%"==":" (
   set "MAP_DRIVE=%TARGET:~0,1%"
   set "UNC_ROOT="
@@ -237,6 +240,11 @@ echo ERROR: Local tracked edit detected: !CHECK_PATH!
 set "DIRTY_REJECT=1"
 exit /b 0
 
+:restore_lockfiles
+>>"%LOG%" echo Restoring repository lock files after validation.
+git checkout -- "source/SylphyHorn/packages.lock.json" "source/SylphyHorn.Tests/packages.lock.json" >>"%LOG%" 2>&1
+exit /b %ERRORLEVEL%
+
 :target_error
 echo ERROR: Cannot create or enter %TARGET%.
 goto :fail
@@ -261,14 +269,20 @@ goto :fail_pop
 :dotnet_fail
 echo ERROR: Required .NET SDK installation/verification failed.
 goto :fail_pop
-:restore_fail
+:restore_fail_dirty
+call :restore_lockfiles
 echo ERROR: .NET 10 NuGet restore failed.
 goto :fail_pop
-:build_fail
+:build_fail_dirty
+call :restore_lockfiles
 echo ERROR: .NET 10 Release build failed.
 goto :fail_pop
-:test_fail
+:test_fail_dirty
+call :restore_lockfiles
 echo ERROR: .NET 10 unit tests failed.
+goto :fail_pop
+:lockfile_cleanup_fail
+echo ERROR: Validation succeeded but lockfile cleanup failed.
 goto :fail_pop
 :git_state_fail
 echo ERROR: Local HEAD differs from origin/%BRANCH%.
