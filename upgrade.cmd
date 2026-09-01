@@ -2,281 +2,97 @@
 cls
 setlocal EnableExtensions EnableDelayedExpansion
 
-rem SylphyHornPlusCon updater
-rem Version: 0.19
-rem Pure CMD implementation. No PowerShell maintenance runner is used.
-rem upgrade.cmd is maintenance-owned and may be replaced by the updater itself.
-
-if /I "%~1"=="--temp-run" goto :temp_run
+rem SylphyHornPlusCon upgrade bootstrap
+rem Version: 0.20
+rem Keep this launcher intentionally small. The authoritative runner is upgrade.ps1.
 
 set "REPO_DIR=%~dp0"
+if /I "%~1"=="--temp-run" set "REPO_DIR=%~2"
 if "!REPO_DIR:~-1!"=="\" set "REPO_DIR=!REPO_DIR:~0,-1!"
-set "BOOT_TEMP=%TEMP%\sylphyhornpluscon-upgrade-bootstrap-%RANDOM%-%RANDOM%.cmd"
-copy /y "%~f0" "!BOOT_TEMP!" >NUL
-if errorlevel 1 exit /b 1
-call "!BOOT_TEMP!" --temp-run "!REPO_DIR!" & exit /b
 
-:temp_run
-set "REPO_DIR=%~2"
-set "REPO_URL=https://github.com/Suenee/SylphyHornPlusCon.git"
-set "TARGET_FRAMEWORK=net10.0-windows10.0.26100.0"
-set "LOG_DIR=%REPO_DIR%\logs"
-set "LOG=%LOG_DIR%\upgrade.log"
+where git.exe >NUL 2>NUL
+if errorlevel 1 (
+    echo ERROR: Git was not found in PATH. Run install.cmd first.
+    exit /b 1
+)
 
-if not exist "%LOG_DIR%" mkdir "%LOG_DIR%" >NUL 2>&1
->"%LOG%" echo SylphyHornPlusCon upgrade log
->>"%LOG%" echo Version: 0.19
->>"%LOG%" echo Started: %DATE% %TIME%
->>"%LOG%" echo Repository: %REPO_DIR%
->>"%LOG%" echo Validation target: %TARGET_FRAMEWORK%
+cd /d "!REPO_DIR!" 2>NUL
+if errorlevel 1 (
+    echo ERROR: Cannot enter repository directory: !REPO_DIR!
+    exit /b 1
+)
 
-where git.exe >NUL 2>&1
-if errorlevel 1 goto :git_missing
-call :register_safe_directory
-if errorlevel 1 goto :safe_directory_fail
+if not exist "!REPO_DIR!\logs" mkdir "!REPO_DIR!\logs" >NUL 2>NUL
+set "LOG=!REPO_DIR!\logs\upgrade.log"
 
-pushd "%REPO_DIR%" >NUL 2>&1
-if errorlevel 1 goto :repo_error
-if not exist ".git" goto :not_git
+set "GIT_DETECT_ERR=%TEMP%\SHPC-git-detect-%RANDOM%-%RANDOM%.log"
+git rev-parse --is-inside-work-tree >NUL 2>"!GIT_DETECT_ERR!"
+if errorlevel 1 (
+    findstr /I /C:"detected dubious ownership" "!GIT_DETECT_ERR!" >NUL 2>NUL
+    if errorlevel 1 (
+        >"!LOG!" echo ERROR: Repository detection failed before bootstrap.
+        >>"!LOG!" type "!GIT_DETECT_ERR!"
+        >>"!LOG!" echo STATUS: FAILED - phase=SELF-UPDATE/BOOTSTRAP
+        type "!GIT_DETECT_ERR!"
+        del /q "!GIT_DETECT_ERR!" >NUL 2>NUL
+        exit /b 1
+    )
+    set "SHPC_GIT_DETECT_ERR=!GIT_DETECT_ERR!"
+    powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "$text=[IO.File]::ReadAllText($env:SHPC_GIT_DETECT_ERR); $m=[regex]::Match($text, \"safe\.directory\s+'([^']+)'\"); if(-not $m.Success){ Write-Host 'ERROR: Git reported dubious ownership, but its exact safe.directory path could not be parsed.' -ForegroundColor Red; exit 3 }; $safe=$m.Groups[1].Value; & git.exe config --global --add safe.directory $safe; $rc=$LASTEXITCODE; if($rc -ne 0){ Write-Host ('ERROR: Could not register Git safe.directory: ' + $safe) -ForegroundColor Red; exit $rc }; Write-Host ('Git safe.directory registered: ' + $safe) -ForegroundColor Yellow"
+    set "SAFE_RC=!ERRORLEVEL!"
+    set "SHPC_GIT_DETECT_ERR="
+    if not "!SAFE_RC!"=="0" (
+        del /q "!GIT_DETECT_ERR!" >NUL 2>NUL
+        exit /b !SAFE_RC!
+    )
+    git rev-parse --is-inside-work-tree >NUL 2>NUL
+    if errorlevel 1 (
+        echo ERROR: Repository is still rejected by Git after safe.directory registration.
+        del /q "!GIT_DETECT_ERR!" >NUL 2>NUL
+        exit /b 1
+    )
+)
+del /q "!GIT_DETECT_ERR!" >NUL 2>NUL
 
 set "BRANCH="
 for /f "delims=" %%B in ('git branch --show-current 2^>NUL') do set "BRANCH=%%B"
-if not defined BRANCH goto :branch_error
-if /I not "!BRANCH!"=="main" if /I not "!BRANCH!"=="devel" goto :branch_error
->>"%LOG%" echo Branch: !BRANCH!
-
-echo ============================================
-echo SylphyHornPlusCon - UPGRADE 0.19
-echo ============================================
-echo Branch: !BRANCH!
-echo.
-
-echo [1/7] Fetching remote branch and updater...
->>"%LOG%" echo [1/7] Fetching remote branch and updater...
-git remote set-url origin "%REPO_URL%" >>"%LOG%" 2>&1
-if errorlevel 1 goto :git_fail
-git fetch --prune origin "!BRANCH!" >>"%LOG%" 2>&1
-if errorlevel 1 goto :git_fail
-
-set "REMOTE_HASH="
-set "RUNNING_HASH="
-for /f "delims=" %%H in ('git rev-parse "origin/!BRANCH!:upgrade.cmd" 2^>NUL') do set "REMOTE_HASH=%%H"
-for /f "delims=" %%H in ('git hash-object --path=upgrade.cmd "%~f0" 2^>NUL') do set "RUNNING_HASH=%%H"
-if not defined REMOTE_HASH goto :self_update_fail
-if not defined RUNNING_HASH goto :self_update_fail
-
-if /I not "!RUNNING_HASH!"=="!REMOTE_HASH!" if not defined SHPC_REMOTE_UPGRADE_RUNNING (
-    echo A newer upgrade.cmd is available. Restarting with remote updater...
-    >>"%LOG%" echo Remote updater differs from running TEMP copy.
-    set "REMOTE_TEMP=%TEMP%\sylphyhornpluscon-upgrade-remote-%RANDOM%-%RANDOM%.cmd"
-    git show "origin/!BRANCH!:upgrade.cmd" > "!REMOTE_TEMP!" 2>>"%LOG%"
-    if errorlevel 1 goto :self_update_fail
-    set "SHPC_REMOTE_UPGRADE_RUNNING=1"
-    call "!REMOTE_TEMP!" --temp-run "%REPO_DIR%" & exit /b
+if not defined BRANCH (
+    echo ERROR: Cannot determine current Git branch.
+    exit /b 1
+)
+if /I not "!BRANCH!"=="main" if /I not "!BRANCH!"=="devel" (
+    echo ERROR: Upgrade supports only main or devel branches. Current: !BRANCH!
+    exit /b 1
 )
 
-echo [2/7] Checking protected tracked changes...
->>"%LOG%" echo [2/7] Checking protected tracked changes...
-call :restore_generated_lockfiles
-call :check_protected_clean
-if errorlevel 1 goto :dirty_repo
-
-rem upgrade.cmd is maintenance-owned. The running updater is already in TEMP.
-rem Normalize only this tracked file to HEAD before synchronizing the branch.
-git restore --source=HEAD --staged --worktree -- "upgrade.cmd" >>"%LOG%" 2>&1
-if errorlevel 1 goto :self_update_fail
-
-echo [3/7] Synchronizing tracked source tree...
->>"%LOG%" echo [3/7] Synchronizing tracked source tree with git reset --keep origin/!BRANCH!...
-set "SYNC_OUT=%TEMP%\sylphyhornpluscon-git-sync-%RANDOM%-%RANDOM%.log"
-git reset --keep "origin/!BRANCH!" >"!SYNC_OUT!" 2>&1
+git remote set-url origin "https://github.com/Suenee/SylphyHornPlusCon.git" >NUL 2>"!LOG!"
 if errorlevel 1 (
-    type "!SYNC_OUT!"
-    type "!SYNC_OUT!" >>"%LOG%"
-    del /q "!SYNC_OUT!" >NUL 2>&1
-    goto :git_fail
+    >>"!LOG!" echo STATUS: FAILED - phase=SELF-UPDATE/BOOTSTRAP
+    echo ERROR: Cannot set the expected Git origin. See !LOG!
+    exit /b 1
 )
-type "!SYNC_OUT!" >>"%LOG%" 2>&1
-del /q "!SYNC_OUT!" >NUL 2>&1
 
-set "HEAD_SHA="
-set "ORIGIN_SHA="
-for /f "delims=" %%H in ('git rev-parse HEAD') do set "HEAD_SHA=%%H"
-for /f "delims=" %%H in ('git rev-parse "origin/!BRANCH!"') do set "ORIGIN_SHA=%%H"
-if /I not "!HEAD_SHA!"=="!ORIGIN_SHA!" goto :git_state_fail
-
-echo [4/7] Synchronizing Git submodules...
->>"%LOG%" echo [4/7] Synchronizing Git submodules...
-git submodule sync --recursive >>"%LOG%" 2>&1
-if errorlevel 1 goto :submodule_fail
-git submodule update --init --recursive >>"%LOG%" 2>&1
-if errorlevel 1 goto :submodule_fail
-
-call :read_sdk_version
-if errorlevel 1 goto :sdk_version_fail
-call :ensure_dotnet_sdk
-if errorlevel 1 goto :dotnet_fail
-
-echo [5/7] Restoring .NET 10 projects...
->>"%LOG%" echo [5/7] Restore for %TARGET_FRAMEWORK% with force-evaluate during lock-file migration.
-dotnet restore "source\SylphyHorn\SylphyHorn.csproj" -p:TargetFramework=%TARGET_FRAMEWORK% --force-evaluate >>"%LOG%" 2>&1
-if errorlevel 1 goto :restore_fail_dirty
-dotnet restore "source\SylphyHorn.Tests\SylphyHorn.Tests.csproj" -p:TargetFramework=%TARGET_FRAMEWORK% --force-evaluate >>"%LOG%" 2>&1
-if errorlevel 1 goto :restore_fail_dirty
-
-echo [6/7] Building Release x64 for .NET 10...
->>"%LOG%" echo [6/7] Building Release x64 for %TARGET_FRAMEWORK%...
-dotnet build "source\SylphyHorn\SylphyHorn.csproj" -c Release -f %TARGET_FRAMEWORK% -p:Platform=x64 -p:RunSylphyHornPostBuild=false --no-restore >>"%LOG%" 2>&1
-if errorlevel 1 goto :build_fail_dirty
-
-echo [7/7] Running .NET 10 unit tests...
->>"%LOG%" echo [7/7] Running unit tests for %TARGET_FRAMEWORK%...
-dotnet test "source\SylphyHorn.Tests\SylphyHorn.Tests.csproj" -c Release -f %TARGET_FRAMEWORK% -p:Platform=x64 -p:RunSylphyHornPostBuild=false -p:SolutionDir="%REPO_DIR%\source\" --no-restore >>"%LOG%" 2>&1
-if errorlevel 1 goto :test_fail_dirty
-
-call :restore_generated_lockfiles
-
->>"%LOG%" echo STATUS: SUCCESS - phase=COMPLETE
-popd
-echo.
-echo ============================================
-echo UPGRADE OK
-echo ============================================
-echo .NET SDK: !SDK_VERSION!
-echo Target:   %TARGET_FRAMEWORK%
-echo Commit:   !HEAD_SHA!
-echo Log:      %LOG%
-exit /b 0
-
-:register_safe_directory
-set "SAFE_TARGET=%REPO_DIR:\=/%"
-git config --global --add safe.directory "%SAFE_TARGET%" >>"%LOG%" 2>&1
-if errorlevel 1 exit /b 1
->>"%LOG%" echo Registered Git safe.directory: %SAFE_TARGET%
-if "%REPO_DIR:~1,1%"==":" (
-    set "MAP_DRIVE=%REPO_DIR:~0,1%"
-    set "UNC_ROOT="
-    for /f "tokens=2,*" %%A in ('reg query "HKCU\Network\!MAP_DRIVE!" /v RemotePath 2^>NUL ^| findstr /I /C:"RemotePath"') do set "UNC_ROOT=%%B"
-    if defined UNC_ROOT (
-        set "UNC_TARGET=!UNC_ROOT!!REPO_DIR:~2!"
-        set "UNC_TARGET=!UNC_TARGET:\=/!"
-        git config --global --add safe.directory "!UNC_TARGET!" >>"%LOG%" 2>&1
-        if errorlevel 1 exit /b 1
-        >>"%LOG%" echo Registered Git UNC safe.directory: !UNC_TARGET!
-    )
+git fetch --prune origin "!BRANCH!" >NUL 2>"!LOG!"
+if errorlevel 1 (
+    >>"!LOG!" echo STATUS: FAILED - phase=SELF-UPDATE/BOOTSTRAP
+    echo ERROR: git fetch failed before bootstrap. See !LOG!
+    exit /b 1
 )
-exit /b 0
 
-:check_protected_clean
-rem upgrade.cmd is excluded intentionally because it is owned by this updater.
-rem Untracked files in submodules (bin/obj etc.) are ignored, but real tracked
-rem changes, staged changes and changed submodule commits remain protected.
-git diff --quiet --ignore-submodules=untracked -- . ":(exclude)upgrade.cmd"
-if errorlevel 1 goto :protected_dirty
-git diff --cached --quiet --ignore-submodules=untracked -- . ":(exclude)upgrade.cmd"
-if errorlevel 1 goto :protected_dirty
-exit /b 0
-
-:protected_dirty
-echo Tracked changes that block upgrade:
->>"%LOG%" echo Tracked changes that block upgrade:
-git status --short --untracked-files=no --ignore-submodules=untracked | findstr /V /R /C:"^[ MARC?][ MARC?] upgrade.cmd$"
-git status --short --untracked-files=no --ignore-submodules=untracked >>"%LOG%" 2>&1
-exit /b 1
-
-:restore_generated_lockfiles
->>"%LOG%" echo Restoring tracked NuGet lock files.
-git ls-files --error-unmatch "source/SylphyHorn/packages.lock.json" >NUL 2>&1
-if not errorlevel 1 git restore --source=HEAD --staged --worktree -- "source/SylphyHorn/packages.lock.json" >>"%LOG%" 2>&1
-git ls-files --error-unmatch "source/SylphyHorn.Tests/packages.lock.json" >NUL 2>&1
-if not errorlevel 1 git restore --source=HEAD --staged --worktree -- "source/SylphyHorn.Tests/packages.lock.json" >>"%LOG%" 2>&1
-exit /b 0
-
-:read_sdk_version
-set "SDK_VERSION="
-for /f "tokens=2 delims=:" %%V in ('findstr /i /c:"version" "global.json"') do if not defined SDK_VERSION set "SDK_VERSION=%%V"
-if not defined SDK_VERSION exit /b 1
-set "SDK_VERSION=!SDK_VERSION: =!"
-set "SDK_VERSION=!SDK_VERSION:"=!"
-set "SDK_VERSION=!SDK_VERSION:,=!"
-if not defined SDK_VERSION exit /b 1
->>"%LOG%" echo Required .NET SDK: !SDK_VERSION!
-exit /b 0
-
-:ensure_dotnet_sdk
-where dotnet.exe >NUL 2>&1
-if not errorlevel 1 (
-    dotnet --list-sdks 2>NUL | findstr /b /c:"!SDK_VERSION! [" >NUL
-    if not errorlevel 1 exit /b 0
+set "RUNNER_TEMP=%TEMP%\SHPC-upgrade-%RANDOM%-%RANDOM%.ps1"
+git show "origin/!BRANCH!:upgrade.ps1" >"!RUNNER_TEMP!" 2>>"!LOG!"
+if errorlevel 1 (
+    >>"!LOG!" echo STATUS: FAILED - phase=SELF-UPDATE/BOOTSTRAP
+    echo ERROR: Could not extract the authoritative upgrade.ps1 from origin/!BRANCH!.
+    del /q "!RUNNER_TEMP!" >NUL 2>NUL
+    exit /b 1
 )
-echo .NET SDK !SDK_VERSION! not found. Installing with WinGet...
->>"%LOG%" echo Installing Microsoft.DotNet.SDK.10 version !SDK_VERSION!...
-where winget.exe >NUL 2>&1
-if errorlevel 1 exit /b 1
-winget install --id Microsoft.DotNet.SDK.10 --exact --version !SDK_VERSION! --accept-package-agreements --accept-source-agreements --silent >>"%LOG%" 2>&1
-if errorlevel 1 exit /b 1
-set "PATH=%ProgramFiles%\dotnet;%PATH%"
-dotnet --list-sdks 2>NUL | findstr /b /c:"!SDK_VERSION! [" >NUL
-if errorlevel 1 exit /b 1
-exit /b 0
 
-:repo_error
-echo ERROR: Unable to enter repository directory.
-goto :fail
-:git_missing
-echo ERROR: Git was not found. Run install.cmd first.
-goto :fail
-:safe_directory_fail
-echo ERROR: Unable to register this repository as a trusted Git safe.directory.
-goto :fail
-:not_git
-echo ERROR: This directory is not a Git working copy. Run install.cmd first.
-goto :fail_pop
-:branch_error
-echo ERROR: Upgrade supports only main or devel branches.
-goto :fail_pop
-:self_update_fail
-echo ERROR: upgrade.cmd self-update failed.
-goto :fail_pop
-:dirty_repo
-echo ERROR: Protected tracked local changes exist. Commit or revert them before upgrade.
-goto :fail_pop
-:git_fail
-echo ERROR: Git synchronization failed.
-goto :fail_pop
-:git_state_fail
-echo ERROR: Local HEAD differs from origin/!BRANCH!.
-goto :fail_pop
-:submodule_fail
-echo ERROR: Git submodule synchronization failed.
-goto :fail_pop
-:sdk_version_fail
-echo ERROR: Unable to read required SDK version from global.json.
-goto :fail_pop
-:dotnet_fail
-echo ERROR: Required .NET SDK installation/verification failed.
-goto :fail_pop
-:restore_fail_dirty
-call :restore_generated_lockfiles
-echo ERROR: .NET 10 NuGet restore failed.
-goto :fail_pop
-:build_fail_dirty
-call :restore_generated_lockfiles
-echo ERROR: .NET 10 Release build failed.
-goto :fail_pop
-:test_fail_dirty
-call :restore_generated_lockfiles
-echo ERROR: .NET 10 unit tests failed.
-goto :fail_pop
-
-:fail_pop
-popd >NUL 2>&1
-:fail
->>"%LOG%" echo STATUS: FAILED
-echo.
-echo ============================================
-echo UPGRADE FAILED
-echo ============================================
-echo See: %LOG%
-pause
-exit /b 1
+set "SHPC_UPGRADE_REPO=!REPO_DIR!"
+set "SHPC_UPGRADE_BRANCH=!BRANCH!"
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File "!RUNNER_TEMP!"
+set "UPGRADE_RC=!ERRORLEVEL!"
+del /q "!RUNNER_TEMP!" >NUL 2>NUL
+set "SHPC_UPGRADE_REPO="
+set "SHPC_UPGRADE_BRANCH="
+exit /b !UPGRADE_RC!
