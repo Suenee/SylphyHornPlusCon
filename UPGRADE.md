@@ -110,6 +110,8 @@ safe.directory=*
 
 A failed Git repository check must never be interpreted as permission to clone a nested repository until `dubious ownership` has been ruled out.
 
+The launcher parses Git's own `safe.directory` suggestion directly in CMD. Do not embed a complex `powershell.exe -Command "..."` expression containing parentheses inside a parenthesized CMD block; `cmd.exe` parses block delimiters before PowerShell receives the text and can terminate the block early.
+
 ## Line endings
 
 Windows scripts are protocol-controlled by `.gitattributes`:
@@ -181,6 +183,14 @@ Prevention: exclude only `upgrade.cmd` and `upgrade.ps1` from user-edit protecti
 Symptom: broken quoting, trailing-backslash corruption, lost exit codes, or batch-label errors.
 
 Prevention: one CMD launcher, one PowerShell runner. Repository path is transported through environment variables and normalized once.
+
+### Inline PowerShell inside a parenthesized CMD block
+
+Symptom: CMD prints a fragment of the PowerShell command followed by `was unexpected at this time.` before PowerShell starts.
+
+Root cause: `cmd.exe` parses parentheses and block structure before invoking `powershell.exe`; parentheses inside a quoted `-Command` string can still break a surrounding CMD `if (...)` block.
+
+Prevention: do not place complex inline PowerShell expressions inside parenthesized CMD blocks. Keep recovery logic outside the block or, preferably, parse simple bootstrap data directly in CMD and reserve PowerShell for the authoritative `.ps1` runner.
 
 ### Downloaded/generated CMD label failures
 
@@ -263,6 +273,7 @@ Before treating the updater as stable, test at least:
 - repository path with spaces;
 - mapped network drive;
 - UNC path / Git `dubious ownership` recovery;
+- malformed/complex bootstrap command text must not be parsed inside parenthesized CMD blocks;
 - missing required .NET SDK with WinGet available;
 - restore failure;
 - build failure;
