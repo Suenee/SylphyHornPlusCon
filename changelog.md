@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.18 - 02.09.2026
+
+- Rewrote `upgrade.cmd` self-update handling instead of continuing the previous dirty-state patch sequence.
+- Declared `upgrade.cmd` a maintenance-owned file: it is intentionally excluded from the protected local-change gate because the updater itself is responsible for replacing it.
+- Remote updater code now runs only from `%TEMP%` and no longer modifies the repository copy before the safety check.
+- All other tracked working-tree changes, staged changes, and submodule commit changes remain protected and continue to block upgrade.
+- Immediately before `git merge --ff-only`, only the repository copy of `upgrade.cmd` is normalized back to the current `HEAD`; the normal fast-forward then updates it together with the rest of the branch.
+- Kept untracked submodule build artifacts ignored while preserving detection of real tracked submodule changes.
+- This replaces the failed 0.15-0.17 self-update approaches rather than adding another exception to them.
+
 ## 0.17 - 02.09.2026
 
 - Fixed the remaining self-update dirty-state loop in `upgrade.cmd`.
