@@ -47,10 +47,6 @@ if errorlevel 1 goto :target_error
 pushd "%TARGET%"
 if errorlevel 1 goto :target_error
 
-rem Remove files from the abandoned PowerShell-based bootstrap if present.
-del /q "install.ps1" "upgrade.ps1" >NUL 2>&1
-if exist "scripts\Environment.ps1" del /q "scripts\Environment.ps1" >NUL 2>&1
-
 if exist ".git" goto :existing_repo
 call :bootstrap_folder_check
 if errorlevel 1 goto :unsafe_folder
@@ -77,7 +73,7 @@ git -c safe.directory=* remote set-url origin "%REPO_URL%" >>"%LOG%" 2>&1
 if errorlevel 1 goto :repo_fail
 git -c safe.directory=* fetch origin "%BRANCH%" >>"%LOG%" 2>&1
 if errorlevel 1 goto :repo_fail
-call :check_tracked_clean_for_install
+call :reconcile_bootstrap_changes
 if errorlevel 1 goto :dirty_repo
 git -c safe.directory=* checkout "%BRANCH%" >>"%LOG%" 2>&1
 if errorlevel 1 git -c safe.directory=* checkout -b "%BRANCH%" --track "origin/%BRANCH%" >>"%LOG%" 2>&1
@@ -188,31 +184,76 @@ exit /b 0
 :check_bootstrap_item
 if /I "%~1"=="install.cmd" exit /b 0
 if /I "%~1"=="logs" exit /b 0
-if /I "%~1"=="scripts" exit /b 0
 set "UNSAFE=1"
 exit /b 0
 
-:check_tracked_clean_for_install
-set "OTHER_DIRTY=0"
-for /f "delims=" %%F in ('git -c safe.directory^=* diff --name-only') do if /I not "%%F"=="install.cmd" set "OTHER_DIRTY=1"
-for /f "delims=" %%F in ('git -c safe.directory^=* diff --cached --name-only') do if /I not "%%F"=="install.cmd" set "OTHER_DIRTY=1"
-if "!OTHER_DIRTY!"=="1" exit /b 1
+:reconcile_bootstrap_changes
+set "BOOTSTRAP_DIRTY=0"
+set "BOOTSTRAP_REJECT=0"
+set "BOOTSTRAP_LIST=%TEMP%\shpc-bootstrap-dirty-%RANDOM%-%RANDOM%.txt"
+git -c safe.directory=* diff --name-only > "!BOOTSTRAP_LIST!" 2>>"%LOG%"
+if errorlevel 1 (del /q "!BOOTSTRAP_LIST!" >NUL 2>&1& exit /b 1)
+git -c safe.directory=* diff --cached --name-only >> "!BOOTSTRAP_LIST!" 2>>"%LOG%"
+if errorlevel 1 (del /q "!BOOTSTRAP_LIST!" >NUL 2>&1& exit /b 1)
+for /f "usebackq delims=" %%F in ("!BOOTSTRAP_LIST!") do call :verify_bootstrap_path "%%F"
+del /q "!BOOTSTRAP_LIST!" >NUL 2>&1
+if "!BOOTSTRAP_REJECT!"=="1" exit /b 1
+if "!BOOTSTRAP_DIRTY!"=="0" exit /b 0
 
-git -c safe.directory=* diff --quiet -- "install.cmd"
-if not errorlevel 1 exit /b 0
-
-set "LOCAL_INSTALL_HASH="
-set "REMOTE_INSTALL_HASH="
-for /f "delims=" %%H in ('git -c safe.directory^=* hash-object --path=install.cmd "install.cmd" 2^>NUL') do set "LOCAL_INSTALL_HASH=%%H"
-for /f "delims=" %%H in ('git -c safe.directory^=* rev-parse "origin/%BRANCH%:install.cmd" 2^>NUL') do set "REMOTE_INSTALL_HASH=%%H"
-if not defined LOCAL_INSTALL_HASH exit /b 1
-if not defined REMOTE_INSTALL_HASH exit /b 1
-if /I not "!LOCAL_INSTALL_HASH!"=="!REMOTE_INSTALL_HASH!" exit /b 1
-
-echo Bootstrap install.cmd matches origin/%BRANCH%; accepting downloaded installer refresh.
->>"%LOG%" echo Verified downloaded install.cmd against origin/%BRANCH%; restoring tracked copy before merge.
-git -c safe.directory=* checkout -- "install.cmd" >>"%LOG%" 2>&1
+echo Verified bootstrap changes match origin/%BRANCH%; restoring HEAD before fast-forward.
+>>"%LOG%" echo Bootstrap-modified tracked paths match origin/%BRANCH%; restoring HEAD before merge.
+git -c safe.directory=* reset --quiet HEAD -- >>"%LOG%" 2>&1
 if errorlevel 1 exit /b 1
+git -c safe.directory=* checkout -- . >>"%LOG%" 2>&1
+if errorlevel 1 exit /b 1
+exit /b 0
+
+:verify_bootstrap_path
+set "BOOTSTRAP_DIRTY=1"
+set "CHECK_PATH=%~1"
+if not defined CHECK_PATH exit /b 0
+
+set "REMOTE_EXISTS=0"
+git -c safe.directory=* cat-file -e "origin/%BRANCH%:!CHECK_PATH!" >NUL 2>&1
+if not errorlevel 1 set "REMOTE_EXISTS=1"
+
+if "!REMOTE_EXISTS!"=="0" (
+  if exist "!CHECK_PATH!" (
+    echo Unexpected local change: !CHECK_PATH!
+    >>"%LOG%" echo Rejected local change: !CHECK_PATH! exists locally but is deleted on origin/%BRANCH%.
+    set "BOOTSTRAP_REJECT=1"
+  ) else (
+    >>"%LOG%" echo Accepted bootstrap deletion: !CHECK_PATH!
+  )
+  exit /b 0
+)
+
+if not exist "!CHECK_PATH!" (
+  echo Unexpected local deletion: !CHECK_PATH!
+  >>"%LOG%" echo Rejected local deletion: !CHECK_PATH! still exists on origin/%BRANCH%.
+  set "BOOTSTRAP_REJECT=1"
+  exit /b 0
+)
+
+set "LOCAL_HASH="
+set "REMOTE_HASH="
+for /f "delims=" %%H in ('git -c safe.directory^=* hash-object --path="!CHECK_PATH!" "!CHECK_PATH!" 2^>NUL') do set "LOCAL_HASH=%%H"
+for /f "delims=" %%H in ('git -c safe.directory^=* rev-parse "origin/%BRANCH%:!CHECK_PATH!" 2^>NUL') do set "REMOTE_HASH=%%H"
+if not defined LOCAL_HASH (
+  set "BOOTSTRAP_REJECT=1"
+  exit /b 0
+)
+if not defined REMOTE_HASH (
+  set "BOOTSTRAP_REJECT=1"
+  exit /b 0
+)
+if /I not "!LOCAL_HASH!"=="!REMOTE_HASH!" (
+  echo Unexpected local change: !CHECK_PATH!
+  >>"%LOG%" echo Rejected local change: !CHECK_PATH! does not match origin/%BRANCH%.
+  set "BOOTSTRAP_REJECT=1"
+) else (
+  >>"%LOG%" echo Accepted bootstrap refresh: !CHECK_PATH!
+)
 exit /b 0
 
 :target_error
@@ -222,7 +263,7 @@ goto :fail
 echo ERROR: Target folder contains unrelated files and is not a Git repository.
 goto :fail_pop
 :dirty_repo
-echo ERROR: Tracked local changes exist. Only a verified install.cmd bootstrap refresh is allowed.
+echo ERROR: Tracked local changes exist that do not match origin/%BRANCH%.
 goto :fail_pop
 :repo_fail
 echo ERROR: Git repository setup/update failed.
