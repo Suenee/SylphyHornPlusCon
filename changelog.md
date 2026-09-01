@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.17 - 02.09.2026
+
+- Fixed the remaining self-update dirty-state loop in `upgrade.cmd`.
+- `upgrade.cmd` no longer checks out the remote updater into the index before the safety check.
+- The remote updater now runs only from `%TEMP%`, while the tracked working-tree and index copy of `upgrade.cmd` are restored to the current `HEAD` before dirty-state validation.
+- The normal `git merge --ff-only` step is now solely responsible for updating the repository copy of `upgrade.cmd` together with the rest of the branch.
+- This preserves conservative protection for all real tracked local changes while preventing the updater from staging itself.
+
 ## 0.16 - 02.09.2026
 
 - Fixed `upgrade.cmd` self-update so the working-tree copy of `upgrade.cmd` is updated from `origin/<branch>` before control is transferred to the temporary updater.
