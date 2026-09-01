@@ -3,19 +3,18 @@ cls
 setlocal EnableExtensions EnableDelayedExpansion
 
 rem SylphyHornPlusCon updater
-rem Version: 0.17
-rem Pure CMD implementation. No PowerShell bootstrap scripts are used.
-rem Supports local, mapped, and UNC repository paths.
-rem UPGRADE is conservative: real tracked local changes stop the update.
+rem Version: 0.18
+rem Pure CMD implementation. No PowerShell maintenance runner is used.
+rem upgrade.cmd is maintenance-owned and may be replaced by the updater itself.
 
 if /I "%~1"=="--temp-run" goto :temp_run
 
 set "REPO_DIR=%~dp0"
 if "!REPO_DIR:~-1!"=="\" set "REPO_DIR=!REPO_DIR:~0,-1!"
-set "UPGRADE_TEMP=%TEMP%\sylphyhornpluscon-upgrade-%RANDOM%-%RANDOM%.cmd"
-copy /y "%~f0" "!UPGRADE_TEMP!" >NUL
+set "BOOT_TEMP=%TEMP%\sylphyhornpluscon-upgrade-bootstrap-%RANDOM%-%RANDOM%.cmd"
+copy /y "%~f0" "!BOOT_TEMP!" >NUL
 if errorlevel 1 exit /b 1
-call "!UPGRADE_TEMP!" --temp-run "!REPO_DIR!" & exit /b
+call "!BOOT_TEMP!" --temp-run "!REPO_DIR!" & exit /b
 
 :temp_run
 set "REPO_DIR=%~2"
@@ -26,7 +25,7 @@ set "LOG=%LOG_DIR%\upgrade.log"
 
 if not exist "%LOG_DIR%" mkdir "%LOG_DIR%" >NUL 2>&1
 >"%LOG%" echo SylphyHornPlusCon upgrade log
->>"%LOG%" echo Version: 0.17
+>>"%LOG%" echo Version: 0.18
 >>"%LOG%" echo Started: %DATE% %TIME%
 >>"%LOG%" echo Repository: %REPO_DIR%
 >>"%LOG%" echo Validation target: %TARGET_FRAMEWORK%
@@ -47,42 +46,45 @@ if /I not "!BRANCH!"=="main" if /I not "!BRANCH!"=="devel" goto :branch_error
 >>"%LOG%" echo Branch: !BRANCH!
 
 echo ============================================
-echo SylphyHornPlusCon - UPGRADE 0.17
+echo SylphyHornPlusCon - UPGRADE 0.18
 echo ============================================
 echo Branch: !BRANCH!
 echo.
 
-echo [1/7] Checking updater and remote branch...
->>"%LOG%" echo [1/7] Checking updater and remote branch...
+echo [1/7] Fetching remote branch and updater...
+>>"%LOG%" echo [1/7] Fetching remote branch and updater...
 git remote set-url origin "%REPO_URL%" >>"%LOG%" 2>&1
 if errorlevel 1 goto :git_fail
 git fetch --prune origin "!BRANCH!" >>"%LOG%" 2>&1
 if errorlevel 1 goto :git_fail
 
 set "REMOTE_HASH="
-set "LOCAL_HASH="
+set "RUNNING_HASH="
 for /f "delims=" %%H in ('git rev-parse "origin/!BRANCH!:upgrade.cmd" 2^>NUL') do set "REMOTE_HASH=%%H"
-for /f "delims=" %%H in ('git hash-object --path=upgrade.cmd "upgrade.cmd" 2^>NUL') do set "LOCAL_HASH=%%H"
+for /f "delims=" %%H in ('git hash-object --path=upgrade.cmd "%~f0" 2^>NUL') do set "RUNNING_HASH=%%H"
 if not defined REMOTE_HASH goto :self_update_fail
-if not defined LOCAL_HASH goto :self_update_fail
-if /I not "!LOCAL_HASH!"=="!REMOTE_HASH!" if not defined SHPC_REMOTE_UPGRADE_RUNNING (
-    echo A newer upgrade.cmd is available. Running it first...
-    >>"%LOG%" echo Remote upgrade.cmd differs; transferring control to remote version from TEMP.
-    set "REMOTE_UPGRADE=%TEMP%\sylphyhornpluscon-remote-upgrade-%RANDOM%-%RANDOM%.cmd"
-    git show "origin/!BRANCH!:upgrade.cmd" > "!REMOTE_UPGRADE!" 2>>"%LOG%"
-    if errorlevel 1 goto :self_update_fail
-    rem Leave the tracked updater clean; the ff-only merge will update it later.
-    git restore --source=HEAD --staged --worktree -- "upgrade.cmd" >>"%LOG%" 2>&1
+if not defined RUNNING_HASH goto :self_update_fail
+
+if /I not "!RUNNING_HASH!"=="!REMOTE_HASH!" if not defined SHPC_REMOTE_UPGRADE_RUNNING (
+    echo A newer upgrade.cmd is available. Restarting with remote updater...
+    >>"%LOG%" echo Remote updater differs from running TEMP copy.
+    set "REMOTE_TEMP=%TEMP%\sylphyhornpluscon-upgrade-remote-%RANDOM%-%RANDOM%.cmd"
+    git show "origin/!BRANCH!:upgrade.cmd" > "!REMOTE_TEMP!" 2>>"%LOG%"
     if errorlevel 1 goto :self_update_fail
     set "SHPC_REMOTE_UPGRADE_RUNNING=1"
-    call "!REMOTE_UPGRADE!" --temp-run "%REPO_DIR%" & exit /b
+    call "!REMOTE_TEMP!" --temp-run "%REPO_DIR%" & exit /b
 )
 
-echo [2/7] Checking tracked local changes...
->>"%LOG%" echo [2/7] Checking tracked local changes...
+echo [2/7] Checking protected tracked changes...
+>>"%LOG%" echo [2/7] Checking protected tracked changes...
 call :restore_generated_lockfiles
-call :check_tracked_clean
+call :check_protected_clean
 if errorlevel 1 goto :dirty_repo
+
+rem upgrade.cmd is maintenance-owned. The running updater is already in TEMP,
+rem so normalize only the repository copy before the normal fast-forward merge.
+git restore --source=HEAD --staged --worktree -- "upgrade.cmd" >>"%LOG%" 2>&1
+if errorlevel 1 goto :self_update_fail
 
 echo [3/7] Fast-forwarding source tree...
 >>"%LOG%" echo [3/7] Fast-forwarding source tree...
@@ -108,7 +110,7 @@ call :ensure_dotnet_sdk
 if errorlevel 1 goto :dotnet_fail
 
 echo [5/7] Restoring .NET 10 projects...
->>"%LOG%" echo [5/7] Normal restore for %TARGET_FRAMEWORK%. Locked mode temporarily disabled during .NET 10 lock-file migration.
+>>"%LOG%" echo [5/7] Restore for %TARGET_FRAMEWORK% with force-evaluate during lock-file migration.
 dotnet restore "source\SylphyHorn\SylphyHorn.csproj" -p:TargetFramework=%TARGET_FRAMEWORK% --force-evaluate >>"%LOG%" 2>&1
 if errorlevel 1 goto :restore_fail_dirty
 dotnet restore "source\SylphyHorn.Tests\SylphyHorn.Tests.csproj" -p:TargetFramework=%TARGET_FRAMEWORK% --force-evaluate >>"%LOG%" 2>&1
@@ -125,7 +127,6 @@ dotnet test "source\SylphyHorn.Tests\SylphyHorn.Tests.csproj" -c Release -f %TAR
 if errorlevel 1 goto :test_fail_dirty
 
 call :restore_generated_lockfiles
-if errorlevel 1 goto :lockfile_cleanup_fail
 
 >>"%LOG%" echo STATUS: SUCCESS - phase=COMPLETE
 popd
@@ -133,9 +134,10 @@ echo.
 echo ============================================
 echo UPGRADE OK
 echo ============================================
-echo Target: %TARGET_FRAMEWORK%
-echo Commit: !HEAD_SHA!
-echo Log:    %LOG%
+echo .NET SDK: !SDK_VERSION!
+echo Target:   %TARGET_FRAMEWORK%
+echo Commit:   !HEAD_SHA!
+echo Log:      %LOG%
 exit /b 0
 
 :register_safe_directory
@@ -144,17 +146,42 @@ git config --global --add safe.directory "%SAFE_TARGET%" >>"%LOG%" 2>&1
 if errorlevel 1 exit /b 1
 >>"%LOG%" echo Registered Git safe.directory: %SAFE_TARGET%
 if "%REPO_DIR:~1,1%"==":" (
-  set "MAP_DRIVE=%REPO_DIR:~0,1%"
-  set "UNC_ROOT="
-  for /f "tokens=2,*" %%A in ('reg query "HKCU\Network\!MAP_DRIVE!" /v RemotePath 2^>NUL ^| findstr /I /C:"RemotePath"') do set "UNC_ROOT=%%B"
-  if defined UNC_ROOT (
-    set "UNC_TARGET=!UNC_ROOT!!REPO_DIR:~2!"
-    set "UNC_TARGET=!UNC_TARGET:\=/!"
-    git config --global --add safe.directory "!UNC_TARGET!" >>"%LOG%" 2>&1
-    if errorlevel 1 exit /b 1
-    >>"%LOG%" echo Registered Git UNC safe.directory: !UNC_TARGET!
-  )
+    set "MAP_DRIVE=%REPO_DIR:~0,1%"
+    set "UNC_ROOT="
+    for /f "tokens=2,*" %%A in ('reg query "HKCU\Network\!MAP_DRIVE!" /v RemotePath 2^>NUL ^| findstr /I /C:"RemotePath"') do set "UNC_ROOT=%%B"
+    if defined UNC_ROOT (
+        set "UNC_TARGET=!UNC_ROOT!!REPO_DIR:~2!"
+        set "UNC_TARGET=!UNC_TARGET:\=/!"
+        git config --global --add safe.directory "!UNC_TARGET!" >>"%LOG%" 2>&1
+        if errorlevel 1 exit /b 1
+        >>"%LOG%" echo Registered Git UNC safe.directory: !UNC_TARGET!
+    )
 )
+exit /b 0
+
+:check_protected_clean
+rem upgrade.cmd is excluded intentionally because it is owned by this updater.
+rem Untracked files in submodules (bin/obj etc.) are ignored, but real tracked
+rem changes, staged changes and changed submodule commits remain protected.
+git diff --quiet --ignore-submodules=untracked -- . ":(exclude)upgrade.cmd"
+if errorlevel 1 goto :protected_dirty
+git diff --cached --quiet --ignore-submodules=untracked -- . ":(exclude)upgrade.cmd"
+if errorlevel 1 goto :protected_dirty
+exit /b 0
+
+:protected_dirty
+echo Tracked changes that block upgrade:
+>>"%LOG%" echo Tracked changes that block upgrade:
+git status --short --untracked-files=no --ignore-submodules=untracked | findstr /V /R /C:"^[ MARC?][ MARC?] upgrade.cmd$"
+git status --short --untracked-files=no --ignore-submodules=untracked >>"%LOG%" 2>&1
+exit /b 1
+
+:restore_generated_lockfiles
+>>"%LOG%" echo Restoring tracked NuGet lock files.
+git ls-files --error-unmatch "source/SylphyHorn/packages.lock.json" >NUL 2>&1
+if not errorlevel 1 git restore --source=HEAD --staged --worktree -- "source/SylphyHorn/packages.lock.json" >>"%LOG%" 2>&1
+git ls-files --error-unmatch "source/SylphyHorn.Tests/packages.lock.json" >NUL 2>&1
+if not errorlevel 1 git restore --source=HEAD --staged --worktree -- "source/SylphyHorn.Tests/packages.lock.json" >>"%LOG%" 2>&1
 exit /b 0
 
 :read_sdk_version
@@ -171,8 +198,8 @@ exit /b 0
 :ensure_dotnet_sdk
 where dotnet.exe >NUL 2>&1
 if not errorlevel 1 (
-  dotnet --list-sdks 2>NUL | findstr /b /c:"!SDK_VERSION! [" >NUL
-  if not errorlevel 1 exit /b 0
+    dotnet --list-sdks 2>NUL | findstr /b /c:"!SDK_VERSION! [" >NUL
+    if not errorlevel 1 exit /b 0
 )
 echo .NET SDK !SDK_VERSION! not found. Installing with WinGet...
 >>"%LOG%" echo Installing Microsoft.DotNet.SDK.10 version !SDK_VERSION!...
@@ -181,33 +208,8 @@ if errorlevel 1 exit /b 1
 winget install --id Microsoft.DotNet.SDK.10 --exact --version !SDK_VERSION! --accept-package-agreements --accept-source-agreements --silent >>"%LOG%" 2>&1
 if errorlevel 1 exit /b 1
 set "PATH=%ProgramFiles%\dotnet;%PATH%"
-where dotnet.exe >NUL 2>&1
-if errorlevel 1 exit /b 1
 dotnet --list-sdks 2>NUL | findstr /b /c:"!SDK_VERSION! [" >NUL
 if errorlevel 1 exit /b 1
-exit /b 0
-
-:check_tracked_clean
-rem Ignore untracked content inside submodules, but reject real tracked/staged changes.
-git diff --quiet --ignore-submodules=untracked
-if errorlevel 1 goto :tracked_dirty
-git diff --cached --quiet --ignore-submodules=untracked
-if errorlevel 1 goto :tracked_dirty
-exit /b 0
-
-:tracked_dirty
-echo Tracked changes that block upgrade:
->>"%LOG%" echo Tracked changes that block upgrade:
-git status --short --untracked-files=no --ignore-submodules=untracked
-git status --short --untracked-files=no --ignore-submodules=untracked >>"%LOG%" 2>&1
-exit /b 1
-
-:restore_generated_lockfiles
->>"%LOG%" echo Restoring tracked NuGet lock files after validation.
-git ls-files --error-unmatch "source/SylphyHorn/packages.lock.json" >NUL 2>&1
-if not errorlevel 1 git checkout -- "source/SylphyHorn/packages.lock.json" >>"%LOG%" 2>&1
-git ls-files --error-unmatch "source/SylphyHorn.Tests/packages.lock.json" >NUL 2>&1
-if not errorlevel 1 git checkout -- "source/SylphyHorn.Tests/packages.lock.json" >>"%LOG%" 2>&1
 exit /b 0
 
 :repo_error
@@ -226,10 +228,10 @@ goto :fail_pop
 echo ERROR: Upgrade supports only main or devel branches.
 goto :fail_pop
 :self_update_fail
-echo ERROR: upgrade.cmd self-update check failed.
+echo ERROR: upgrade.cmd self-update failed.
 goto :fail_pop
 :dirty_repo
-echo ERROR: Tracked local changes exist. Commit or revert them before upgrade.
+echo ERROR: Protected tracked local changes exist. Commit or revert them before upgrade.
 goto :fail_pop
 :git_fail
 echo ERROR: Git synchronization failed.
@@ -257,9 +259,6 @@ goto :fail_pop
 :test_fail_dirty
 call :restore_generated_lockfiles
 echo ERROR: .NET 10 unit tests failed.
-goto :fail_pop
-:lockfile_cleanup_fail
-echo ERROR: Validation succeeded but generated lockfiles could not be restored.
 goto :fail_pop
 
 :fail_pop
