@@ -1,7 +1,7 @@
 $ErrorActionPreference = 'Stop'
 
-$Version = '0.20'
-$Revision = '0.20-bootstrap-runner'
+$Version = '0.23'
+$Revision = '0.23-runtime-restart'
 $Repo = $env:SHPC_UPGRADE_REPO
 $TargetBranch = $env:SHPC_UPGRADE_BRANCH
 $ExpectedRemote = 'https://github.com/Suenee/SylphyHornPlusCon.git'
@@ -23,6 +23,9 @@ try { & chcp.com 65001 *> $null } catch { }
 
 $HadWarning = $false
 $FailPhase = 'BOOTSTRAP'
+$AppWasRunning = $false
+$RuntimeRestored = $false
+$AppExe = Join-Path $Repo 'source\SylphyHorn\bin\x64\Release\net10.0-windows10.0.26100.0\SylphyHorn.exe'
 
 function Write-Line([string]$Text, [ConsoleColor]$Color = [ConsoleColor]::Gray) {
     [IO.File]::AppendAllText($Log, $Text + [Environment]::NewLine, $Utf8)
@@ -173,6 +176,50 @@ function Ensure-DotNetSdk([string]$RequiredVersion) {
     }
     return $dotnetPath
 }
+function Test-SylphyHornRunning {
+    return [bool](Get-Process -Name 'SylphyHorn' -ErrorAction SilentlyContinue)
+}
+function Stop-SylphyHorn {
+    $running = @(Get-Process -Name 'SylphyHorn' -ErrorAction SilentlyContinue)
+    if ($running.Count -eq 0) { return }
+    Info ("[RUNTIME] Stopping SylphyHorn PID(s): " + (($running | ForEach-Object { $_.Id }) -join ', '))
+    foreach ($proc in $running) {
+        try { [void]$proc.CloseMainWindow() } catch { }
+    }
+    $deadline = [DateTime]::UtcNow.AddSeconds(5)
+    while ((Test-SylphyHornRunning) -and [DateTime]::UtcNow -lt $deadline) { Start-Sleep -Milliseconds 250 }
+    if (Test-SylphyHornRunning) {
+        Warn 'SylphyHorn did not exit within 5 seconds; forcing process termination before upgrade.'
+        Get-Process -Name 'SylphyHorn' -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
+        $deadline = [DateTime]::UtcNow.AddSeconds(5)
+        while ((Test-SylphyHornRunning) -and [DateTime]::UtcNow -lt $deadline) { Start-Sleep -Milliseconds 250 }
+        if (Test-SylphyHornRunning) { Fail 'STOP-RUNTIME' 'SylphyHorn is still running and could keep build artifacts locked.' }
+    }
+}
+function Restore-SylphyHornRuntime([switch]$FailurePath) {
+    if (-not $script:AppWasRunning -or $script:RuntimeRestored) { return }
+    if (-not (Test-Path -LiteralPath $script:AppExe)) {
+        if ($FailurePath) { Warn ("Previous SylphyHorn runtime cannot be restored because executable is missing: $($script:AppExe)") }
+        else { Fail 'RESTART' ("Built SylphyHorn executable is missing: $($script:AppExe)") }
+        return
+    }
+    try {
+        Info '[RUNTIME] Restoring SylphyHorn because it was running before upgrade...'
+        Start-Process -FilePath $script:AppExe -WorkingDirectory (Split-Path -Parent $script:AppExe) | Out-Null
+        Start-Sleep -Seconds 1
+        if (-not (Test-SylphyHornRunning)) {
+            if ($FailurePath) { Warn 'SylphyHorn could not be restarted after the failed upgrade.' }
+            else { Fail 'RESTART' 'SylphyHorn did not remain running after restart.' }
+            return
+        }
+        $script:RuntimeRestored = $true
+        Info '[RUNTIME] SylphyHorn restarted successfully.'
+    }
+    catch {
+        if ($FailurePath) { Warn ("SylphyHorn restart failed after upgrade failure: $($_.Exception.Message)") }
+        else { Fail 'RESTART' ("SylphyHorn restart failed: $($_.Exception.Message)") }
+    }
+}
 
 try {
     Set-Location -LiteralPath $Repo
@@ -187,6 +234,16 @@ try {
     Info ("Commit:     $startingCommit")
     Info 'Runner:     temporary origin/<branch> upgrade.ps1; upgrade.cmd is bootstrap launcher only'
     Info '============================================================'
+
+    $FailPhase = 'STOP-RUNTIME'
+    $AppWasRunning = Test-SylphyHornRunning
+    if ($AppWasRunning) {
+        Info '[RUNTIME] SylphyHorn was running before upgrade.'
+        Stop-SylphyHorn
+    }
+    else {
+        Info '[RUNTIME] SylphyHorn was not running before upgrade.'
+    }
 
     $FailPhase = 'SELF-UPDATE'
     if (-not (Get-Command git.exe -ErrorAction SilentlyContinue)) { Fail $FailPhase 'Git was not found in PATH.' }
@@ -247,6 +304,9 @@ try {
         Fail $FailPhase 'Upgrade validation generated unexpected tracked changes.'
     }
 
+    $FailPhase = 'RESTART'
+    Restore-SylphyHornRuntime
+
     Info '============================================================'
     if ($HadWarning) {
         Write-Line 'UPGRADE OK WITH WARNINGS' Yellow
@@ -267,6 +327,7 @@ catch {
     if ($message -and -not ($message -match '^Tracked local changes outside bootstrap files exist\.' )) {
         if (-not ($message -match '^git\.exe failed|^dotnet\.exe failed|^winget\.exe failed')) { Write-Line ('ERROR DETAIL: ' + $message) Red }
     }
+    Restore-SylphyHornRuntime -FailurePath
     Write-Line ("STATUS: FAILED - phase=$FailPhase") Red
     Write-Line ("Log: $Log") Red
     exit 1
