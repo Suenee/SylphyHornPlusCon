@@ -188,72 +188,42 @@ set "UNSAFE=1"
 exit /b 0
 
 :reconcile_bootstrap_changes
-set "BOOTSTRAP_DIRTY=0"
 set "BOOTSTRAP_REJECT=0"
+set "BOOTSTRAP_DIRTY=0"
 set "BOOTSTRAP_LIST=%TEMP%\shpc-bootstrap-dirty-%RANDOM%-%RANDOM%.txt"
 git -c safe.directory=* diff --name-only > "!BOOTSTRAP_LIST!" 2>>"%LOG%"
 if errorlevel 1 (del /q "!BOOTSTRAP_LIST!" >NUL 2>&1& exit /b 1)
 git -c safe.directory=* diff --cached --name-only >> "!BOOTSTRAP_LIST!" 2>>"%LOG%"
 if errorlevel 1 (del /q "!BOOTSTRAP_LIST!" >NUL 2>&1& exit /b 1)
-for /f "usebackq delims=" %%F in ("!BOOTSTRAP_LIST!") do call :verify_bootstrap_path "%%F"
-del /q "!BOOTSTRAP_LIST!" >NUL 2>&1
-if "!BOOTSTRAP_REJECT!"=="1" exit /b 1
-if "!BOOTSTRAP_DIRTY!"=="0" exit /b 0
+for /f "usebackq delims=" %%F in ("!BOOTSTRAP_LIST!") do call :check_bootstrap_owned_path "%%F"
+if "!BOOTSTRAP_REJECT!"=="1" (
+  del /q "!BOOTSTRAP_LIST!" >NUL 2>&1
+  exit /b 1
+)
+if "!BOOTSTRAP_DIRTY!"=="0" (
+  del /q "!BOOTSTRAP_LIST!" >NUL 2>&1
+  exit /b 0
+)
 
-echo Verified bootstrap changes match origin/%BRANCH%; restoring HEAD before fast-forward.
->>"%LOG%" echo Bootstrap-modified tracked paths match origin/%BRANCH%; restoring HEAD before merge.
-git -c safe.directory=* reset --quiet HEAD -- >>"%LOG%" 2>&1
-if errorlevel 1 exit /b 1
-git -c safe.directory=* checkout -- . >>"%LOG%" 2>&1
+echo Maintenance bootstrap files are stale; restoring their tracked HEAD versions before fast-forward.
+>>"%LOG%" echo Only maintenance-owned bootstrap files are modified; restoring them before merge.
+for /f "usebackq delims=" %%F in ("!BOOTSTRAP_LIST!") do git -c safe.directory=* checkout HEAD -- "%%F" >>"%LOG%" 2>&1
+del /q "!BOOTSTRAP_LIST!" >NUL 2>&1
 if errorlevel 1 exit /b 1
 exit /b 0
 
-:verify_bootstrap_path
+:check_bootstrap_owned_path
 set "BOOTSTRAP_DIRTY=1"
 set "CHECK_PATH=%~1"
-if not defined CHECK_PATH exit /b 0
-
-set "REMOTE_EXISTS=0"
-git -c safe.directory=* cat-file -e "origin/%BRANCH%:!CHECK_PATH!" >NUL 2>&1
-if not errorlevel 1 set "REMOTE_EXISTS=1"
-
-if "!REMOTE_EXISTS!"=="0" (
-  if exist "!CHECK_PATH!" (
-    echo Unexpected local change: !CHECK_PATH!
-    >>"%LOG%" echo Rejected local change: !CHECK_PATH! exists locally but is deleted on origin/%BRANCH%.
-    set "BOOTSTRAP_REJECT=1"
-  ) else (
-    >>"%LOG%" echo Accepted bootstrap deletion: !CHECK_PATH!
-  )
-  exit /b 0
-)
-
-if not exist "!CHECK_PATH!" (
-  echo Unexpected local deletion: !CHECK_PATH!
-  >>"%LOG%" echo Rejected local deletion: !CHECK_PATH! still exists on origin/%BRANCH%.
-  set "BOOTSTRAP_REJECT=1"
-  exit /b 0
-)
-
-set "LOCAL_HASH="
-set "REMOTE_HASH="
-for /f "delims=" %%H in ('git -c safe.directory^=* hash-object --path="!CHECK_PATH!" "!CHECK_PATH!" 2^>NUL') do set "LOCAL_HASH=%%H"
-for /f "delims=" %%H in ('git -c safe.directory^=* rev-parse "origin/%BRANCH%:!CHECK_PATH!" 2^>NUL') do set "REMOTE_HASH=%%H"
-if not defined LOCAL_HASH (
-  set "BOOTSTRAP_REJECT=1"
-  exit /b 0
-)
-if not defined REMOTE_HASH (
-  set "BOOTSTRAP_REJECT=1"
-  exit /b 0
-)
-if /I not "!LOCAL_HASH!"=="!REMOTE_HASH!" (
-  echo Unexpected local change: !CHECK_PATH!
-  >>"%LOG%" echo Rejected local change: !CHECK_PATH! does not match origin/%BRANCH%.
-  set "BOOTSTRAP_REJECT=1"
-) else (
-  >>"%LOG%" echo Accepted bootstrap refresh: !CHECK_PATH!
-)
+if /I "!CHECK_PATH!"=="install.cmd" exit /b 0
+if /I "!CHECK_PATH!"=="upgrade.cmd" exit /b 0
+if /I "!CHECK_PATH!"=="install.ps1" exit /b 0
+if /I "!CHECK_PATH!"=="upgrade.ps1" exit /b 0
+if /I "!CHECK_PATH!"=="scripts/Environment.ps1" exit /b 0
+if /I "!CHECK_PATH!"=="scripts\Environment.ps1" exit /b 0
+echo Unexpected local change: !CHECK_PATH!
+>>"%LOG%" echo Rejected non-maintenance local change: !CHECK_PATH!
+set "BOOTSTRAP_REJECT=1"
 exit /b 0
 
 :target_error
@@ -263,7 +233,7 @@ goto :fail
 echo ERROR: Target folder contains unrelated files and is not a Git repository.
 goto :fail_pop
 :dirty_repo
-echo ERROR: Tracked local changes exist that do not match origin/%BRANCH%.
+echo ERROR: Tracked local changes exist outside maintenance bootstrap files.
 goto :fail_pop
 :repo_fail
 echo ERROR: Git repository setup/update failed.
