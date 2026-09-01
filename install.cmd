@@ -2,7 +2,7 @@
 setlocal EnableExtensions EnableDelayedExpansion
 
 rem SylphyHornPlusCon fresh-PC installer
-rem Pure CMD implementation. No PowerShell scripts are used.
+rem Pure CMD implementation. No PowerShell bootstrap scripts are used.
 rem Safe for mapped/network drives because the installer runs from TEMP.
 
 if /I "%~1"=="--temp-run" goto :temp_run
@@ -21,6 +21,7 @@ exit /b !INSTALL_RC!
 set "TARGET=%~2"
 set "REPO_URL=https://github.com/Suenee/SylphyHornPlusCon.git"
 set "BRANCH=devel"
+set "TARGET_FRAMEWORK=net10.0-windows10.0.26100.0"
 set "LOG_DIR=%TARGET%\logs"
 set "LOG=%LOG_DIR%\install.log"
 
@@ -29,6 +30,7 @@ if not exist "%LOG_DIR%" mkdir "%LOG_DIR%" >NUL 2>&1
 >>"%LOG%" echo Started: %DATE% %TIME%
 >>"%LOG%" echo Target: %TARGET%
 >>"%LOG%" echo Branch: %BRANCH%
+>>"%LOG%" echo Validation target: %TARGET_FRAMEWORK%
 
 echo ============================================
 echo SylphyHornPlusCon - FRESH INSTALL
@@ -53,8 +55,8 @@ if exist ".git" goto :existing_repo
 call :bootstrap_folder_check
 if errorlevel 1 goto :unsafe_folder
 
-echo [1/7] Creating DEVEL working copy...
->>"%LOG%" echo [1/7] Creating DEVEL working copy...
+echo [1/6] Creating DEVEL working copy...
+>>"%LOG%" echo [1/6] Creating DEVEL working copy...
 git -c safe.directory=* init >>"%LOG%" 2>&1
 if errorlevel 1 goto :repo_fail
 git -c safe.directory=* remote add origin "%REPO_URL%" >>"%LOG%" 2>&1
@@ -67,8 +69,8 @@ if errorlevel 1 goto :repo_fail
 goto :repo_ready
 
 :existing_repo
-echo [1/7] Checking existing DEVEL working copy...
->>"%LOG%" echo [1/7] Checking existing DEVEL working copy...
+echo [1/6] Checking existing DEVEL working copy...
+>>"%LOG%" echo [1/6] Checking existing DEVEL working copy...
 git -c safe.directory=* rev-parse --is-inside-work-tree >>"%LOG%" 2>&1
 if errorlevel 1 goto :repo_fail
 git -c safe.directory=* remote set-url origin "%REPO_URL%" >>"%LOG%" 2>&1
@@ -84,38 +86,35 @@ git -c safe.directory=* merge --ff-only "origin/%BRANCH%" >>"%LOG%" 2>&1
 if errorlevel 1 goto :repo_fail
 
 :repo_ready
-echo [2/7] Initializing Git submodules...
->>"%LOG%" echo [2/7] Initializing Git submodules...
+echo [2/6] Initializing Git submodules...
+>>"%LOG%" echo [2/6] Initializing Git submodules...
 git -c safe.directory=* submodule sync --recursive >>"%LOG%" 2>&1
 if errorlevel 1 goto :submodule_fail
 git -c safe.directory=* submodule update --init --recursive >>"%LOG%" 2>&1
 if errorlevel 1 goto :submodule_fail
 
-echo [3/7] Reading required .NET SDK version...
->>"%LOG%" echo [3/7] Reading required .NET SDK version...
+echo [3/6] Checking required .NET SDK...
+>>"%LOG%" echo [3/6] Checking required .NET SDK...
 call :read_sdk_version
 if errorlevel 1 goto :sdk_version_fail
 call :ensure_dotnet_sdk
 if errorlevel 1 goto :dotnet_fail
 
-echo [4/7] Checking .NET Framework developer pack...
->>"%LOG%" echo [4/7] Checking .NET Framework developer pack...
-call :ensure_net48_devpack
-if errorlevel 1 goto :net48_fail
-
-echo [5/7] Restoring NuGet packages...
->>"%LOG%" echo [5/7] Restoring NuGet packages...
-dotnet restore "source\SylphyHorn.sln" --locked-mode >>"%LOG%" 2>&1
+echo [4/6] Restoring .NET 10 projects...
+>>"%LOG%" echo [4/6] Restoring target %TARGET_FRAMEWORK%...
+dotnet restore "source\SylphyHorn\SylphyHorn.csproj" -p:TargetFramework=%TARGET_FRAMEWORK% --locked-mode >>"%LOG%" 2>&1
+if errorlevel 1 goto :restore_fail
+dotnet restore "source\SylphyHorn.Tests\SylphyHorn.Tests.csproj" -p:TargetFramework=%TARGET_FRAMEWORK% --locked-mode >>"%LOG%" 2>&1
 if errorlevel 1 goto :restore_fail
 
-echo [6/7] Building Release x64...
->>"%LOG%" echo [6/7] Building Release x64...
-dotnet build "source\SylphyHorn.sln" -c Release -p:Platform=x64 --no-restore >>"%LOG%" 2>&1
+echo [5/6] Building Release x64 for .NET 10...
+>>"%LOG%" echo [5/6] Building Release x64 for %TARGET_FRAMEWORK%...
+dotnet build "source\SylphyHorn\SylphyHorn.csproj" -c Release -f %TARGET_FRAMEWORK% -p:Platform=x64 -p:RunSylphyHornPostBuild=false --no-restore >>"%LOG%" 2>&1
 if errorlevel 1 goto :build_fail
 
-echo [7/7] Running unit tests and verifying Git state...
->>"%LOG%" echo [7/7] Running unit tests and verifying Git state...
-dotnet test "source\SylphyHorn.Tests\SylphyHorn.Tests.csproj" -c Release -p:Platform=x64 -p:RunSylphyHornPostBuild=false -p:SolutionDir="%TARGET%\source\" --no-restore >>"%LOG%" 2>&1
+echo [6/6] Running .NET 10 unit tests and verifying Git state...
+>>"%LOG%" echo [6/6] Running unit tests for %TARGET_FRAMEWORK%...
+dotnet test "source\SylphyHorn.Tests\SylphyHorn.Tests.csproj" -c Release -f %TARGET_FRAMEWORK% -p:Platform=x64 -p:RunSylphyHornPostBuild=false -p:SolutionDir="%TARGET%\source\" --no-restore >>"%LOG%" 2>&1
 if errorlevel 1 goto :test_fail
 
 set "HEAD_SHA="
@@ -131,6 +130,7 @@ echo ============================================
 echo INSTALL OK
 echo ============================================
 echo .NET SDK: !SDK_VERSION!
+echo Target:   %TARGET_FRAMEWORK%
 echo Commit:   !HEAD_SHA!
 echo Log:      %LOG%
 exit /b 0
@@ -179,17 +179,6 @@ dotnet --list-sdks 2>NUL | findstr /b /c:"!SDK_VERSION! [" >NUL
 if errorlevel 1 exit /b 1
 exit /b 0
 
-:ensure_net48_devpack
-if exist "%ProgramFiles(x86)%\Reference Assemblies\Microsoft\Framework\.NETFramework\v4.8\mscorlib.dll" exit /b 0
-echo .NET Framework developer pack not found. Installing with WinGet...
->>"%LOG%" echo Installing Microsoft.DotNet.Framework.DeveloperPack_4...
-where winget.exe >NUL 2>&1
-if errorlevel 1 exit /b 1
-winget install --id Microsoft.DotNet.Framework.DeveloperPack_4 --exact --accept-package-agreements --accept-source-agreements --silent >>"%LOG%" 2>&1
-if errorlevel 1 exit /b 1
-if not exist "%ProgramFiles(x86)%\Reference Assemblies\Microsoft\Framework\.NETFramework\v4.8\mscorlib.dll" exit /b 1
-exit /b 0
-
 :bootstrap_folder_check
 set "UNSAFE=0"
 for /f "delims=" %%F in ('dir /b /a 2^>NUL') do call :check_bootstrap_item "%%F"
@@ -230,17 +219,14 @@ goto :fail_pop
 :dotnet_fail
 echo ERROR: Required .NET SDK installation/verification failed.
 goto :fail_pop
-:net48_fail
-echo ERROR: .NET Framework developer pack installation/verification failed.
-goto :fail_pop
 :restore_fail
-echo ERROR: NuGet restore failed.
+echo ERROR: .NET 10 NuGet restore failed.
 goto :fail_pop
 :build_fail
-echo ERROR: Release build failed.
+echo ERROR: .NET 10 Release build failed.
 goto :fail_pop
 :test_fail
-echo ERROR: Unit tests failed.
+echo ERROR: .NET 10 unit tests failed.
 goto :fail_pop
 :git_state_fail
 echo ERROR: Local HEAD differs from origin/%BRANCH%.
