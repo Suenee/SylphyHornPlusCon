@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.20 - 02.09.2026
+
+- Replaced the monolithic self-modifying CMD updater with the proven bootstrap architecture documented in `FolderHeatMap/UPGRADE.md`.
+- `upgrade.cmd` is now a small launcher that fetches the explicit active branch, extracts the authoritative `upgrade.ps1` to `%TEMP%`, passes repository/branch state through environment variables, executes the runner, and returns its exact exit code.
+- Added backward-compatible handling for the legacy `--temp-run <repo>` handoff so updater revisions 0.14-0.19 can reach the new architecture once.
+- Added `upgrade.ps1` as the authoritative upgrade runner for repository synchronization, dependency checks, submodules, .NET restore, Release x64 build, unit tests, logging, and final status reporting.
+- Bootstrap files `upgrade.cmd` and `upgrade.ps1` are treated as authoritative remote maintenance state and excluded from user-edit protection; all other tracked local edits still abort the upgrade.
+- After protected tracked edits are ruled out, the runner synchronizes deterministically with `git reset --hard origin/<branch>` while leaving untracked runtime/user data untouched and never using broad `git clean -fd`.
+- Added exact Git `dubious ownership` recovery based on Git's own suggested `safe.directory` value, without wildcard trust, for mapped/UNC repositories.
+- Added PowerShell native-command handling where process exit code is authoritative and harmless stderr does not become a false upgrade failure.
+- Added immediate `$LASTEXITCODE` capture, explicit branch/remote verification, `HEAD == origin/<branch>` verification, and authoritative runner blob verification.
+- Added final tracked-tree validation after restore/build/test and cleanup of tracked NuGet lock files generated during validation.
+- Reworked `UPGRADE.md` with the bootstrap architecture, network-drive rules, known updater failure signatures, prevention rules, and minimum acceptance test matrix.
+
 ## 0.19 - 02.09.2026
 
 - Replaced updater source synchronization based on `git merge --ff-only` with `git reset --keep origin/<branch>` after the protected-change safety gate passes.
