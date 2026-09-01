@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.06 - 01.09.2026
+
+- Fixed bootstrap reconciliation for older existing checkouts.
+- Removed pre-validation deletion of legacy tracked PowerShell files, which previously created false local modifications before the safety check.
+- Installer now accepts tracked bootstrap changes only when each changed path already matches `origin/devel`, including files intentionally deleted on the remote branch.
+- Verified bootstrap-only changes are restored to the current HEAD before the normal `--ff-only` update, preserving protection against unrelated local edits.
+
 ## 0.05 - 01.09.2026
 
 - Fixed the existing-repository install bootstrap so downloading a fresh tracked `install.cmd` no longer causes a false local-change failure.
