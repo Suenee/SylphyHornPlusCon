@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.09 - 01.09.2026
+
+- Added explicit Git `safe.directory` registration for the repository in protected global configuration.
+- Added mapped-drive to UNC path resolution through `HKCU\Network` so Git trusts the exact canonical network path without using `safe.directory=*`.
+- Removed reliance on command-local `-c safe.directory=*` overrides for normal repository operations.
+- Fixed the CMD self-bootstrap control flow by keeping the TEMP-run `call` and parent `exit /b` on one parsed line, preventing the parent batch from resuming from a repository copy that may have been replaced during checkout.
+- Applied the same network-share and self-bootstrap protections to both `install.cmd` and `upgrade.cmd`.
+
 ## 0.08 - 01.09.2026
 
 - Replaced the repeated bootstrap-reconciliation strategy with a deterministic existing-repository rebuild.
