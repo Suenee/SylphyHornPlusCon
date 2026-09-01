@@ -3,7 +3,7 @@ setlocal EnableExtensions EnableDelayedExpansion
 
 rem SylphyHornPlusCon fresh-PC installer
 rem Pure CMD implementation. No PowerShell bootstrap scripts are used.
-rem Safe for mapped/network drives because the installer runs from TEMP.
+rem Supports local, mapped, and UNC repository paths.
 
 if /I "%~1"=="--temp-run" goto :temp_run
 
@@ -12,10 +12,10 @@ if "!TARGET:~-1!"=="\" set "TARGET=!TARGET:~0,-1!"
 set "INSTALL_TEMP=%TEMP%\sylphyhornpluscon-install-%RANDOM%-%RANDOM%.cmd"
 copy /y "%~f0" "!INSTALL_TEMP!" >NUL
 if errorlevel 1 exit /b 1
-call "!INSTALL_TEMP!" --temp-run "!TARGET!"
-set "INSTALL_RC=!ERRORLEVEL!"
-del /q "!INSTALL_TEMP!" >NUL 2>&1
-exit /b !INSTALL_RC!
+rem Keep CALL and EXIT on the same parsed line. The repository copy of install.cmd
+rem may be replaced while the TEMP copy runs, so the parent batch must never resume
+rem by reading more commands from the replaced file.
+call "!INSTALL_TEMP!" --temp-run "!TARGET!" & exit /b
 
 :temp_run
 set "TARGET=%~2"
@@ -41,6 +41,8 @@ echo.
 
 call :ensure_git
 if errorlevel 1 goto :fail
+call :register_safe_directory
+if errorlevel 1 goto :safe_directory_fail
 
 if not exist "%TARGET%" mkdir "%TARGET%"
 if errorlevel 1 goto :target_error
@@ -53,39 +55,39 @@ if errorlevel 1 goto :unsafe_folder
 
 echo [1/6] Creating DEVEL working copy...
 >>"%LOG%" echo [1/6] Creating DEVEL working copy...
-git -c safe.directory=* init >>"%LOG%" 2>&1
+git init >>"%LOG%" 2>&1
 if errorlevel 1 goto :repo_fail
-git -c safe.directory=* remote add origin "%REPO_URL%" >>"%LOG%" 2>&1
-git -c safe.directory=* remote set-url origin "%REPO_URL%" >>"%LOG%" 2>&1
+git remote add origin "%REPO_URL%" >>"%LOG%" 2>&1
+git remote set-url origin "%REPO_URL%" >>"%LOG%" 2>&1
 if errorlevel 1 goto :repo_fail
-git -c safe.directory=* fetch origin "%BRANCH%" >>"%LOG%" 2>&1
+git fetch origin "%BRANCH%" >>"%LOG%" 2>&1
 if errorlevel 1 goto :repo_fail
-git -c safe.directory=* checkout -f -B "%BRANCH%" "origin/%BRANCH%" >>"%LOG%" 2>&1
+git checkout -f -B "%BRANCH%" "origin/%BRANCH%" >>"%LOG%" 2>&1
 if errorlevel 1 goto :repo_fail
 goto :repo_ready
 
 :existing_repo
 echo [1/6] Rebuilding existing DEVEL working copy from origin...
 >>"%LOG%" echo [1/6] Rebuilding existing DEVEL working copy from origin...
-git -c safe.directory=* rev-parse --is-inside-work-tree >>"%LOG%" 2>&1
+git rev-parse --is-inside-work-tree >>"%LOG%" 2>&1
 if errorlevel 1 goto :repo_fail
-git -c safe.directory=* remote set-url origin "%REPO_URL%" >>"%LOG%" 2>&1
+git remote set-url origin "%REPO_URL%" >>"%LOG%" 2>&1
 if errorlevel 1 goto :repo_fail
-git -c safe.directory=* fetch --prune origin "%BRANCH%" >>"%LOG%" 2>&1
+git fetch --prune origin "%BRANCH%" >>"%LOG%" 2>&1
 if errorlevel 1 goto :repo_fail
 call :check_only_maintenance_dirty
 if errorlevel 1 goto :dirty_repo
 echo Existing tracked tree contains no user/source edits. Replacing it with origin/%BRANCH%...
 >>"%LOG%" echo Safety check passed. Forcing tracked tree and branch to origin/%BRANCH%.
-git -c safe.directory=* checkout -f -B "%BRANCH%" "origin/%BRANCH%" >>"%LOG%" 2>&1
+git checkout -f -B "%BRANCH%" "origin/%BRANCH%" >>"%LOG%" 2>&1
 if errorlevel 1 goto :repo_fail
 
 :repo_ready
 echo [2/6] Initializing Git submodules...
 >>"%LOG%" echo [2/6] Initializing Git submodules...
-git -c safe.directory=* submodule sync --recursive >>"%LOG%" 2>&1
+git submodule sync --recursive >>"%LOG%" 2>&1
 if errorlevel 1 goto :submodule_fail
-git -c safe.directory=* submodule update --init --recursive --force >>"%LOG%" 2>&1
+git submodule update --init --recursive --force >>"%LOG%" 2>&1
 if errorlevel 1 goto :submodule_fail
 
 echo [3/6] Checking required .NET SDK...
@@ -114,8 +116,8 @@ if errorlevel 1 goto :test_fail
 
 set "HEAD_SHA="
 set "ORIGIN_SHA="
-for /f "delims=" %%H in ('git -c safe.directory^=* rev-parse HEAD') do set "HEAD_SHA=%%H"
-for /f "delims=" %%H in ('git -c safe.directory^=* rev-parse origin/%BRANCH%') do set "ORIGIN_SHA=%%H"
+for /f "delims=" %%H in ('git rev-parse HEAD') do set "HEAD_SHA=%%H"
+for /f "delims=" %%H in ('git rev-parse origin/%BRANCH%') do set "ORIGIN_SHA=%%H"
 if /I not "!HEAD_SHA!"=="!ORIGIN_SHA!" goto :git_state_fail
 
 >>"%LOG%" echo STATUS: SUCCESS - phase=COMPLETE
@@ -142,6 +144,30 @@ if errorlevel 1 exit /b 1
 set "PATH=%ProgramFiles%\Git\cmd;%LOCALAPPDATA%\Programs\Git\cmd;%PATH%"
 where git.exe >NUL 2>&1
 if errorlevel 1 exit /b 1
+exit /b 0
+
+:register_safe_directory
+rem Git safe.directory is only honored from protected configuration. Register the
+rem exact repository path globally, never the unsafe wildcard '*'.
+set "SAFE_TARGET=%TARGET:\=/%"
+git config --global --add safe.directory "%SAFE_TARGET%" >>"%LOG%" 2>&1
+if errorlevel 1 exit /b 1
+>>"%LOG%" echo Registered Git safe.directory: %SAFE_TARGET%
+
+rem A mapped drive can be canonicalized by Git to its UNC path. Resolve persistent
+rem mappings from HKCU\Network so the same repository is trusted in both forms.
+if "%TARGET:~1,1%"==":" (
+  set "MAP_DRIVE=%TARGET:~0,1%"
+  set "UNC_ROOT="
+  for /f "tokens=2,*" %%A in ('reg query "HKCU\Network\!MAP_DRIVE!" /v RemotePath 2^>NUL ^| findstr /I /C:"RemotePath"') do set "UNC_ROOT=%%B"
+  if defined UNC_ROOT (
+    set "UNC_TARGET=!UNC_ROOT!!TARGET:~2!"
+    set "UNC_TARGET=!UNC_TARGET:\=/!"
+    git config --global --add safe.directory "!UNC_TARGET!" >>"%LOG%" 2>&1
+    if errorlevel 1 exit /b 1
+    >>"%LOG%" echo Registered Git UNC safe.directory: !UNC_TARGET!
+  )
+)
 exit /b 0
 
 :read_sdk_version
@@ -189,9 +215,9 @@ exit /b 0
 :check_only_maintenance_dirty
 set "DIRTY_REJECT=0"
 set "DIRTY_LIST=%TEMP%\shpc-dirty-%RANDOM%-%RANDOM%.txt"
-git -c safe.directory=* diff --name-only > "!DIRTY_LIST!" 2>>"%LOG%"
+git diff --name-only > "!DIRTY_LIST!" 2>>"%LOG%"
 if errorlevel 1 (del /q "!DIRTY_LIST!" >NUL 2>&1& exit /b 1)
-git -c safe.directory=* diff --cached --name-only >> "!DIRTY_LIST!" 2>>"%LOG%"
+git diff --cached --name-only >> "!DIRTY_LIST!" 2>>"%LOG%"
 if errorlevel 1 (del /q "!DIRTY_LIST!" >NUL 2>&1& exit /b 1)
 for /f "usebackq delims=" %%F in ("!DIRTY_LIST!") do call :classify_dirty_path "%%F"
 del /q "!DIRTY_LIST!" >NUL 2>&1
@@ -213,6 +239,9 @@ exit /b 0
 
 :target_error
 echo ERROR: Cannot create or enter %TARGET%.
+goto :fail
+:safe_directory_fail
+echo ERROR: Unable to register this repository as a trusted Git safe.directory.
 goto :fail
 :unsafe_folder
 echo ERROR: Target folder contains unrelated files and is not a Git repository.
