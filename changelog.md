@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.22 - 02.09.2026
+
+- Added a true two-stage `upgrade.cmd` self-update bootstrap.
+- Stage 0 now always fetches the explicit active branch, extracts the current remote `upgrade.cmd`, normalizes the temporary launcher to CRLF, and transfers control to that current launcher before any substantial bootstrap logic runs.
+- Stage 1, running from `%TEMP%`, then extracts and runs the authoritative current `upgrade.ps1` from the same branch.
+- Preserved legacy `--temp-run <repo>` compatibility by routing it through Stage 0 instead of directly into a possibly stale launcher implementation.
+- Added explicit CRLF materialization for temporary remote `.cmd` execution so Git blob LF normalization cannot break batch labels.
+- Documented the one-time recovery rule for already-broken pre-Stage-0 launchers: they cannot repair themselves and must have `upgrade.cmd` replaced once from outside the broken process; subsequent versions self-update through Stage 0.
+- Extended `UPGRADE.md` with the three-layer bootstrap contract and regression tests for stale-launcher and raw-LF batch failures.
+
 ## 0.21 - 02.09.2026
 
 - Fixed a CMD parser failure in the `dubious ownership` bootstrap recovery path.
