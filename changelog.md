@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.07 - 01.09.2026
+
+- Rolled back the overly strict remote-content bootstrap reconciliation introduced in 0.05/0.06.
+- Installer now treats only the known maintenance bootstrap files (`install.cmd`, `upgrade.cmd`, and the three legacy PowerShell bootstrap paths) as replaceable during a fresh-install refresh.
+- Any tracked change outside those maintenance-owned paths still blocks installation.
+- Maintenance paths are restored individually from the current HEAD before the normal `--ff-only` update; the installer does not reset the whole working tree.
+
 ## 0.06 - 01.09.2026
 
 - Fixed bootstrap reconciliation for older existing checkouts.
