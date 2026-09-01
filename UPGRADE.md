@@ -1,6 +1,6 @@
 # Install and Upgrade Protocol
 
-SylphyHornPlusCon follows the shared Windows maintenance pattern used by related Suenee projects.
+SylphyHornPlusCon uses a CMD-only Windows maintenance workflow. No PowerShell runner or helper script is part of the install or upgrade path.
 
 ## First installation
 
@@ -10,21 +10,21 @@ Run:
 install.cmd
 ```
 
-`install.cmd` is intentionally a minimal launcher. `install.ps1` is the authoritative first-run installer.
+`install.cmd` is a self-contained bootstrap installer. It copies itself to `%TEMP%` before modifying the target directory, so Git can safely replace the repository copy during the first checkout.
 
 The installer:
 
-- requires a Git working copy of `Suenee/SylphyHornPlusCon`;
+- works from a folder containing only `install.cmd` (and optionally `logs/`);
 - installs Git for Windows through WinGet when Git is missing;
-- reads the exact required .NET SDK from `global.json`;
-- installs that exact SDK from Microsoft's official `dotnet-install.ps1` when necessary;
+- creates or updates the `devel` Git working copy of `Suenee/SylphyHornPlusCon`;
 - initializes and updates all Git submodules recursively;
+- reads the exact required .NET SDK version from `global.json`;
+- installs that exact SDK with the official `Microsoft.DotNet.SDK.10` WinGet package when necessary;
+- ensures the .NET Framework developer pack needed by the `net48` target is available;
 - restores NuGet packages in locked mode;
 - builds the Release x64 configuration;
 - runs unit tests before reporting success;
-- records the complete first-run transcript in `logs/install.log`.
-
-The .NET SDK installed by this project is placed in the current user's `%LocalAppData%\Microsoft\dotnet` directory and is added to the user's PATH. Administrator elevation is not required for the .NET SDK installation.
+- records diagnostics in `logs/install.log`.
 
 ## Regular updates
 
@@ -34,19 +34,22 @@ Normally run only:
 upgrade.cmd
 ```
 
-`upgrade.cmd` is a small bootstrap launcher. Before doing anything else it downloads the current `upgrade.ps1` from the active `main` or `devel` branch and executes that temporary runner. The running CMD launcher is never overwritten or reconstructed.
+`upgrade.cmd` also copies itself to `%TEMP%` before doing any repository update. This means the tracked repository copy may be replaced safely while the temporary copy remains the running process.
 
-The upgrade runner:
+The updater:
 
+- supports only `main` and `devel` branches;
+- fetches the active branch before any update;
+- checks whether `upgrade.cmd` itself changed upstream and transfers control to the remote version when necessary;
+- compares the updater using Git-normalized blob hashes rather than raw working-tree bytes, avoiding CRLF false positives;
 - refuses to destroy tracked local modifications;
 - leaves untracked user/runtime data untouched;
 - uses fast-forward-only Git synchronization;
-- verifies that local `HEAD` exactly matches `origin/<branch>` after synchronization;
+- verifies that local `HEAD` exactly matches `origin/<branch>`;
 - synchronizes and updates submodules recursively;
-- reloads the environment helper after Git synchronization so dependency logic self-updates too;
-- installs the exact .NET SDK required by the current `global.json` when necessary;
+- installs missing required build dependencies through WinGet;
 - restores dependencies, builds Release x64, and runs unit tests;
-- writes a single-run diagnostic transcript to `logs/upgrade.log`;
+- writes diagnostics to `logs/upgrade.log`;
 - returns a non-zero process exit code on failure.
 
 ## Logs
@@ -60,24 +63,6 @@ Current maintenance logs are:
 
 Future application logging must use the same `logs/` root and follow the project's `off` / `single` / `all` logging modes when application logging is introduced.
 
-## Stable diagnostic phases
-
-Upgrade failures identify one of these phases:
-
-- `SELF-UPDATE`
-- `DEPENDENCIES`
-- `SYNC`
-- `SUBMODULES`
-- `VERIFY`
-- `COMPLETE`
-
-The final status is always one of:
-
-```text
-STATUS: SUCCESS - phase=COMPLETE
-STATUS: FAILED - phase=<PHASE>
-```
-
 ## Line endings
 
 Windows maintenance scripts are explicitly CRLF-controlled by `.gitattributes`:
@@ -85,18 +70,16 @@ Windows maintenance scripts are explicitly CRLF-controlled by `.gitattributes`:
 ```gitattributes
 *.cmd text eol=crlf
 *.bat text eol=crlf
-*.ps1 text eol=crlf
 ```
 
-Do not reconstruct or rewrite a running CMD launcher through PowerShell text pipelines. Git semantics, rather than raw working-tree byte hashes, are authoritative when deciding whether tracked files changed.
+Git semantics, rather than raw working-tree byte comparison, are authoritative when deciding whether tracked CMD files changed.
 
 ## Safety rules
 
 Do not reintroduce these updater failure patterns:
 
-- large label-heavy logic inside `upgrade.cmd`;
-- self-overwriting a currently executing CMD file;
-- `CMD -> PowerShell -> CMD` updater chains;
+- PowerShell-based install or upgrade runners;
+- self-overwriting a currently executing repository CMD file;
 - routine `git reset --hard` synchronization;
 - broad `git clean -fd` cleanup;
 - stashing or deleting untracked user/runtime data;
