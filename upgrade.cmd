@@ -16,17 +16,11 @@ if errorlevel 1 (
     exit /b 1
 )
 
-cd /d "!REPO_DIR!" 2>NUL
-if errorlevel 1 (
-    echo ERROR: Cannot enter repository directory: !REPO_DIR!
-    exit /b 1
-)
-
 if not exist "!REPO_DIR!\logs" mkdir "!REPO_DIR!\logs" >NUL 2>NUL
 set "LOG=!REPO_DIR!\logs\upgrade.log"
 
 set "GIT_DETECT_ERR=%TEMP%\SHPC-git-detect-%RANDOM%-%RANDOM%.log"
-git rev-parse --is-inside-work-tree >NUL 2>"!GIT_DETECT_ERR!"
+git -C "!REPO_DIR!" rev-parse --is-inside-work-tree >NUL 2>"!GIT_DETECT_ERR!"
 if errorlevel 1 (
     findstr /I /C:"detected dubious ownership" "!GIT_DETECT_ERR!" >NUL 2>NUL
     if errorlevel 1 (
@@ -45,7 +39,7 @@ if errorlevel 1 (
         del /q "!GIT_DETECT_ERR!" >NUL 2>NUL
         exit /b !SAFE_RC!
     )
-    git rev-parse --is-inside-work-tree >NUL 2>NUL
+    git -C "!REPO_DIR!" rev-parse --is-inside-work-tree >NUL 2>NUL
     if errorlevel 1 (
         echo ERROR: Repository is still rejected by Git after safe.directory registration.
         del /q "!GIT_DETECT_ERR!" >NUL 2>NUL
@@ -55,7 +49,7 @@ if errorlevel 1 (
 del /q "!GIT_DETECT_ERR!" >NUL 2>NUL
 
 set "BRANCH="
-for /f "delims=" %%B in ('git branch --show-current 2^>NUL') do set "BRANCH=%%B"
+for /f "delims=" %%B in ('git -C "!REPO_DIR!" branch --show-current 2^>NUL') do set "BRANCH=%%B"
 if not defined BRANCH (
     echo ERROR: Cannot determine current Git branch.
     exit /b 1
@@ -65,14 +59,14 @@ if /I not "!BRANCH!"=="main" if /I not "!BRANCH!"=="devel" (
     exit /b 1
 )
 
-git remote set-url origin "https://github.com/Suenee/SylphyHornPlusCon.git" >NUL 2>"!LOG!"
+git -C "!REPO_DIR!" remote set-url origin "https://github.com/Suenee/SylphyHornPlusCon.git" >NUL 2>"!LOG!"
 if errorlevel 1 (
     >>"!LOG!" echo STATUS: FAILED - phase=SELF-UPDATE/BOOTSTRAP
     echo ERROR: Cannot set the expected Git origin. See !LOG!
     exit /b 1
 )
 
-git fetch --prune origin "!BRANCH!" >NUL 2>"!LOG!"
+git -C "!REPO_DIR!" fetch --prune origin "!BRANCH!" >NUL 2>"!LOG!"
 if errorlevel 1 (
     >>"!LOG!" echo STATUS: FAILED - phase=SELF-UPDATE/BOOTSTRAP
     echo ERROR: git fetch failed before bootstrap. See !LOG!
@@ -80,7 +74,7 @@ if errorlevel 1 (
 )
 
 set "RUNNER_TEMP=%TEMP%\SHPC-upgrade-%RANDOM%-%RANDOM%.ps1"
-git show "origin/!BRANCH!:upgrade.ps1" >"!RUNNER_TEMP!" 2>>"!LOG!"
+git -C "!REPO_DIR!" show "origin/!BRANCH!:upgrade.ps1" >"!RUNNER_TEMP!" 2>>"!LOG!"
 if errorlevel 1 (
     >>"!LOG!" echo STATUS: FAILED - phase=SELF-UPDATE/BOOTSTRAP
     echo ERROR: Could not extract the authoritative upgrade.ps1 from origin/!BRANCH!.
