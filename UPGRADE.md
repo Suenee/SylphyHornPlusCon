@@ -1,6 +1,6 @@
 # Install and Upgrade Protocol
 
-SylphyHornPlusCon uses a bootstrap-based Windows maintenance workflow. The design follows the proven updater architecture documented in `Suenee/FolderHeatMap/UPGRADE.md`: keep `upgrade.cmd` small, always execute the current branch version of `upgrade.ps1` from `%TEMP%`, and keep all substantial upgrade logic in that authoritative runner.
+SylphyHornPlusCon uses a two-stage bootstrap-based Windows maintenance workflow. The design follows the proven updater architecture documented in `Suenee/FolderHeatMap/UPGRADE.md`: keep `upgrade.cmd` small, always execute the current branch launcher from `%TEMP%`, then execute the current branch version of `upgrade.ps1` from `%TEMP%`, and keep all substantial upgrade logic in that authoritative runner.
 
 ## First installation
 
@@ -22,20 +22,35 @@ Normally run only:
 upgrade.cmd
 ```
 
-The upgrade architecture is deliberately split into two layers.
+The upgrade architecture is deliberately split into three execution layers.
 
-### `upgrade.cmd` - bootstrap launcher only
+### Stage 0 - local `upgrade.cmd`
 
-The launcher must remain small and boring. Its responsibilities are limited to:
+The repository copy is only an entry point. Before running any substantial bootstrap logic it must transfer control to the current `upgrade.cmd` from the active remote branch.
 
-- clear the console for an interactive run;
-- resolve and normalize the repository path, including removal of a trailing backslash;
-- verify Git availability;
-- detect the repository;
-- recover from Git `dubious ownership` by registering only the exact `safe.directory` path suggested by Git;
+Stage 0 responsibilities are intentionally limited to:
+
+- resolve and normalize the repository path;
+- verify Git and Windows PowerShell availability;
+- recover exact Git `safe.directory` when required;
 - determine the active supported branch (`main` or `devel`);
 - verify/set the expected `origin` URL;
 - fetch that explicit branch;
+- extract `origin/<branch>:upgrade.cmd` to a raw temporary file;
+- normalize that temporary launcher explicitly to CRLF;
+- execute the CRLF-normalized current launcher from `%TEMP%` using `--current-bootstrap`;
+- return exactly the child launcher's exit code.
+
+Stage 0 must not assume that the repository copy of `upgrade.cmd` is current. This is the core self-update contract.
+
+### Stage 1 - current remote `upgrade.cmd` in `%TEMP%`
+
+The current launcher now runs independently of the repository copy that Git may replace later.
+
+Its responsibilities are limited to:
+
+- revalidate the repository and exact branch;
+- fetch the target branch again;
 - extract `origin/<branch>:upgrade.ps1` to a unique file under `%TEMP%`;
 - pass repository path and branch through environment variables;
 - execute the temporary runner with Windows PowerShell;
@@ -43,9 +58,9 @@ The launcher must remain small and boring. Its responsibilities are limited to:
 
 The launcher must not perform repository synchronization, dependency installation, restore, build, tests, deployment, or self-modifying continuation logic.
 
-Backward compatibility is intentional: `upgrade.cmd` accepts the legacy `--temp-run <repo>` handoff used by updater revisions 0.14-0.19, allowing an old local launcher to reach the new bootstrap architecture once.
+Backward compatibility is intentional: `upgrade.cmd` still accepts the legacy `--temp-run <repo>` handoff used by updater revisions 0.14-0.19. A legacy handoff enters Stage 0 so the currently running generation can still transfer control to the latest remote launcher.
 
-### `upgrade.ps1` - authoritative runner
+### Stage 2 - `upgrade.ps1` authoritative runner
 
 All substantial work belongs here. The runner always comes from the freshly fetched target branch and executes from `%TEMP%`; therefore replacing the repository copies of `upgrade.cmd` or `upgrade.ps1` cannot affect the currently running code.
 
@@ -124,7 +139,9 @@ Windows scripts are protocol-controlled by `.gitattributes`:
 
 Git semantics are authoritative. Never compare raw working-tree bytes with Git blobs to decide whether a Windows script changed; CRLF/LF materialization can create false mismatches.
 
-The authoritative PowerShell runner is extracted directly from Git and executed as a `.ps1`. Do not reconstruct or execute label-heavy `.cmd` files through text pipelines.
+A remote `upgrade.cmd` extracted with `git show` is a Git blob and therefore may contain LF line endings even though `.gitattributes` requires CRLF in a Windows working tree. Stage 0 must never execute that raw blob directly. It must materialize a separate temporary `.cmd` with explicit CRLF normalization first.
+
+The authoritative PowerShell runner is extracted directly from Git and executed as a `.ps1`; it does not use CMD labels and does not require the same batch-label CRLF recovery step.
 
 ## Native command rules
 
@@ -162,13 +179,23 @@ Process exit code and final status must agree.
 
 The following failures are considered regression tests for this project family.
 
+### Old launcher cannot reach the new launcher
+
+Symptom: GitHub contains a fixed `upgrade.cmd`, but running the repository copy still executes the old/broken launcher and never reaches the fixed version.
+
+Root cause: the local launcher tries to perform its own complete bootstrap before transferring control to the current remote launcher. If that local generation contains a parser/bootstrap defect, self-update is impossible.
+
+Prevention: Stage 0 exists only to fetch and execute the current remote `upgrade.cmd` from `%TEMP%`. All changeable bootstrap behavior belongs to the current temporary launcher, not the repository entry-point generation.
+
+Recovery rule: if a pre-Stage-0 launcher is already broken before it can fetch the remote launcher, it cannot repair itself. Replace `upgrade.cmd` once from outside that process (for example with Git from the repository directory), then all subsequent versions must self-update through Stage 0.
+
 ### Self-overwriting a running CMD
 
 Symptom: messages from different updater generations appear in one run, impossible labels/variables execute, or the updater reports itself dirty repeatedly.
 
 Root cause: `cmd.exe` continues reading a tracked batch file after Git has replaced it.
 
-Prevention: `upgrade.cmd` is launcher only. The current branch `upgrade.ps1` runs from `%TEMP%` and never depends on rereading the repository launcher.
+Prevention: the current remote `upgrade.cmd` runs from `%TEMP%`; the authoritative `upgrade.ps1` also runs from `%TEMP%`. Repository synchronization may therefore replace both repository copies without affecting executing code.
 
 ### Bootstrap file remains dirty after self-update
 
@@ -182,7 +209,7 @@ Prevention: exclude only `upgrade.cmd` and `upgrade.ps1` from user-edit protecti
 
 Symptom: broken quoting, trailing-backslash corruption, lost exit codes, or batch-label errors.
 
-Prevention: one CMD launcher, one PowerShell runner. Repository path is transported through environment variables and normalized once.
+Prevention: Stage 0 uses PowerShell only for one narrowly-scoped CRLF materialization step outside parenthesized CMD blocks; Stage 1 launches one authoritative PowerShell runner. Repository path is transported through environment variables and normalized once.
 
 ### Inline PowerShell inside a parenthesized CMD block
 
@@ -190,15 +217,15 @@ Symptom: CMD prints a fragment of the PowerShell command followed by `was unexpe
 
 Root cause: `cmd.exe` parses parentheses and block structure before invoking `powershell.exe`; parentheses inside a quoted `-Command` string can still break a surrounding CMD `if (...)` block.
 
-Prevention: do not place complex inline PowerShell expressions inside parenthesized CMD blocks. Keep recovery logic outside the block or, preferably, parse simple bootstrap data directly in CMD and reserve PowerShell for the authoritative `.ps1` runner.
+Prevention: do not place complex inline PowerShell expressions inside parenthesized CMD blocks. The Stage 0 CRLF conversion command is deliberately a standalone command line outside any parenthesized block.
 
-### Downloaded/generated CMD label failures
+### Raw remote CMD executed without CRLF materialization
 
-Symptom: `The system cannot find the batch label specified`.
+Symptom: `The system cannot find the batch label specified`, random label jumps fail, or execution differs between local checkout and a TEMP launcher extracted from Git.
 
-Root cause: LF/CRLF conversion or reconstructed batch content.
+Root cause: `git show` returns normalized Git blob content, typically LF, while Windows batch execution and label scanning are sensitive to line materialization.
 
-Prevention: never make a downloaded label-heavy CMD authoritative. The downloaded authoritative component is `upgrade.ps1`; CRLF remains enforced for repository Windows scripts.
+Prevention: extract remote `upgrade.cmd` to a raw temporary file, normalize line endings explicitly to CRLF, and execute only the normalized temporary `.cmd`.
 
 ### Git `dubious ownership` on NAS/UNC
 
@@ -263,10 +290,12 @@ Before treating the updater as stable, test at least:
 - clean `devel` repository;
 - no remote update;
 - remote source update;
-- old local launcher reaching the current remote runner;
+- older but functional Stage-0 launcher reaching the current remote launcher;
+- current remote launcher reaching the current remote runner;
 - immediate second run (idempotence);
 - protected tracked source modification;
 - modified `upgrade.cmd` from an old updater generation;
+- CRLF-safe execution of a TEMP `upgrade.cmd` extracted from a Git blob;
 - untracked file in repository root;
 - untracked build files inside submodules;
 - real tracked change inside a submodule;
