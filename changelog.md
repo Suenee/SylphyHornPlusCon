@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.15 - 02.09.2026
+
+- Fixed `upgrade.cmd` dirty-state detection for repositories containing Git submodules with untracked build or restore artifacts.
+- Replaced `git status --porcelain` as the upgrade gate with tracked-diff checks using `--ignore-submodules=untracked`.
+- Upgrade now ignores only untracked submodule content such as generated `bin`/`obj` files while still rejecting tracked source edits, staged edits, and submodule commit changes.
+- Restores known generated NuGet lock files before evaluating whether the working tree is safe to upgrade.
+- When a real tracked modification blocks upgrade, the exact blocking paths are now printed to the console and written to `logs/upgrade.log`.
+
 ## 0.14 - 02.09.2026
 
 - Aligned `upgrade.cmd` with the verified .NET 10 validation flow used by `install.cmd` 0.13.
