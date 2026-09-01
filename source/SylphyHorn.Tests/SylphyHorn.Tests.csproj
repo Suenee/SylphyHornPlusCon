@@ -1,17 +1,13 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
 
 	<PropertyGroup>
-		<TargetFrameworks>net48;net10.0-windows10.0.26100.0</TargetFrameworks>
+		<TargetFramework>net10.0-windows10.0.26100.0</TargetFramework>
 		<OutputType>Exe</OutputType>
 		<Platforms>AnyCPU;x64;x86</Platforms>
 		<UseWPF>true</UseWPF>
 		<UseWindowsForms>true</UseWindowsForms>
 		<IsPackable>false</IsPackable>
-	</PropertyGroup>
-
-	<PropertyGroup>
-		<MetroBinaryTfm Condition="'$(TargetFramework)' == 'net48'">net48</MetroBinaryTfm>
-		<MetroBinaryTfm Condition="'$(TargetFramework)' == 'net10.0-windows10.0.26100.0'">net10.0-windows</MetroBinaryTfm>
+		<MetroBinaryTfm>net10.0-windows</MetroBinaryTfm>
 	</PropertyGroup>
 
 	<ItemGroup>
