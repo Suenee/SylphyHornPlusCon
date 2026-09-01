@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.08 - 01.09.2026
+
+- Replaced the repeated bootstrap-reconciliation strategy with a deterministic existing-repository rebuild.
+- Installer now checks tracked changes only by path: known maintenance files are disposable, while any source/user tracked edit stops the install.
+- After the safety check, the installer force-checks out `devel` directly from `origin/devel`, eliminating CRLF/hash/self-update reconciliation loops.
+- Untracked files are preserved; no broad `git clean` is used.
+- Recursive submodules are synchronized with `--force` after the tracked tree is rebuilt.
+
 ## 0.07 - 01.09.2026
 
 - Rolled back the overly strict remote-content bootstrap reconciliation introduced in 0.05/0.06.
