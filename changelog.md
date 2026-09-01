@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.13 - 02.09.2026
+
+- Completed the .NET 10 target alignment for `SylphyHorn.Core`.
+- Removed the remaining `net48` target from the core project.
+- Aligned `SylphyHorn.Core` with `net10.0-windows10.0.26100.0`, matching the main application and test projects.
+- Simplified the core MetroTrilithon binary selection to the .NET 10 build only.
+- Fixed install-time NuGet lock-file cleanup so it restores only lock files that are actually tracked by Git.
+- Prevented cleanup from failing when `source/SylphyHorn.Tests/packages.lock.json` does not exist.
+
 ## 0.12 - 01.09.2026
 
 - Rolled back the repeated dirty-state reconciliation strategy in `install.cmd`.
@@ -77,7 +86,8 @@
 - Added exact .NET SDK installation through WinGet using the version declared in `global.json`.
 - Added .NET Framework developer-pack verification for the `net48` build target.
 - Added Git-normalized `upgrade.cmd` self-update comparison to avoid CRLF false positives.
-- Preserved recursive submodule synchronization, locked NuGet restore, Release x64 build verification, and unit tests.
+- Preserved recursive Git submodule initialization and synchronization.
+- Added locked NuGet restore, Release x64 build verification, and unit-test verification.
 
 ## 0.02 - 01.09.2026
 
