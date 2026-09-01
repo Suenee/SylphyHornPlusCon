@@ -22,7 +22,7 @@ The installer:
 - restores NuGet packages in locked mode;
 - builds the Release x64 configuration;
 - runs unit tests before reporting success;
-- records the complete first-run transcript in `install.log`.
+- records the complete first-run transcript in `logs/install.log`.
 
 The .NET SDK installed by this project is placed in the current user's `%LocalAppData%\Microsoft\dotnet` directory and is added to the user's PATH. Administrator elevation is not required for the .NET SDK installation.
 
@@ -46,8 +46,19 @@ The upgrade runner:
 - reloads the environment helper after Git synchronization so dependency logic self-updates too;
 - installs the exact .NET SDK required by the current `global.json` when necessary;
 - restores dependencies, builds Release x64, and runs unit tests;
-- writes a single-run diagnostic transcript to root `upgrade.log`;
+- writes a single-run diagnostic transcript to `logs/upgrade.log`;
 - returns a non-zero process exit code on failure.
+
+## Logs
+
+All project-generated logs belong under the repository-root `logs/` directory. Runtime log contents are never versioned. The repository tracks only `logs/.gitkeep` so the directory exists in a fresh checkout.
+
+Current maintenance logs are:
+
+- `logs/install.log`
+- `logs/upgrade.log`
+
+Future application logging must use the same `logs/` root and follow the project's `off` / `single` / `all` logging modes when application logging is introduced.
 
 ## Stable diagnostic phases
 
@@ -91,6 +102,7 @@ Do not reintroduce these updater failure patterns:
 - stashing or deleting untracked user/runtime data;
 - overwriting user configuration;
 - direct CRLF-versus-Git-blob byte comparisons;
+- writing generated logs outside `logs/`;
 - reporting success before restore, build, and tests complete.
 
 When a new updater defect is discovered, document its symptom, root cause, and prevention rule here so the same class of failure is not repeated.
