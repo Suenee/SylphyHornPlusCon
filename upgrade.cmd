@@ -2,7 +2,7 @@
 setlocal EnableExtensions EnableDelayedExpansion
 
 rem SylphyHornPlusCon updater
-rem Pure CMD implementation. No PowerShell scripts are used.
+rem Pure CMD implementation. No PowerShell bootstrap scripts are used.
 rem Runs from TEMP so the repository copy of upgrade.cmd can update safely.
 
 if /I "%~1"=="--temp-run" goto :temp_run
@@ -20,6 +20,7 @@ exit /b !UPGRADE_RC!
 :temp_run
 set "REPO_DIR=%~2"
 set "REPO_URL=https://github.com/Suenee/SylphyHornPlusCon.git"
+set "TARGET_FRAMEWORK=net10.0-windows10.0.26100.0"
 set "LOG_DIR=%REPO_DIR%\logs"
 set "LOG=%LOG_DIR%\upgrade.log"
 
@@ -27,6 +28,7 @@ if not exist "%LOG_DIR%" mkdir "%LOG_DIR%" >NUL 2>&1
 >"%LOG%" echo SylphyHornPlusCon upgrade log
 >>"%LOG%" echo Started: %DATE% %TIME%
 >>"%LOG%" echo Repository: %REPO_DIR%
+>>"%LOG%" echo Validation target: %TARGET_FRAMEWORK%
 
 pushd "%REPO_DIR%" >NUL 2>&1
 if errorlevel 1 goto :repo_error
@@ -101,22 +103,22 @@ call :read_sdk_version
 if errorlevel 1 goto :sdk_version_fail
 call :ensure_dotnet_sdk
 if errorlevel 1 goto :dotnet_fail
-call :ensure_net48_devpack
-if errorlevel 1 goto :net48_fail
 
-echo [5/7] Restoring NuGet packages...
->>"%LOG%" echo [5/7] Restoring NuGet packages...
-dotnet restore "source\SylphyHorn.sln" --locked-mode >>"%LOG%" 2>&1
+echo [5/7] Restoring .NET 10 projects...
+>>"%LOG%" echo [5/7] Restoring target %TARGET_FRAMEWORK%...
+dotnet restore "source\SylphyHorn\SylphyHorn.csproj" -p:TargetFramework=%TARGET_FRAMEWORK% --locked-mode >>"%LOG%" 2>&1
+if errorlevel 1 goto :restore_fail
+dotnet restore "source\SylphyHorn.Tests\SylphyHorn.Tests.csproj" -p:TargetFramework=%TARGET_FRAMEWORK% --locked-mode >>"%LOG%" 2>&1
 if errorlevel 1 goto :restore_fail
 
-echo [6/7] Building Release x64...
->>"%LOG%" echo [6/7] Building Release x64...
-dotnet build "source\SylphyHorn.sln" -c Release -p:Platform=x64 --no-restore >>"%LOG%" 2>&1
+echo [6/7] Building Release x64 for .NET 10...
+>>"%LOG%" echo [6/7] Building Release x64 for %TARGET_FRAMEWORK%...
+dotnet build "source\SylphyHorn\SylphyHorn.csproj" -c Release -f %TARGET_FRAMEWORK% -p:Platform=x64 -p:RunSylphyHornPostBuild=false --no-restore >>"%LOG%" 2>&1
 if errorlevel 1 goto :build_fail
 
-echo [7/7] Running unit tests...
->>"%LOG%" echo [7/7] Running unit tests...
-dotnet test "source\SylphyHorn.Tests\SylphyHorn.Tests.csproj" -c Release -p:Platform=x64 -p:RunSylphyHornPostBuild=false -p:SolutionDir="%REPO_DIR%\source\" --no-restore >>"%LOG%" 2>&1
+echo [7/7] Running .NET 10 unit tests...
+>>"%LOG%" echo [7/7] Running unit tests for %TARGET_FRAMEWORK%...
+dotnet test "source\SylphyHorn.Tests\SylphyHorn.Tests.csproj" -c Release -f %TARGET_FRAMEWORK% -p:Platform=x64 -p:RunSylphyHornPostBuild=false -p:SolutionDir="%REPO_DIR%\source\" --no-restore >>"%LOG%" 2>&1
 if errorlevel 1 goto :test_fail
 
 >>"%LOG%" echo STATUS: SUCCESS - phase=COMPLETE
@@ -125,6 +127,7 @@ echo.
 echo ============================================
 echo UPGRADE OK
 echo ============================================
+echo Target: %TARGET_FRAMEWORK%
 echo Commit: !HEAD_SHA!
 echo Log:    %LOG%
 exit /b 0
@@ -155,17 +158,6 @@ if errorlevel 1 exit /b 1
 set "PATH=%ProgramFiles%\dotnet;%PATH%"
 dotnet --list-sdks 2>NUL | findstr /b /c:"!SDK_VERSION! [" >NUL
 if errorlevel 1 exit /b 1
-exit /b 0
-
-:ensure_net48_devpack
-if exist "%ProgramFiles(x86)%\Reference Assemblies\Microsoft\Framework\.NETFramework\v4.8\mscorlib.dll" exit /b 0
-echo .NET Framework developer pack not found. Installing with WinGet...
->>"%LOG%" echo Installing Microsoft.DotNet.Framework.DeveloperPack_4...
-where winget.exe >NUL 2>&1
-if errorlevel 1 exit /b 1
-winget install --id Microsoft.DotNet.Framework.DeveloperPack_4 --exact --accept-package-agreements --accept-source-agreements --silent >>"%LOG%" 2>&1
-if errorlevel 1 exit /b 1
-if not exist "%ProgramFiles(x86)%\Reference Assemblies\Microsoft\Framework\.NETFramework\v4.8\mscorlib.dll" exit /b 1
 exit /b 0
 
 :check_tracked_clean
@@ -207,17 +199,14 @@ goto :fail_pop
 :dotnet_fail
 echo ERROR: Required .NET SDK installation/verification failed.
 goto :fail_pop
-:net48_fail
-echo ERROR: .NET Framework developer pack installation/verification failed.
-goto :fail_pop
 :restore_fail
-echo ERROR: NuGet restore failed.
+echo ERROR: .NET 10 NuGet restore failed.
 goto :fail_pop
 :build_fail
-echo ERROR: Release build failed.
+echo ERROR: .NET 10 Release build failed.
 goto :fail_pop
 :test_fail
-echo ERROR: Unit tests failed.
+echo ERROR: .NET 10 unit tests failed.
 goto :fail_pop
 
 :fail_pop
