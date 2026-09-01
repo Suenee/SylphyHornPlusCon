@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.05 - 01.09.2026
+
+- Fixed the existing-repository install bootstrap so downloading a fresh tracked `install.cmd` no longer causes a false local-change failure.
+- The installer now fetches `origin/devel` first, verifies the downloaded `install.cmd` against the remote Git blob using Git-normalized hashing, restores the tracked copy, and then fast-forwards safely.
+- Any other tracked local modification still blocks installation.
+
 ## 0.04 - 01.09.2026
 
 - Removed the .NET Framework 4.8 Developer Pack requirement from `install.cmd` and `upgrade.cmd`.
