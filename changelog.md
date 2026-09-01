@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.04 - 01.09.2026
+
+- Removed the .NET Framework 4.8 Developer Pack requirement from `install.cmd` and `upgrade.cmd`.
+- Changed maintenance validation to restore, build, and test only `net10.0-windows10.0.26100.0`.
+- Kept removal of the remaining `net48` project targets tracked separately in `TODO.md`.
+
 ## 0.03 - 01.09.2026
 
 - Replaced the PowerShell-based maintenance prototype with a CMD-only implementation.
