@@ -75,10 +75,10 @@ git -c safe.directory=* rev-parse --is-inside-work-tree >>"%LOG%" 2>&1
 if errorlevel 1 goto :repo_fail
 git -c safe.directory=* remote set-url origin "%REPO_URL%" >>"%LOG%" 2>&1
 if errorlevel 1 goto :repo_fail
-call :check_tracked_clean
-if errorlevel 1 goto :dirty_repo
 git -c safe.directory=* fetch origin "%BRANCH%" >>"%LOG%" 2>&1
 if errorlevel 1 goto :repo_fail
+call :check_tracked_clean_for_install
+if errorlevel 1 goto :dirty_repo
 git -c safe.directory=* checkout "%BRANCH%" >>"%LOG%" 2>&1
 if errorlevel 1 git -c safe.directory=* checkout -b "%BRANCH%" --track "origin/%BRANCH%" >>"%LOG%" 2>&1
 if errorlevel 1 goto :repo_fail
@@ -192,10 +192,27 @@ if /I "%~1"=="scripts" exit /b 0
 set "UNSAFE=1"
 exit /b 0
 
-:check_tracked_clean
-set "TRACKED_DIRTY=0"
-for /f "delims=" %%S in ('git -c safe.directory^=* status --porcelain --untracked-files^=no') do set "TRACKED_DIRTY=1"
-if "!TRACKED_DIRTY!"=="1" exit /b 1
+:check_tracked_clean_for_install
+set "OTHER_DIRTY=0"
+for /f "delims=" %%F in ('git -c safe.directory^=* diff --name-only') do if /I not "%%F"=="install.cmd" set "OTHER_DIRTY=1"
+for /f "delims=" %%F in ('git -c safe.directory^=* diff --cached --name-only') do if /I not "%%F"=="install.cmd" set "OTHER_DIRTY=1"
+if "!OTHER_DIRTY!"=="1" exit /b 1
+
+git -c safe.directory=* diff --quiet -- "install.cmd"
+if not errorlevel 1 exit /b 0
+
+set "LOCAL_INSTALL_HASH="
+set "REMOTE_INSTALL_HASH="
+for /f "delims=" %%H in ('git -c safe.directory^=* hash-object --path=install.cmd "install.cmd" 2^>NUL') do set "LOCAL_INSTALL_HASH=%%H"
+for /f "delims=" %%H in ('git -c safe.directory^=* rev-parse "origin/%BRANCH%:install.cmd" 2^>NUL') do set "REMOTE_INSTALL_HASH=%%H"
+if not defined LOCAL_INSTALL_HASH exit /b 1
+if not defined REMOTE_INSTALL_HASH exit /b 1
+if /I not "!LOCAL_INSTALL_HASH!"=="!REMOTE_INSTALL_HASH!" exit /b 1
+
+echo Bootstrap install.cmd matches origin/%BRANCH%; accepting downloaded installer refresh.
+>>"%LOG%" echo Verified downloaded install.cmd against origin/%BRANCH%; restoring tracked copy before merge.
+git -c safe.directory=* checkout -- "install.cmd" >>"%LOG%" 2>&1
+if errorlevel 1 exit /b 1
 exit /b 0
 
 :target_error
@@ -205,7 +222,7 @@ goto :fail
 echo ERROR: Target folder contains unrelated files and is not a Git repository.
 goto :fail_pop
 :dirty_repo
-echo ERROR: Tracked local changes exist. Commit or revert them first.
+echo ERROR: Tracked local changes exist. Only a verified install.cmd bootstrap refresh is allowed.
 goto :fail_pop
 :repo_fail
 echo ERROR: Git repository setup/update failed.
