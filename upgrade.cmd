@@ -3,7 +3,7 @@ cls
 setlocal EnableExtensions EnableDelayedExpansion
 
 rem SylphyHornPlusCon updater
-rem Version: 0.15
+rem Version: 0.16
 rem Pure CMD implementation. No PowerShell bootstrap scripts are used.
 rem Supports local, mapped, and UNC repository paths.
 rem UPGRADE is conservative: real tracked local changes stop the update.
@@ -26,7 +26,7 @@ set "LOG=%LOG_DIR%\upgrade.log"
 
 if not exist "%LOG_DIR%" mkdir "%LOG_DIR%" >NUL 2>&1
 >"%LOG%" echo SylphyHornPlusCon upgrade log
->>"%LOG%" echo Version: 0.15
+>>"%LOG%" echo Version: 0.16
 >>"%LOG%" echo Started: %DATE% %TIME%
 >>"%LOG%" echo Repository: %REPO_DIR%
 >>"%LOG%" echo Validation target: %TARGET_FRAMEWORK%
@@ -47,7 +47,7 @@ if /I not "!BRANCH!"=="main" if /I not "!BRANCH!"=="devel" goto :branch_error
 >>"%LOG%" echo Branch: !BRANCH!
 
 echo ============================================
-echo SylphyHornPlusCon - UPGRADE 0.15
+echo SylphyHornPlusCon - UPGRADE 0.16
 echo ============================================
 echo Branch: !BRANCH!
 echo.
@@ -66,10 +66,12 @@ for /f "delims=" %%H in ('git hash-object --path=upgrade.cmd "upgrade.cmd" 2^>NU
 if not defined REMOTE_HASH goto :self_update_fail
 if not defined LOCAL_HASH goto :self_update_fail
 if /I not "!LOCAL_HASH!"=="!REMOTE_HASH!" if not defined SHPC_REMOTE_UPGRADE_RUNNING (
-    echo A newer upgrade.cmd is available. Running it first...
-    >>"%LOG%" echo Remote upgrade.cmd differs; transferring control to remote version.
+    echo A newer upgrade.cmd is available. Updating updater first...
+    >>"%LOG%" echo Remote upgrade.cmd differs; updating working copy and transferring control.
     set "REMOTE_UPGRADE=%TEMP%\sylphyhornpluscon-remote-upgrade-%RANDOM%-%RANDOM%.cmd"
     git show "origin/!BRANCH!:upgrade.cmd" > "!REMOTE_UPGRADE!" 2>>"%LOG%"
+    if errorlevel 1 goto :self_update_fail
+    git checkout "origin/!BRANCH!" -- "upgrade.cmd" >>"%LOG%" 2>&1
     if errorlevel 1 goto :self_update_fail
     set "SHPC_REMOTE_UPGRADE_RUNNING=1"
     call "!REMOTE_UPGRADE!" --temp-run "%REPO_DIR%" & exit /b
