@@ -3,7 +3,7 @@ cls
 setlocal EnableExtensions EnableDelayedExpansion
 
 rem SylphyHornPlusCon updater
-rem Version: 0.18
+rem Version: 0.19
 rem Pure CMD implementation. No PowerShell maintenance runner is used.
 rem upgrade.cmd is maintenance-owned and may be replaced by the updater itself.
 
@@ -25,7 +25,7 @@ set "LOG=%LOG_DIR%\upgrade.log"
 
 if not exist "%LOG_DIR%" mkdir "%LOG_DIR%" >NUL 2>&1
 >"%LOG%" echo SylphyHornPlusCon upgrade log
->>"%LOG%" echo Version: 0.18
+>>"%LOG%" echo Version: 0.19
 >>"%LOG%" echo Started: %DATE% %TIME%
 >>"%LOG%" echo Repository: %REPO_DIR%
 >>"%LOG%" echo Validation target: %TARGET_FRAMEWORK%
@@ -46,7 +46,7 @@ if /I not "!BRANCH!"=="main" if /I not "!BRANCH!"=="devel" goto :branch_error
 >>"%LOG%" echo Branch: !BRANCH!
 
 echo ============================================
-echo SylphyHornPlusCon - UPGRADE 0.18
+echo SylphyHornPlusCon - UPGRADE 0.19
 echo ============================================
 echo Branch: !BRANCH!
 echo.
@@ -81,15 +81,23 @@ call :restore_generated_lockfiles
 call :check_protected_clean
 if errorlevel 1 goto :dirty_repo
 
-rem upgrade.cmd is maintenance-owned. The running updater is already in TEMP,
-rem so normalize only the repository copy before the normal fast-forward merge.
+rem upgrade.cmd is maintenance-owned. The running updater is already in TEMP.
+rem Normalize only this tracked file to HEAD before synchronizing the branch.
 git restore --source=HEAD --staged --worktree -- "upgrade.cmd" >>"%LOG%" 2>&1
 if errorlevel 1 goto :self_update_fail
 
-echo [3/7] Fast-forwarding source tree...
->>"%LOG%" echo [3/7] Fast-forwarding source tree...
-git merge --ff-only "origin/!BRANCH!" >>"%LOG%" 2>&1
-if errorlevel 1 goto :git_fail
+echo [3/7] Synchronizing tracked source tree...
+>>"%LOG%" echo [3/7] Synchronizing tracked source tree with git reset --keep origin/!BRANCH!...
+set "SYNC_OUT=%TEMP%\sylphyhornpluscon-git-sync-%RANDOM%-%RANDOM%.log"
+git reset --keep "origin/!BRANCH!" >"!SYNC_OUT!" 2>&1
+if errorlevel 1 (
+    type "!SYNC_OUT!"
+    type "!SYNC_OUT!" >>"%LOG%"
+    del /q "!SYNC_OUT!" >NUL 2>&1
+    goto :git_fail
+)
+type "!SYNC_OUT!" >>"%LOG%" 2>&1
+del /q "!SYNC_OUT!" >NUL 2>&1
 
 set "HEAD_SHA="
 set "ORIGIN_SHA="
