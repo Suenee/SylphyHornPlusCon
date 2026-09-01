@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.11 - 01.09.2026
+
+- Added `cls` at startup for both `install.cmd` and `upgrade.cmd`.
+- Added a transitional .NET 10 lock-file migration step using `dotnet restore --force-evaluate` after the removal of the legacy `net48` target.
+- Immediately verifies the regenerated dependency graph with a second `--locked-mode` restore.
+- Restores tracked `packages.lock.json` files after validation so install/upgrade do not leave the working tree dirty while the repository lock files are being migrated permanently.
+
 ## 0.10 - 01.09.2026
 
 - Removed the legacy `net48` target from the main SylphyHornPlusCon application project.
@@ -60,7 +67,7 @@
 - Added exact .NET SDK installation through WinGet using the version declared in `global.json`.
 - Added .NET Framework developer-pack verification for the `net48` build target.
 - Added Git-normalized `upgrade.cmd` self-update comparison to avoid CRLF false positives.
-- Preserved recursive submodule synchronization, locked restore, Release x64 build verification, and unit tests.
+- Preserved recursive submodule synchronization, locked restore, Release x64 build verification, and unit-test verification.
 
 ## 0.02 - 01.09.2026
 
