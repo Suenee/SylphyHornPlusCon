@@ -65,20 +65,19 @@ if errorlevel 1 goto :repo_fail
 goto :repo_ready
 
 :existing_repo
-echo [1/6] Checking existing DEVEL working copy...
->>"%LOG%" echo [1/6] Checking existing DEVEL working copy...
+echo [1/6] Rebuilding existing DEVEL working copy from origin...
+>>"%LOG%" echo [1/6] Rebuilding existing DEVEL working copy from origin...
 git -c safe.directory=* rev-parse --is-inside-work-tree >>"%LOG%" 2>&1
 if errorlevel 1 goto :repo_fail
 git -c safe.directory=* remote set-url origin "%REPO_URL%" >>"%LOG%" 2>&1
 if errorlevel 1 goto :repo_fail
-git -c safe.directory=* fetch origin "%BRANCH%" >>"%LOG%" 2>&1
+git -c safe.directory=* fetch --prune origin "%BRANCH%" >>"%LOG%" 2>&1
 if errorlevel 1 goto :repo_fail
-call :reconcile_bootstrap_changes
+call :check_only_maintenance_dirty
 if errorlevel 1 goto :dirty_repo
-git -c safe.directory=* checkout "%BRANCH%" >>"%LOG%" 2>&1
-if errorlevel 1 git -c safe.directory=* checkout -b "%BRANCH%" --track "origin/%BRANCH%" >>"%LOG%" 2>&1
-if errorlevel 1 goto :repo_fail
-git -c safe.directory=* merge --ff-only "origin/%BRANCH%" >>"%LOG%" 2>&1
+echo Existing tracked tree contains no user/source edits. Replacing it with origin/%BRANCH%...
+>>"%LOG%" echo Safety check passed. Forcing tracked tree and branch to origin/%BRANCH%.
+git -c safe.directory=* checkout -f -B "%BRANCH%" "origin/%BRANCH%" >>"%LOG%" 2>&1
 if errorlevel 1 goto :repo_fail
 
 :repo_ready
@@ -86,7 +85,7 @@ echo [2/6] Initializing Git submodules...
 >>"%LOG%" echo [2/6] Initializing Git submodules...
 git -c safe.directory=* submodule sync --recursive >>"%LOG%" 2>&1
 if errorlevel 1 goto :submodule_fail
-git -c safe.directory=* submodule update --init --recursive >>"%LOG%" 2>&1
+git -c safe.directory=* submodule update --init --recursive --force >>"%LOG%" 2>&1
 if errorlevel 1 goto :submodule_fail
 
 echo [3/6] Checking required .NET SDK...
@@ -187,33 +186,19 @@ if /I "%~1"=="logs" exit /b 0
 set "UNSAFE=1"
 exit /b 0
 
-:reconcile_bootstrap_changes
-set "BOOTSTRAP_REJECT=0"
-set "BOOTSTRAP_DIRTY=0"
-set "BOOTSTRAP_LIST=%TEMP%\shpc-bootstrap-dirty-%RANDOM%-%RANDOM%.txt"
-git -c safe.directory=* diff --name-only > "!BOOTSTRAP_LIST!" 2>>"%LOG%"
-if errorlevel 1 (del /q "!BOOTSTRAP_LIST!" >NUL 2>&1& exit /b 1)
-git -c safe.directory=* diff --cached --name-only >> "!BOOTSTRAP_LIST!" 2>>"%LOG%"
-if errorlevel 1 (del /q "!BOOTSTRAP_LIST!" >NUL 2>&1& exit /b 1)
-for /f "usebackq delims=" %%F in ("!BOOTSTRAP_LIST!") do call :check_bootstrap_owned_path "%%F"
-if "!BOOTSTRAP_REJECT!"=="1" (
-  del /q "!BOOTSTRAP_LIST!" >NUL 2>&1
-  exit /b 1
-)
-if "!BOOTSTRAP_DIRTY!"=="0" (
-  del /q "!BOOTSTRAP_LIST!" >NUL 2>&1
-  exit /b 0
-)
-
-echo Maintenance bootstrap files are stale; restoring their tracked HEAD versions before fast-forward.
->>"%LOG%" echo Only maintenance-owned bootstrap files are modified; restoring them before merge.
-for /f "usebackq delims=" %%F in ("!BOOTSTRAP_LIST!") do git -c safe.directory=* checkout HEAD -- "%%F" >>"%LOG%" 2>&1
-del /q "!BOOTSTRAP_LIST!" >NUL 2>&1
-if errorlevel 1 exit /b 1
+:check_only_maintenance_dirty
+set "DIRTY_REJECT=0"
+set "DIRTY_LIST=%TEMP%\shpc-dirty-%RANDOM%-%RANDOM%.txt"
+git -c safe.directory=* diff --name-only > "!DIRTY_LIST!" 2>>"%LOG%"
+if errorlevel 1 (del /q "!DIRTY_LIST!" >NUL 2>&1& exit /b 1)
+git -c safe.directory=* diff --cached --name-only >> "!DIRTY_LIST!" 2>>"%LOG%"
+if errorlevel 1 (del /q "!DIRTY_LIST!" >NUL 2>&1& exit /b 1)
+for /f "usebackq delims=" %%F in ("!DIRTY_LIST!") do call :classify_dirty_path "%%F"
+del /q "!DIRTY_LIST!" >NUL 2>&1
+if "!DIRTY_REJECT!"=="1" exit /b 1
 exit /b 0
 
-:check_bootstrap_owned_path
-set "BOOTSTRAP_DIRTY=1"
+:classify_dirty_path
 set "CHECK_PATH=%~1"
 if /I "!CHECK_PATH!"=="install.cmd" exit /b 0
 if /I "!CHECK_PATH!"=="upgrade.cmd" exit /b 0
@@ -221,9 +206,9 @@ if /I "!CHECK_PATH!"=="install.ps1" exit /b 0
 if /I "!CHECK_PATH!"=="upgrade.ps1" exit /b 0
 if /I "!CHECK_PATH!"=="scripts/Environment.ps1" exit /b 0
 if /I "!CHECK_PATH!"=="scripts\Environment.ps1" exit /b 0
-echo Unexpected local change: !CHECK_PATH!
->>"%LOG%" echo Rejected non-maintenance local change: !CHECK_PATH!
-set "BOOTSTRAP_REJECT=1"
+echo ERROR: Local tracked edit detected: !CHECK_PATH!
+>>"%LOG%" echo Rejected local tracked edit: !CHECK_PATH!
+set "DIRTY_REJECT=1"
 exit /b 0
 
 :target_error
@@ -233,7 +218,7 @@ goto :fail
 echo ERROR: Target folder contains unrelated files and is not a Git repository.
 goto :fail_pop
 :dirty_repo
-echo ERROR: Tracked local changes exist outside maintenance bootstrap files.
+echo ERROR: Existing repository contains tracked user/source changes. Nothing was overwritten.
 goto :fail_pop
 :repo_fail
 echo ERROR: Git repository setup/update failed.
