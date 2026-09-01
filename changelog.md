@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.12 - 01.09.2026
+
+- Rolled back the repeated dirty-state reconciliation strategy in `install.cmd`.
+- `install.cmd` is now authoritative: an existing checkout is reset directly to `origin/devel`, including recursive submodule cleanup.
+- Removed install-time rejection of dirty tracked files and dirty submodules left by previous failed installation attempts.
+- Kept `upgrade.cmd` conservative: upgrades still stop when tracked local changes are present.
+- Temporarily disabled NuGet locked restore during installation while the repository lock files are being migrated after the .NET 10-only conversion.
+- Installation now performs a normal `--force-evaluate` restore, build, and test, then restores tracked lock files so the checkout remains clean.
+- Both maintenance scripts continue to start with `cls`.
+
 ## 0.11 - 01.09.2026
 
 - Added `cls` at startup for both `install.cmd` and `upgrade.cmd`.
@@ -67,7 +77,7 @@
 - Added exact .NET SDK installation through WinGet using the version declared in `global.json`.
 - Added .NET Framework developer-pack verification for the `net48` build target.
 - Added Git-normalized `upgrade.cmd` self-update comparison to avoid CRLF false positives.
-- Preserved recursive submodule synchronization, locked restore, Release x64 build verification, and unit-test verification.
+- Preserved recursive submodule synchronization, locked NuGet restore, Release x64 build verification, and unit tests.
 
 ## 0.02 - 01.09.2026
 
