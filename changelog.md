@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.19 - 02.09.2026
+
+- Replaced updater source synchronization based on `git merge --ff-only` with `git reset --keep origin/<branch>` after the protected-change safety gate passes.
+- This avoids merge/index-state failures while preserving local tracked changes by aborting if an update would overwrite them.
+- `upgrade.cmd` remains maintenance-owned and is normalized to the current `HEAD` before branch synchronization.
+- The updater now prints the exact Git synchronization error to the console as well as `logs/upgrade.log` if the reset cannot be completed.
+- Untracked files are not proactively cleaned or deleted by the updater.
+
 ## 0.18 - 02.09.2026
 
 - Rewrote `upgrade.cmd` self-update handling instead of continuing the previous dirty-state patch sequence.
