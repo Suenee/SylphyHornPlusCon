@@ -7,7 +7,9 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 $Root = (Resolve-Path $Root).Path.TrimEnd('\')
 Set-Location $Root
-$Log = Join-Path $Root 'upgrade.log'
+$LogsDirectory = Join-Path $Root 'logs'
+New-Item -ItemType Directory -Path $LogsDirectory -Force | Out-Null
+$Log = Join-Path $LogsDirectory 'upgrade.log'
 $Phase = 'SELF-UPDATE'
 $StatusWritten = $false
 Remove-Item $Log -Force -ErrorAction SilentlyContinue
