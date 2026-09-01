@@ -3,7 +3,7 @@ cls
 setlocal EnableExtensions EnableDelayedExpansion
 
 rem SylphyHornPlusCon fresh-PC installer
-rem Version: 0.12
+rem Version: 0.13
 rem Pure CMD implementation. No PowerShell bootstrap scripts are used.
 rem INSTALL is authoritative: an existing tracked checkout is rebuilt from origin/devel.
 rem UPGRADE remains the conservative path that protects local tracked changes.
@@ -27,14 +27,14 @@ set "LOG=%LOG_DIR%\install.log"
 
 if not exist "%LOG_DIR%" mkdir "%LOG_DIR%" >NUL 2>&1
 >"%LOG%" echo SylphyHornPlusCon install log
->>"%LOG%" echo Version: 0.12
+>>"%LOG%" echo Version: 0.13
 >>"%LOG%" echo Started: %DATE% %TIME%
 >>"%LOG%" echo Target: %TARGET%
 >>"%LOG%" echo Branch: %BRANCH%
 >>"%LOG%" echo Validation target: %TARGET_FRAMEWORK%
 
 echo ============================================
-echo SylphyHornPlusCon - FRESH INSTALL 0.12
+echo SylphyHornPlusCon - FRESH INSTALL 0.13
 echo ============================================
 echo Target: %TARGET%
 echo Branch: %BRANCH%
@@ -213,8 +213,11 @@ exit /b 0
 
 :restore_generated_lockfiles
 >>"%LOG%" echo Restoring tracked NuGet lock files after install validation.
-git checkout -- "source/SylphyHorn/packages.lock.json" "source/SylphyHorn.Tests/packages.lock.json" >>"%LOG%" 2>&1
-exit /b %ERRORLEVEL%
+git ls-files --error-unmatch "source/SylphyHorn/packages.lock.json" >NUL 2>&1
+if not errorlevel 1 git checkout -- "source/SylphyHorn/packages.lock.json" >>"%LOG%" 2>&1
+git ls-files --error-unmatch "source/SylphyHorn.Tests/packages.lock.json" >NUL 2>&1
+if not errorlevel 1 git checkout -- "source/SylphyHorn.Tests/packages.lock.json" >>"%LOG%" 2>&1
+exit /b 0
 
 :target_error
 echo ERROR: Cannot create or enter %TARGET%.
