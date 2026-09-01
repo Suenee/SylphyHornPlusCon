@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.16 - 02.09.2026
+
+- Fixed `upgrade.cmd` self-update so the working-tree copy of `upgrade.cmd` is updated from `origin/<branch>` before control is transferred to the temporary updater.
+- Prevented the updater from blocking itself during the subsequent tracked-change safety check.
+- The self-update step still changes only `upgrade.cmd`; all other tracked local edits remain protected and continue to block an upgrade.
+
 ## 0.15 - 02.09.2026
 
 - Fixed `upgrade.cmd` dirty-state detection for repositories containing Git submodules with untracked build or restore artifacts.
