@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.10 - 01.09.2026
+
+- Removed the legacy `net48` target from the main SylphyHornPlusCon application project.
+- Removed the legacy `net48` target from the unit-test project.
+- Simplified MetroTrilithon binary selection to the .NET 10 build only.
+- Removed the obsolete .NET Framework-specific `System.Runtime` reference and target conditions.
+- Aligned project target frameworks with the existing .NET 10-only NuGet lock file so locked restore can remain enabled.
+- Updated `TODO.md` to track only the remaining CI, submodule, and Windows compatibility verification work.
+
 ## 0.09 - 01.09.2026
 
 - Added explicit Git `safe.directory` registration for the repository in protected global configuration.
