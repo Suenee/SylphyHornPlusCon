@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.14 - 02.09.2026
+
+- Aligned `upgrade.cmd` with the verified .NET 10 validation flow used by `install.cmd` 0.13.
+- Kept upgrade behavior conservative: tracked local changes still stop the update before source synchronization.
+- Removed the temporary second `--locked-mode` restore from the updater while repository lock files are still being migrated.
+- Upgrade now uses `--force-evaluate` restore, Release x64 build, and .NET 10 unit tests against `net10.0-windows10.0.26100.0`.
+- Fixed updater lock-file cleanup so only lock files actually tracked by Git are restored.
+- Added explicit updater version reporting and retained `cls`, self-update, mapped-drive/UNC safe-directory support, and exact .NET SDK validation.
+
 ## 0.13 - 02.09.2026
 
 - Completed the .NET 10 target alignment for `SylphyHorn.Core`.
