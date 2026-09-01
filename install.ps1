@@ -7,7 +7,9 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 $Root = Split-Path -Parent $MyInvocation.MyCommand.Path
 Set-Location $Root
-$Log = Join-Path $Root 'install.log'
+$LogsDirectory = Join-Path $Root 'logs'
+New-Item -ItemType Directory -Path $LogsDirectory -Force | Out-Null
+$Log = Join-Path $LogsDirectory 'install.log'
 Remove-Item $Log -Force -ErrorAction SilentlyContinue
 Start-Transcript -Path $Log -Force | Out-Null
 
