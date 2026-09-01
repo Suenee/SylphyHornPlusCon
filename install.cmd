@@ -3,8 +3,10 @@ cls
 setlocal EnableExtensions EnableDelayedExpansion
 
 rem SylphyHornPlusCon fresh-PC installer
+rem Version: 0.12
 rem Pure CMD implementation. No PowerShell bootstrap scripts are used.
-rem Supports local, mapped, and UNC repository paths.
+rem INSTALL is authoritative: an existing tracked checkout is rebuilt from origin/devel.
+rem UPGRADE remains the conservative path that protects local tracked changes.
 
 if /I "%~1"=="--temp-run" goto :temp_run
 
@@ -13,9 +15,6 @@ if "!TARGET:~-1!"=="\" set "TARGET=!TARGET:~0,-1!"
 set "INSTALL_TEMP=%TEMP%\sylphyhornpluscon-install-%RANDOM%-%RANDOM%.cmd"
 copy /y "%~f0" "!INSTALL_TEMP!" >NUL
 if errorlevel 1 exit /b 1
-rem Keep CALL and EXIT on the same parsed line. The repository copy of install.cmd
-rem may be replaced while the TEMP copy runs, so the parent batch must never resume
-rem by reading more commands from the replaced file.
 call "!INSTALL_TEMP!" --temp-run "!TARGET!" & exit /b
 
 :temp_run
@@ -28,13 +27,14 @@ set "LOG=%LOG_DIR%\install.log"
 
 if not exist "%LOG_DIR%" mkdir "%LOG_DIR%" >NUL 2>&1
 >"%LOG%" echo SylphyHornPlusCon install log
+>>"%LOG%" echo Version: 0.12
 >>"%LOG%" echo Started: %DATE% %TIME%
 >>"%LOG%" echo Target: %TARGET%
 >>"%LOG%" echo Branch: %BRANCH%
 >>"%LOG%" echo Validation target: %TARGET_FRAMEWORK%
 
 echo ============================================
-echo SylphyHornPlusCon - FRESH INSTALL
+echo SylphyHornPlusCon - FRESH INSTALL 0.12
 echo ============================================
 echo Target: %TARGET%
 echo Branch: %BRANCH%
@@ -54,41 +54,41 @@ if exist ".git" goto :existing_repo
 call :bootstrap_folder_check
 if errorlevel 1 goto :unsafe_folder
 
-echo [1/6] Creating DEVEL working copy...
->>"%LOG%" echo [1/6] Creating DEVEL working copy...
+echo [1/6] Creating clean DEVEL working copy...
+>>"%LOG%" echo [1/6] Creating clean DEVEL working copy...
 git init >>"%LOG%" 2>&1
 if errorlevel 1 goto :repo_fail
 git remote add origin "%REPO_URL%" >>"%LOG%" 2>&1
 git remote set-url origin "%REPO_URL%" >>"%LOG%" 2>&1
 if errorlevel 1 goto :repo_fail
-git fetch origin "%BRANCH%" >>"%LOG%" 2>&1
+git fetch --prune origin "%BRANCH%" >>"%LOG%" 2>&1
 if errorlevel 1 goto :repo_fail
 git checkout -f -B "%BRANCH%" "origin/%BRANCH%" >>"%LOG%" 2>&1
 if errorlevel 1 goto :repo_fail
 goto :repo_ready
 
 :existing_repo
-echo [1/6] Rebuilding existing DEVEL working copy from origin...
->>"%LOG%" echo [1/6] Rebuilding existing DEVEL working copy from origin...
+echo [1/6] Resetting existing checkout to origin/%BRANCH%...
+>>"%LOG%" echo [1/6] Authoritative install reset to origin/%BRANCH%...
 git rev-parse --is-inside-work-tree >>"%LOG%" 2>&1
 if errorlevel 1 goto :repo_fail
 git remote set-url origin "%REPO_URL%" >>"%LOG%" 2>&1
 if errorlevel 1 goto :repo_fail
 git fetch --prune origin "%BRANCH%" >>"%LOG%" 2>&1
 if errorlevel 1 goto :repo_fail
-call :check_only_maintenance_dirty
-if errorlevel 1 goto :dirty_repo
-echo Existing tracked tree contains no user/source edits. Replacing it with origin/%BRANCH%...
->>"%LOG%" echo Safety check passed. Forcing tracked tree and branch to origin/%BRANCH%.
 git checkout -f -B "%BRANCH%" "origin/%BRANCH%" >>"%LOG%" 2>&1
+if errorlevel 1 goto :repo_fail
+git reset --hard --recurse-submodules "origin/%BRANCH%" >>"%LOG%" 2>&1
 if errorlevel 1 goto :repo_fail
 
 :repo_ready
-echo [2/6] Initializing Git submodules...
->>"%LOG%" echo [2/6] Initializing Git submodules...
+echo [2/6] Synchronizing Git submodules...
+>>"%LOG%" echo [2/6] Synchronizing Git submodules...
 git submodule sync --recursive >>"%LOG%" 2>&1
 if errorlevel 1 goto :submodule_fail
 git submodule update --init --recursive --force >>"%LOG%" 2>&1
+if errorlevel 1 goto :submodule_fail
+git submodule foreach --recursive "git reset --hard HEAD" >>"%LOG%" 2>&1
 if errorlevel 1 goto :submodule_fail
 
 echo [3/6] Checking required .NET SDK...
@@ -99,15 +99,10 @@ call :ensure_dotnet_sdk
 if errorlevel 1 goto :dotnet_fail
 
 echo [4/6] Restoring .NET 10 projects...
->>"%LOG%" echo [4/6] Re-evaluating lock files for %TARGET_FRAMEWORK%...
+>>"%LOG%" echo [4/6] Normal restore for %TARGET_FRAMEWORK%. Locked mode intentionally disabled during install migration.
 dotnet restore "source\SylphyHorn\SylphyHorn.csproj" -p:TargetFramework=%TARGET_FRAMEWORK% --force-evaluate >>"%LOG%" 2>&1
 if errorlevel 1 goto :restore_fail_dirty
 dotnet restore "source\SylphyHorn.Tests\SylphyHorn.Tests.csproj" -p:TargetFramework=%TARGET_FRAMEWORK% --force-evaluate >>"%LOG%" 2>&1
-if errorlevel 1 goto :restore_fail_dirty
->>"%LOG%" echo [4/6] Verifying regenerated lock files in locked mode...
-dotnet restore "source\SylphyHorn\SylphyHorn.csproj" -p:TargetFramework=%TARGET_FRAMEWORK% --locked-mode >>"%LOG%" 2>&1
-if errorlevel 1 goto :restore_fail_dirty
-dotnet restore "source\SylphyHorn.Tests\SylphyHorn.Tests.csproj" -p:TargetFramework=%TARGET_FRAMEWORK% --locked-mode >>"%LOG%" 2>&1
 if errorlevel 1 goto :restore_fail_dirty
 
 echo [5/6] Building Release x64 for .NET 10...
@@ -115,11 +110,12 @@ echo [5/6] Building Release x64 for .NET 10...
 dotnet build "source\SylphyHorn\SylphyHorn.csproj" -c Release -f %TARGET_FRAMEWORK% -p:Platform=x64 -p:RunSylphyHornPostBuild=false --no-restore >>"%LOG%" 2>&1
 if errorlevel 1 goto :build_fail_dirty
 
-echo [6/6] Running .NET 10 unit tests and verifying Git state...
+echo [6/6] Running .NET 10 unit tests...
 >>"%LOG%" echo [6/6] Running unit tests for %TARGET_FRAMEWORK%...
 dotnet test "source\SylphyHorn.Tests\SylphyHorn.Tests.csproj" -c Release -f %TARGET_FRAMEWORK% -p:Platform=x64 -p:RunSylphyHornPostBuild=false -p:SolutionDir="%TARGET%\source\" --no-restore >>"%LOG%" 2>&1
 if errorlevel 1 goto :test_fail_dirty
-call :restore_lockfiles
+
+call :restore_generated_lockfiles
 if errorlevel 1 goto :lockfile_cleanup_fail
 
 set "HEAD_SHA="
@@ -215,33 +211,8 @@ if /I "%~1"=="logs" exit /b 0
 set "UNSAFE=1"
 exit /b 0
 
-:check_only_maintenance_dirty
-set "DIRTY_REJECT=0"
-set "DIRTY_LIST=%TEMP%\shpc-dirty-%RANDOM%-%RANDOM%.txt"
-git diff --name-only > "!DIRTY_LIST!" 2>>"%LOG%"
-if errorlevel 1 (del /q "!DIRTY_LIST!" >NUL 2>&1& exit /b 1)
-git diff --cached --name-only >> "!DIRTY_LIST!" 2>>"%LOG%"
-if errorlevel 1 (del /q "!DIRTY_LIST!" >NUL 2>&1& exit /b 1)
-for /f "usebackq delims=" %%F in ("!DIRTY_LIST!") do call :classify_dirty_path "%%F"
-del /q "!DIRTY_LIST!" >NUL 2>&1
-if "!DIRTY_REJECT!"=="1" exit /b 1
-exit /b 0
-
-:classify_dirty_path
-set "CHECK_PATH=%~1"
-if /I "!CHECK_PATH!"=="install.cmd" exit /b 0
-if /I "!CHECK_PATH!"=="upgrade.cmd" exit /b 0
-if /I "!CHECK_PATH!"=="install.ps1" exit /b 0
-if /I "!CHECK_PATH!"=="upgrade.ps1" exit /b 0
-if /I "!CHECK_PATH!"=="scripts/Environment.ps1" exit /b 0
-if /I "!CHECK_PATH!"=="scripts\Environment.ps1" exit /b 0
-echo ERROR: Local tracked edit detected: !CHECK_PATH!
->>"%LOG%" echo Rejected local tracked edit: !CHECK_PATH!
-set "DIRTY_REJECT=1"
-exit /b 0
-
-:restore_lockfiles
->>"%LOG%" echo Restoring repository lock files after validation.
+:restore_generated_lockfiles
+>>"%LOG%" echo Restoring tracked NuGet lock files after install validation.
 git checkout -- "source/SylphyHorn/packages.lock.json" "source/SylphyHorn.Tests/packages.lock.json" >>"%LOG%" 2>&1
 exit /b %ERRORLEVEL%
 
@@ -254,14 +225,11 @@ goto :fail
 :unsafe_folder
 echo ERROR: Target folder contains unrelated files and is not a Git repository.
 goto :fail_pop
-:dirty_repo
-echo ERROR: Existing repository contains tracked user/source changes. Nothing was overwritten.
-goto :fail_pop
 :repo_fail
-echo ERROR: Git repository setup/update failed.
+echo ERROR: Git repository reset/setup failed.
 goto :fail_pop
 :submodule_fail
-echo ERROR: Git submodule initialization failed.
+echo ERROR: Git submodule synchronization failed.
 goto :fail_pop
 :sdk_version_fail
 echo ERROR: Unable to read the required SDK version from global.json.
@@ -270,19 +238,19 @@ goto :fail_pop
 echo ERROR: Required .NET SDK installation/verification failed.
 goto :fail_pop
 :restore_fail_dirty
-call :restore_lockfiles
+call :restore_generated_lockfiles
 echo ERROR: .NET 10 NuGet restore failed.
 goto :fail_pop
 :build_fail_dirty
-call :restore_lockfiles
+call :restore_generated_lockfiles
 echo ERROR: .NET 10 Release build failed.
 goto :fail_pop
 :test_fail_dirty
-call :restore_lockfiles
+call :restore_generated_lockfiles
 echo ERROR: .NET 10 unit tests failed.
 goto :fail_pop
 :lockfile_cleanup_fail
-echo ERROR: Validation succeeded but lockfile cleanup failed.
+echo ERROR: Validation succeeded but generated lockfiles could not be restored.
 goto :fail_pop
 :git_state_fail
 echo ERROR: Local HEAD differs from origin/%BRANCH%.
