@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.23 - 02.09.2026
+
+- Added `run.cmd` as a simple development launcher for the Release x64 build.
+- `run.cmd` now acts as a restart command: if `SylphyHorn.exe` is already running it is stopped first and then started again; if it is not running it is started normally.
+- Updated the authoritative upgrade runner so it records whether SylphyHorn was running before upgrade, stops it before repository/build work, and restores the previous running state afterward.
+- Added graceful-close waiting with a bounded forced-termination fallback so running binaries cannot keep build outputs locked indefinitely.
+- If an upgrade fails after SylphyHorn was stopped, the runner attempts to restore the last existing executable so an upgrade failure does not unnecessarily leave the desktop manager offline.
+- Successful runtime restoration is verified by checking that the `SylphyHorn` process remains running after restart.
+
 ## 0.22 - 02.09.2026
 
 - Added a true two-stage `upgrade.cmd` self-update bootstrap.
