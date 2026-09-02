@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Reflection;
@@ -28,6 +28,7 @@ namespace SylphyHorn.Tests
 				Scalar("SuspendKeyDetection", false),
 				Scalar("FirstTime", true),
 				Scalar<string>("Culture", null),
+				Scalar("LoggingMode", "single"),
 				Scalar("Placement", 5U),
 				Scalar("Display", 0U),
 				Scalar("NotificationWindowStyle", 4U),
