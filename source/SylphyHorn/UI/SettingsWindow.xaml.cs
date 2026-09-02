@@ -64,6 +64,8 @@ namespace SylphyHorn.UI
 			this.MinHeight = 640;
 			this.WindowStartupLocation = WindowStartupLocation.CenterScreen;
 
+			this.MoveNotificationBehaviorSettings();
+
 			this._appLogView = new AppLogView();
 			if (this._legacySettingsTabs.Items[12] is TabItem logTab)
 			{
@@ -102,6 +104,62 @@ namespace SylphyHorn.UI
 			this.SelectPrimaryNavigation(this._primaryNavigationButtons[0]);
 		}
 
+		private void MoveNotificationBehaviorSettings()
+		{
+			if (this._legacySettingsTabs.Items[0] is not TabItem generalTab ||
+				this._legacySettingsTabs.Items[3] is not TabItem behaviorTab ||
+				generalTab.Content is not ScrollViewer generalScroll ||
+				behaviorTab.Content is not ScrollViewer behaviorScroll ||
+				generalScroll.Content is not StackPanel generalRoot ||
+				behaviorScroll.Content is not StackPanel behaviorRoot)
+			{
+				return;
+			}
+
+			for (var i = 1; i < generalRoot.Children.Count - 2; i++)
+			{
+				if (generalRoot.Children[i] is not StackPanel notificationControls ||
+					!HasCheckedBinding(notificationControls, "NotificationWhenSwitchedDesktop.Value"))
+				{
+					continue;
+				}
+
+				if (generalRoot.Children[i - 1] is not TextBlock header ||
+					generalRoot.Children[i + 1] is not StackPanel alwaysShowControls ||
+					!HasCheckedBinding(alwaysShowControls, "AlwaysShowDesktopNotification.Value") ||
+					generalRoot.Children[i + 2] is not Border spacer)
+				{
+					return;
+				}
+
+				// Reparent the original controls so their localization and existing bindings stay intact.
+				generalRoot.Children.Remove(spacer);
+				generalRoot.Children.Remove(alwaysShowControls);
+				generalRoot.Children.Remove(notificationControls);
+				generalRoot.Children.Remove(header);
+
+				behaviorRoot.Children.Insert(0, header);
+				behaviorRoot.Children.Insert(1, notificationControls);
+				behaviorRoot.Children.Insert(2, alwaysShowControls);
+				behaviorRoot.Children.Insert(3, spacer);
+				return;
+			}
+		}
+
+		private static bool HasCheckedBinding(StackPanel panel, string bindingPath)
+		{
+			foreach (var checkBox in panel.Children.OfType<CheckBox>())
+			{
+				var binding = BindingOperations.GetBinding(checkBox, CheckBox.IsCheckedProperty);
+				if (string.Equals(binding?.Path?.Path, bindingPath, StringComparison.Ordinal))
+				{
+					return true;
+				}
+			}
+
+			return false;
+		}
+
 		private Border CreateNavigationPanel()
 		{
 			var panel = new DockPanel
@@ -110,51 +168,12 @@ namespace SylphyHorn.UI
 				Background = new SolidColorBrush(Color.FromRgb(23, 26, 31)),
 			};
 
-			var footer = new Border
-			{
-				Padding = new Thickness(18, 14, 18, 16),
-				BorderBrush = new SolidColorBrush(Color.FromRgb(48, 53, 61)),
-				BorderThickness = new Thickness(0, 1, 0, 0),
-			};
-			DockPanel.SetDock(footer, Dock.Bottom);
-			footer.Child = new StackPanel
-			{
-				Children =
-				{
-					new TextBlock
-					{
-						Text = "SylphyHornPlusCon",
-						Foreground = new SolidColorBrush(Color.FromRgb(225, 229, 235)),
-						FontSize = 13,
-						FontWeight = FontWeights.SemiBold,
-					},
-					new TextBlock
-					{
-						Text = "Settings",
-						Foreground = new SolidColorBrush(Color.FromRgb(135, 143, 154)),
-						FontSize = 12,
-						Margin = new Thickness(0, 2, 0, 0),
-					},
-				},
-			};
-			panel.Children.Add(footer);
-
 			var scroll = new ScrollViewer
 			{
 				VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
 				HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled,
 			};
-			var stack = new StackPanel { Margin = new Thickness(12, 20, 12, 16) };
-
-			var heading = new TextBlock
-			{
-				Text = "SETTINGS",
-				Foreground = new SolidColorBrush(Color.FromRgb(122, 132, 145)),
-				FontSize = 11,
-				FontWeight = FontWeights.SemiBold,
-				Margin = new Thickness(10, 0, 0, 12),
-			};
-			stack.Children.Add(heading);
+			var stack = new StackPanel { Margin = new Thickness(12, 12, 12, 16) };
 
 			this.AddNavigationItem(stack, "Desktops", "Manage virtual desktops and per-desktop settings.", new[] { 1 });
 			this.AddNavigationItem(stack, "General", "Desktop switching, tray behavior, startup, language and settings management.", new[] { 0 });
