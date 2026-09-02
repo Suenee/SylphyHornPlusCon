@@ -21,6 +21,7 @@ namespace SylphyHorn.UI
 		private TextBlock _pageTitle;
 		private TextBlock _pageDescription;
 		private Button _selectedPrimaryButton;
+		private AppLogView _appLogView;
 
 		public static SettingsWindow Instance { get; set; }
 
@@ -40,6 +41,7 @@ namespace SylphyHorn.UI
 		protected override void OnClosed(EventArgs e)
 		{
 			base.OnClosed(e);
+			this._appLogView?.Dispose();
 			(this.DataContext as IDisposable)?.Dispose();
 		}
 
@@ -61,6 +63,12 @@ namespace SylphyHorn.UI
 			this.MinWidth = 980;
 			this.MinHeight = 640;
 			this.WindowStartupLocation = WindowStartupLocation.CenterScreen;
+
+			this._appLogView = new AppLogView();
+			if (this._legacySettingsTabs.Items[12] is TabItem logTab)
+			{
+				logTab.Content = this._appLogView;
+			}
 
 			root.Children.Remove(this._legacySettingsTabs);
 			this.HideLegacyTabHeaders();
@@ -153,7 +161,7 @@ namespace SylphyHorn.UI
 			this.AddNavigationItem(stack, "Notifications", "Configure desktop switch notifications, layout and appearance.", new[] { 2, 3 }, new[] { "Appearance", "Behavior" });
 			this.AddNavigationItem(stack, "Keyboard shortcuts", "Configure global keyboard shortcuts by task instead of numbered pages.", new[] { 4, 5, 6, 7 }, new[] { "Desktop switching", "Move windows", "Reorder desktops", "Window actions" });
 			this.AddNavigationItem(stack, "Mouse gestures", "Configure rocker, wheel and mouse gestures by task.", new[] { 8, 9, 10, 11 }, new[] { "Desktop switching", "Move windows", "Reorder desktops", "Window actions" });
-			this.AddNavigationItem(stack, "App log", "Review application diagnostics and runtime events.", new[] { 12 });
+			this.AddNavigationItem(stack, "App log", "Search, filter and inspect structured application diagnostics.", new[] { 12 });
 			this.AddNavigationItem(stack, "About", "Version, source code, upstream credits and licenses.", new[] { 13 });
 
 			scroll.Content = stack;
