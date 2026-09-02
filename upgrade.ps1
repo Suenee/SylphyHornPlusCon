@@ -1,7 +1,7 @@
 $ErrorActionPreference = 'Stop'
 
-$Version = '0.24'
-$Revision = '0.24-run-launcher-normalization'
+$Version = '0.26'
+$Revision = '0.26-ui-refactor-runtime'
 $Repo = $env:SHPC_UPGRADE_REPO
 $TargetBranch = $env:SHPC_UPGRADE_BRANCH
 $ExpectedRemote = 'https://github.com/Suenee/SylphyHornPlusCon.git'
@@ -176,11 +176,23 @@ function Ensure-DotNetSdk([string]$RequiredVersion) {
     }
     return $dotnetPath
 }
+function Get-SylphyHornProcesses {
+    if (-not (Test-Path -LiteralPath $script:AppExe)) { return @() }
+    $target = [IO.Path]::GetFullPath($script:AppExe)
+    return @(Get-Process -ErrorAction SilentlyContinue | Where-Object {
+        try {
+            $_.Path -and ([IO.Path]::GetFullPath($_.Path) -ieq $target)
+        }
+        catch {
+            $false
+        }
+    })
+}
 function Test-SylphyHornRunning {
-    return [bool](Get-Process -Name 'SylphyHorn' -ErrorAction SilentlyContinue)
+    return ((Get-SylphyHornProcesses).Count -gt 0)
 }
 function Stop-SylphyHorn {
-    $running = @(Get-Process -Name 'SylphyHorn' -ErrorAction SilentlyContinue)
+    $running = @(Get-SylphyHornProcesses)
     if ($running.Count -eq 0) { return }
     Info ("[RUNTIME] Stopping SylphyHorn PID(s): " + (($running | ForEach-Object { $_.Id }) -join ', '))
     foreach ($proc in $running) {
@@ -190,7 +202,7 @@ function Stop-SylphyHorn {
     while ((Test-SylphyHornRunning) -and [DateTime]::UtcNow -lt $deadline) { Start-Sleep -Milliseconds 250 }
     if (Test-SylphyHornRunning) {
         Warn 'SylphyHorn did not exit within 5 seconds; forcing process termination before upgrade.'
-        Get-Process -Name 'SylphyHorn' -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
+        Get-SylphyHornProcesses | Stop-Process -Force -ErrorAction SilentlyContinue
         $deadline = [DateTime]::UtcNow.AddSeconds(5)
         while ((Test-SylphyHornRunning) -and [DateTime]::UtcNow -lt $deadline) { Start-Sleep -Milliseconds 250 }
         if (Test-SylphyHornRunning) { Fail 'STOP-RUNTIME' 'SylphyHorn is still running and could keep build artifacts locked.' }
@@ -299,23 +311,8 @@ try {
 
     $FailPhase = 'VALIDATION-CLEANUP'
     Restore-TrackedLockFiles
-    $validationPathspec = @('.', ':(exclude)upgrade.cmd', ':(exclude)upgrade.ps1')
-    $savedPreference = $ErrorActionPreference
-    try {
-        $ErrorActionPreference = 'Continue'
-        & git.exe diff --quiet --ignore-submodules=untracked -- @validationPathspec
-        $validationWorktreeDirty = ($LASTEXITCODE -ne 0)
-        & git.exe diff --cached --quiet --ignore-submodules=untracked -- @validationPathspec
-        $validationIndexDirty = ($LASTEXITCODE -ne 0)
-    }
-    finally { $ErrorActionPreference = $savedPreference }
-    if ($validationWorktreeDirty -or $validationIndexDirty) {
-        Info 'Tracked changes that block upgrade:'
-        $lines = & git.exe status --short --untracked-files=no --ignore-submodules=untracked 2>&1
-        foreach ($line in $lines) {
-            $text = [string]$line
-            if ($text -notmatch '^.. upgrade\.cmd$' -and $text -notmatch '^.. upgrade\.ps1$') { Write-Line $text Yellow }
-        }
+    if (Test-ProtectedTrackedDirty) {
+        Show-ProtectedTrackedChanges
         Fail $FailPhase 'Upgrade validation generated unexpected tracked changes.'
     }
 
