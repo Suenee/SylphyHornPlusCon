@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
@@ -36,6 +36,8 @@ namespace SylphyHorn.Serialization
 		public SerializableProperty<bool> FirstTime => this.Cache(key => new SerializableProperty<bool>(key, this._provider, true));
 
 		public SerializableProperty<string> Culture => this.Cache(key => new SerializableProperty<string>(key, this._provider));
+
+		public SerializableProperty<string> LoggingMode => this.Cache(key => new SerializableProperty<string>(key, this._provider, LoggingModeDefaultValue));
 
 		public SerializableProperty<uint> Placement => this.Cache(key => new SerializableProperty<uint>(key, this._provider, PlacementDefaultValue));
 
@@ -96,6 +98,8 @@ namespace SylphyHorn.Serialization
 		public static int NotificationDurationDefaultValue { get; } = 2500 /* milliseconds */;
 
 		public static bool OverrideWindowsDefaultKeyCombinationDefaultValue { get; } = false;
+
+		public static string LoggingModeDefaultValue { get; } = "single";
 
 		public static uint PlacementDefaultValue { get; } = 5 /* Center */;
 
