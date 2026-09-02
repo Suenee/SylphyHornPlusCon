@@ -3,7 +3,7 @@ cls
 setlocal EnableExtensions
 
 rem SylphyHornPlusCon development launcher
-rem Version: 0.01
+rem Version: 0.02
 
 set "APP=%~dp0source\SylphyHorn\bin\x64\Release\net10.0-windows10.0.26100.0\SylphyHorn.exe"
 
