@@ -1,5 +1,27 @@
 # Changelog
 
+## 0.27 - 03.09.2026
+
+- Reworked the legacy in-memory App log into a central structured logging service while preserving the existing snapshot/live subscription contract.
+- Added structured log metadata for level, service, event, object identifier, message, and details while retaining compatibility with the original `ILog` error sources.
+- Added `off`, `single`, and `all` persistent logging modes, following the logging convention already used by Socket Universe Bridge.
+- Added UTF-8 JSONL persistence under the application LocalAppData `Logs` directory without introducing another third-party dependency.
+- `single` keeps only the current application run, `all` restores previous persisted history, and `off` keeps the live UI feed without writing the normal persistent log.
+- Added structured startup, shutdown, desktop-runtime, settings, exception, and task-failure entries to the central logging path.
+- Replaced the old expandable exception list in Settings with a structured App log view containing a sortable table, level filters, full-text search, automatic tailing, selected-entry detail preview, clear, and filtered TXT export.
+- Added a persistent `LoggingMode` application setting with `single` as the default and extended the settings contract test accordingly.
+- Preserved the existing `StartupTrace` and emergency `ErrorReports` paths as bootstrap/crash fallbacks while the central logger becomes the normal operational diagnostic path.
+- Fixed sequence normalization when `all` mode combines persisted history with events already captured during the current startup.
+
+## 0.26 - 03.09.2026
+
+- Refactored the Settings window into a modern navigation shell while preserving the existing settings bindings and application behavior.
+- Made `Desktops` the default Settings page and grouped legacy numbered pages into semantic sections for notifications, keyboard shortcuts, and mouse gestures.
+- Added top-level navigation for Desktops, General, Notifications, Keyboard shortcuts, Mouse gestures, App log, and About.
+- Increased the Settings workspace and retained all original settings pages behind the new shell to minimize functional regression risk during the first UI refactor.
+- Updated `run.cmd` process detection to identify the running application by its exact executable path instead of assuming the Windows process image name.
+- Updated the upgrade runner to use the same executable-path runtime detection so a running application can be stopped before replacement and restored after a successful upgrade.
+
 ## 0.25 - 02.09.2026
 
 - Fixed `run.cmd` launch verification so it no longer trusts the inherited CMD `ERRORLEVEL` left by the preceding process-detection pipeline.
