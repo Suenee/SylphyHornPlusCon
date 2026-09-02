@@ -1,6 +1,7 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Diagnostics;
+using System.IO;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
@@ -120,6 +121,11 @@ Time: {now:O}"));
 			await LocalSettingsProvider.Instance.LoadOrMigrateAsync();
 			this._startupTrace.Write(StartupPhase.SettingsLoaded, StartupTraceResult.Succeeded);
 
+			var loggingMode = ParseLoggingMode(Settings.General.LoggingMode.Value);
+			var loggingPath = Path.Combine(Directories.LocalAppData.FullName, "Logs", "app.log.jsonl");
+			LoggingService.Instance.Configure(loggingMode, loggingPath);
+			LoggingService.Instance.Write(LogLevel.Info, "APP", "Started", $"{ProductInfo.Title} {ProductInfo.VersionString} started.", details: $"PID={Process.GetCurrentProcess().Id};OSBuild={ProductInfo.OSBuild}");
+
 			Settings.General.Culture.Subscribe(x => ResourceService.Current.ChangeCulture(x)).AddTo(this);
 			ThemeService.Current.Register(this, Theme.Windows, Accent.Windows);
 
@@ -133,6 +139,7 @@ Time: {now:O}"));
 			{
 				this.TaskTrayIcon.Show();
 				this._startupTrace.Write(StartupPhase.TrayShown, StartupTraceResult.Succeeded);
+				LoggingService.Instance.Write(LogLevel.Info, "DESKTOP", "RuntimeInitialized", "Virtual desktop runtime initialized.");
 				this.TaskTrayIcon.Reload();
 				if (Settings.General.FirstTime)
 				{
@@ -149,6 +156,7 @@ Time: {now:O}"));
 			preparation.VirtualDesktopInitializationCanceled += () =>
 			{
 				this._startupTrace.Write(StartupPhase.ShutdownOrFailure, StartupTraceResult.Cancelled);
+				LoggingService.Instance.Write(LogLevel.Warning, "DESKTOP", "RuntimeInitializationCancelled", "Virtual desktop runtime initialization was cancelled.");
 				this.BeginShutdown();
 			};
 			preparation.VirtualDesktopInitializationFailed += (ex, autoRestart) =>
@@ -183,6 +191,7 @@ Time: {now:O}"));
 		private async void BeginShutdown()
 		{
 			if (Interlocked.Exchange(ref this._shutdownStarted, 1) != 0) return;
+			LoggingService.Instance.Write(LogLevel.Info, "APP", "Shutdown", "Application shutdown started.");
 			this._startupCancellation.Cancel();
 			try
 			{
@@ -194,6 +203,7 @@ Time: {now:O}"));
 			}
 			base.Shutdown();
 		}
+
 		protected override void OnExit(ExitEventArgs e)
 		{
 			base.OnExit(e);
@@ -237,6 +247,15 @@ Time: {now:O}"));
 				}
 			}
 			this.BeginShutdown();
+		}
+
+		private static LogMode ParseLoggingMode(string value)
+		{
+			return string.Equals(value, "off", StringComparison.OrdinalIgnoreCase)
+				? LogMode.Off
+				: string.Equals(value, "all", StringComparison.OrdinalIgnoreCase)
+					? LogMode.All
+					: LogMode.Single;
 		}
 
 		#region IDisposable members
