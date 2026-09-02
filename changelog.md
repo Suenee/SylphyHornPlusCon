@@ -1,5 +1,20 @@
 # Changelog
 
+## 0.25 - 02.09.2026
+
+- Fixed `run.cmd` launch verification so it no longer trusts the inherited CMD `ERRORLEVEL` left by the preceding process-detection pipeline.
+- `run.cmd` now starts `SylphyHorn.exe`, waits briefly, and verifies the actual `SylphyHorn` process instead of treating `start` as authoritative evidence of launch success.
+- Added a startup-diagnostics hint when the process does not remain running after launch.
+- Bumped `run.cmd` to version 0.03.
+
+## 0.24 - 02.09.2026
+
+- Fixed `run.cmd` repository normalization after the launcher was initially written through the GitHub Contents API with CRLF bytes already stored in the Git blob.
+- Rewrote the tracked `run.cmd` blob with normalized LF content so `.gitattributes` can materialize CRLF correctly in Windows working trees.
+- Added `run.cmd` to the pre-synchronization maintenance-owned path set so an already-dirty launcher from the previous malformed blob can be recovered automatically.
+- Kept `run.cmd` subject to final post-build tracked-tree validation so launcher changes are not silently ignored after repository synchronization.
+- Bumped the upgrade runner to `0.24-run-launcher-normalization`.
+
 ## 0.23 - 02.09.2026
 
 - Added `run.cmd` as a simple development launcher for the Release x64 build.
