@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.28 - 03.09.2026
+
+- Removed the redundant `SETTINGS` navigation heading from the modern Settings sidebar.
+- Removed the redundant `SylphyHornPlusCon / Settings` footer block so the window caption remains the single Settings title.
+- Moved the existing desktop-switch notification controls from General to `Notifications > Behavior`, including the master enable toggle, notification duration, and always-show option.
+- Reparented the original WPF controls instead of recreating them so their existing bindings, localization, and behavior remain unchanged.
+
 ## 0.27 - 03.09.2026
 
 - Reworked the legacy in-memory App log into a central structured logging service while preserving the existing snapshot/live subscription contract.
