@@ -26,9 +26,6 @@ namespace SylphyHorn.UI
 		private readonly CheckBox _warning;
 		private readonly CheckBox _error;
 		private readonly CheckBox _tail;
-		private readonly TextBlock _detailHeader;
-		private readonly TextBox _detailMessage;
-		private readonly TextBox _detailDetails;
 		private readonly TextBlock _path;
 		private readonly IDisposable _subscription;
 
@@ -38,7 +35,6 @@ namespace SylphyHorn.UI
 			this.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
 			this.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
 			this.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
-			this.RowDefinitions.Add(new RowDefinition { Height = new GridLength(180) });
 			this.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
 
 			var top = new Grid { Margin = new Thickness(8, 8, 8, 6) };
@@ -107,6 +103,7 @@ namespace SylphyHorn.UI
 				Margin = new Thickness(8, 0, 8, 8),
 				FontFamily = new FontFamily("Consolas"),
 				FontSize = 12,
+				ToolTip = "Double-click a log entry to view details.",
 			};
 			this._grid.Columns.Add(new DataGridTextColumn { Header = "Timecode", Binding = new Binding(nameof(LogRow.Time)), Width = 170 });
 			this._grid.Columns.Add(new DataGridTextColumn { Header = "Level", Binding = new Binding(nameof(LogRow.Level)), Width = 75 });
@@ -114,26 +111,23 @@ namespace SylphyHorn.UI
 			this._grid.Columns.Add(new DataGridTextColumn { Header = "Object", Binding = new Binding(nameof(LogRow.ObjectId)), Width = 110 });
 			this._grid.Columns.Add(new DataGridTextColumn { Header = "Event", Binding = new Binding(nameof(LogRow.Event)), Width = 150 });
 			this._grid.Columns.Add(new DataGridTextColumn { Header = "Message", Binding = new Binding(nameof(LogRow.Message)), Width = new DataGridLength(1, DataGridLengthUnitType.Star) });
-			this._grid.SelectionChanged += (_, _) => this.ShowSelectedDetail();
+			this._grid.MouseDoubleClick += (_, e) =>
+			{
+				if (FindVisualParent<DataGridRow>(e.OriginalSource as DependencyObject) != null)
+				{
+					this.ShowSelectedDetailPopup();
+				}
+			};
+			this._grid.PreviewKeyDown += (_, e) =>
+			{
+				if (e.Key == System.Windows.Input.Key.Enter && this._grid.SelectedItem is LogRow)
+				{
+					e.Handled = true;
+					this.ShowSelectedDetailPopup();
+				}
+			};
 			Grid.SetRow(this._grid, 2);
 			this.Children.Add(this._grid);
-
-			var detail = new Grid { Margin = new Thickness(8, 0, 8, 8) };
-			detail.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
-			detail.RowDefinitions.Add(new RowDefinition { Height = new GridLength(72) });
-			detail.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
-			this._detailHeader = new TextBlock { Text = "Select a log entry to view details.", Foreground = new SolidColorBrush(Color.FromRgb(190, 196, 204)), FontWeight = FontWeights.SemiBold, Margin = new Thickness(0, 0, 0, 5) };
-			Grid.SetRow(this._detailHeader, 0);
-			detail.Children.Add(this._detailHeader);
-			this._detailMessage = DetailBox();
-			Grid.SetRow(this._detailMessage, 1);
-			detail.Children.Add(this._detailMessage);
-			this._detailDetails = DetailBox();
-			this._detailDetails.FontFamily = new FontFamily("Consolas");
-			Grid.SetRow(this._detailDetails, 2);
-			detail.Children.Add(this._detailDetails);
-			Grid.SetRow(detail, 3);
-			this.Children.Add(detail);
 
 			var bottom = new Grid { Margin = new Thickness(8, 0, 8, 8) };
 			bottom.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
@@ -150,7 +144,7 @@ namespace SylphyHorn.UI
 			buttons.Children.Add(clear);
 			Grid.SetColumn(buttons, 1);
 			bottom.Children.Add(buttons);
-			Grid.SetRow(bottom, 4);
+			Grid.SetRow(bottom, 3);
 			this.Children.Add(bottom);
 
 			this._subscription = LoggingService.Instance.Subscribe(
@@ -174,8 +168,19 @@ namespace SylphyHorn.UI
 			AcceptsReturn = true,
 			TextWrapping = TextWrapping.Wrap,
 			VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
-			Margin = new Thickness(0, 0, 0, 5),
+			HorizontalScrollBarVisibility = ScrollBarVisibility.Auto,
+			Margin = new Thickness(0, 4, 0, 12),
 		};
+
+		private static T FindVisualParent<T>(DependencyObject child) where T : DependencyObject
+		{
+			while (child != null)
+			{
+				if (child is T match) return match;
+				child = VisualTreeHelper.GetParent(child);
+			}
+			return null;
+		}
 
 		private void RefreshRows()
 		{
@@ -219,18 +224,77 @@ namespace SylphyHorn.UI
 			}.Any(value => !string.IsNullOrEmpty(value) && value.IndexOf(query, StringComparison.OrdinalIgnoreCase) >= 0);
 		}
 
-		private void ShowSelectedDetail()
+		private void ShowSelectedDetailPopup()
 		{
-			if (this._grid.SelectedItem is not LogRow row)
+			if (this._grid.SelectedItem is not LogRow row) return;
+
+			var popup = new Window
 			{
-				this._detailHeader.Text = "Select a log entry to view details.";
-				this._detailMessage.Clear();
-				this._detailDetails.Clear();
-				return;
-			}
-			this._detailHeader.Text = $"#{row.Sequence}  {row.Time}  {row.Level}  {row.Service}  {row.Event}" + (string.IsNullOrWhiteSpace(row.ObjectId) ? string.Empty : $"  [{row.ObjectId}]");
-			this._detailMessage.Text = row.FullMessage;
-			this._detailDetails.Text = row.Details ?? string.Empty;
+				Title = "Log detail",
+				Owner = Window.GetWindow(this),
+				WindowStartupLocation = WindowStartupLocation.CenterOwner,
+				Width = 760,
+				Height = 500,
+				MinWidth = 520,
+				MinHeight = 320,
+				ShowInTaskbar = false,
+				Background = new SolidColorBrush(Color.FromRgb(30, 34, 40)),
+				Foreground = Brushes.White,
+				FontFamily = new FontFamily("Segoe UI"),
+			};
+
+			var root = new Grid { Margin = new Thickness(20) };
+			root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+			root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+			root.RowDefinitions.Add(new RowDefinition { Height = new GridLength(110) });
+			root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+			root.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
+			root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+
+			var header = new TextBlock
+			{
+				Text = $"#{row.Sequence}  {row.Time}  {row.Level}  {row.Service}  {row.Event}" + (string.IsNullOrWhiteSpace(row.ObjectId) ? string.Empty : $"  [{row.ObjectId}]"),
+				Foreground = new SolidColorBrush(Color.FromRgb(220, 225, 232)),
+				FontWeight = FontWeights.SemiBold,
+				TextWrapping = TextWrapping.Wrap,
+				Margin = new Thickness(0, 0, 0, 14),
+			};
+			Grid.SetRow(header, 0);
+			root.Children.Add(header);
+
+			var messageLabel = Label("Message");
+			Grid.SetRow(messageLabel, 1);
+			root.Children.Add(messageLabel);
+			var message = DetailBox();
+			message.Text = row.FullMessage ?? string.Empty;
+			Grid.SetRow(message, 2);
+			root.Children.Add(message);
+
+			var detailsLabel = Label("Details");
+			Grid.SetRow(detailsLabel, 3);
+			root.Children.Add(detailsLabel);
+			var details = DetailBox();
+			details.FontFamily = new FontFamily("Consolas");
+			details.Text = string.IsNullOrWhiteSpace(row.Details) ? "(no additional details)" : row.Details;
+			Grid.SetRow(details, 4);
+			root.Children.Add(details);
+
+			var close = new Button
+			{
+				Content = "Close",
+				MinWidth = 90,
+				Height = 30,
+				HorizontalAlignment = HorizontalAlignment.Right,
+				Margin = new Thickness(0, 8, 0, 0),
+				IsDefault = true,
+				IsCancel = true,
+			};
+			close.Click += (_, _) => popup.Close();
+			Grid.SetRow(close, 5);
+			root.Children.Add(close);
+
+			popup.Content = root;
+			popup.ShowDialog();
 		}
 
 		private void ModeChanged(object sender, SelectionChangedEventArgs e)
@@ -271,7 +335,6 @@ namespace SylphyHorn.UI
 			LoggingService.Instance.Clear();
 			this._entries.Clear();
 			this._rows.Clear();
-			this.ShowSelectedDetail();
 		}
 
 		public void Dispose()
