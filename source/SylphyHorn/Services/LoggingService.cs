@@ -102,6 +102,7 @@ namespace SylphyHorn.Services
 					var currentSession = this._logs.ToArray();
 					if (mode == LogMode.All) this.LoadPersistedUnsafe();
 					else if (mode == LogMode.Single) this.TruncateFileUnsafe();
+					this.ResequenceUnsafe();
 
 					if (mode != LogMode.Off)
 					{
@@ -237,13 +238,23 @@ namespace SylphyHorn.Services
 						var record = JsonSerializer.Deserialize<PersistedRecord>(line);
 						if (record == null) continue;
 						var log = new PersistedLog(record.Timestamp, record.Event, record.Message);
-						persisted.Add(new LogEntry(++this._sequence, log, record.Level, record.Service, record.Event, record.ObjectId, record.Details));
+						persisted.Add(new LogEntry(0, log, record.Level, record.Service, record.Event, record.ObjectId, record.Details));
 					}
 					catch { }
 				}
 				if (persisted.Count > 0) this._logs.InsertRange(0, persisted);
 			}
 			catch { }
+		}
+
+		private void ResequenceUnsafe()
+		{
+			this._sequence = 0;
+			for (var i = 0; i < this._logs.Count; i++)
+			{
+				var entry = this._logs[i];
+				this._logs[i] = new LogEntry(++this._sequence, entry.Log, entry.Level, entry.Service, entry.Event, entry.ObjectId, entry.Details);
+			}
 		}
 
 		private void AppendPersistedUnsafe(LogEntry entry)
