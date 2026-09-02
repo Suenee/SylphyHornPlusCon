@@ -1,7 +1,7 @@
 $ErrorActionPreference = 'Stop'
 
-$Version = '0.23'
-$Revision = '0.23-runtime-restart'
+$Version = '0.24'
+$Revision = '0.24-run-launcher-normalization'
 $Repo = $env:SHPC_UPGRADE_REPO
 $TargetBranch = $env:SHPC_UPGRADE_BRANCH
 $ExpectedRemote = 'https://github.com/Suenee/SylphyHornPlusCon.git'
@@ -81,7 +81,7 @@ function Get-GitText([string[]]$Arguments, [string]$Phase = 'GIT') {
     return (($output | ForEach-Object { [string]$_ }) -join [Environment]::NewLine).Trim()
 }
 function Test-ProtectedTrackedDirty {
-    $pathspec = @('.', ':(exclude)upgrade.cmd', ':(exclude)upgrade.ps1')
+    $pathspec = @('.', ':(exclude)upgrade.cmd', ':(exclude)upgrade.ps1', ':(exclude)run.cmd')
     $savedPreference = $ErrorActionPreference
     try {
         $ErrorActionPreference = 'Continue'
@@ -109,7 +109,7 @@ function Show-ProtectedTrackedChanges {
     if ($rc -ne 0) { return }
     foreach ($line in $lines) {
         $text = [string]$line
-        if ($text -notmatch '^.. upgrade\.cmd$' -and $text -notmatch '^.. upgrade\.ps1$') { Write-Line $text Yellow }
+        if ($text -notmatch '^.. upgrade\.cmd$' -and $text -notmatch '^.. upgrade\.ps1$' -and $text -notmatch '^.. run\.cmd$') { Write-Line $text Yellow }
     }
 }
 function Restore-TrackedLockFiles {
@@ -256,11 +256,11 @@ try {
 
     if (Test-ProtectedTrackedDirty) {
         Show-ProtectedTrackedChanges
-        Fail $FailPhase 'Tracked local changes outside bootstrap files exist. Commit or revert them before upgrade.'
+        Fail $FailPhase 'Tracked local changes outside maintenance-owned launchers exist. Commit or revert them before upgrade.'
     }
 
     Info ("[BOOTSTRAP] Synchronizing tracked tree to origin/$TargetBranch.")
-    Info '[BOOTSTRAP] upgrade.cmd and upgrade.ps1 are authoritative remote bootstrap files.'
+    Info '[BOOTSTRAP] upgrade.cmd, upgrade.ps1 and run.cmd are authoritative remote maintenance files.'
     Run-Native -Phase $FailPhase -Exe 'git.exe' -ArgumentList @('reset','--hard',"origin/$TargetBranch") | Out-Null
 
     $head = Get-GitText @('rev-parse','HEAD') $FailPhase
@@ -299,8 +299,23 @@ try {
 
     $FailPhase = 'VALIDATION-CLEANUP'
     Restore-TrackedLockFiles
-    if (Test-ProtectedTrackedDirty) {
-        Show-ProtectedTrackedChanges
+    $validationPathspec = @('.', ':(exclude)upgrade.cmd', ':(exclude)upgrade.ps1')
+    $savedPreference = $ErrorActionPreference
+    try {
+        $ErrorActionPreference = 'Continue'
+        & git.exe diff --quiet --ignore-submodules=untracked -- @validationPathspec
+        $validationWorktreeDirty = ($LASTEXITCODE -ne 0)
+        & git.exe diff --cached --quiet --ignore-submodules=untracked -- @validationPathspec
+        $validationIndexDirty = ($LASTEXITCODE -ne 0)
+    }
+    finally { $ErrorActionPreference = $savedPreference }
+    if ($validationWorktreeDirty -or $validationIndexDirty) {
+        Info 'Tracked changes that block upgrade:'
+        $lines = & git.exe status --short --untracked-files=no --ignore-submodules=untracked 2>&1
+        foreach ($line in $lines) {
+            $text = [string]$line
+            if ($text -notmatch '^.. upgrade\.cmd$' -and $text -notmatch '^.. upgrade\.ps1$') { Write-Line $text Yellow }
+        }
         Fail $FailPhase 'Upgrade validation generated unexpected tracked changes.'
     }
 
@@ -324,7 +339,7 @@ try {
 }
 catch {
     $message = $_.Exception.Message
-    if ($message -and -not ($message -match '^Tracked local changes outside bootstrap files exist\.' )) {
+    if ($message -and -not ($message -match '^Tracked local changes outside maintenance-owned launchers exist\.' )) {
         if (-not ($message -match '^git\.exe failed|^dotnet\.exe failed|^winget\.exe failed')) { Write-Line ('ERROR DETAIL: ' + $message) Red }
     }
     Restore-SylphyHornRuntime -FailurePath
