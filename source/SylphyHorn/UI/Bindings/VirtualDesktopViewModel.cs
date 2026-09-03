@@ -5,6 +5,8 @@ using SylphyHorn.Serialization;
 using SylphyHorn.Services;
 using SylphyHorn.Services.DesktopTransitions;
 using System;
+using System.Collections.Generic;
+using System.Text.Json;
 using System.Windows.Media;
 using WindowsDesktop;
 
@@ -12,8 +14,10 @@ namespace SylphyHorn.UI.Bindings
 {
 	public class VirtualDesktopViewModel : ObservableObject
 	{
+		private static readonly object CanonicalNamesGate = new object();
 		private readonly DesktopTransitionRuntime _runtime;
 		private string _name;
+		private string _canonicalName;
 		private WallpaperViewModel _wallpaper;
 		private bool _supportsWallpaperPath;
 
@@ -23,6 +27,12 @@ namespace SylphyHorn.UI.Bindings
 			this.Id = record?.Id ?? throw new ArgumentNullException(nameof(record));
 			this.Index = index;
 			this._name = record.Name.HasValue ? record.Name.Value : null;
+			this._canonicalName = ReadCanonicalName(this.Id);
+			if (string.IsNullOrWhiteSpace(this._canonicalName))
+			{
+				this._canonicalName = !string.IsNullOrWhiteSpace(this._name) ? this._name.Trim() : $"desktop-{index + 1}";
+				WriteCanonicalName(this.Id, this._canonicalName);
+			}
 			this._supportsWallpaperPath = record.WallpaperPath.ReadStatus != VirtualDesktopReadStatus.Unsupported;
 			this._wallpaper = new WallpaperViewModel(
 				record.WallpaperPath.HasValue ? record.WallpaperPath.Value : null,
@@ -54,6 +64,25 @@ namespace SylphyHorn.UI.Bindings
 			{
 				if (this._name == value) return;
 				this._runtime.EditName(this.Id, value);
+			}
+		}
+		public string Title
+		{
+			get => this.Name;
+			set => this.Name = value;
+		}
+		public string CanonicalName
+		{
+			get => this._canonicalName;
+			set
+			{
+				var canonical = string.IsNullOrWhiteSpace(value)
+					? (!string.IsNullOrWhiteSpace(this._name) ? this._name.Trim() : $"desktop-{this.Index + 1}")
+					: value.Trim();
+				if (string.Equals(this._canonicalName, canonical, StringComparison.Ordinal)) return;
+				this._canonicalName = canonical;
+				WriteCanonicalName(this.Id, canonical);
+				this.OnPropertyChanged();
 			}
 		}
 		public bool IsWallpaperEnabled => ProductInfo.IsWallpaperSupportBuild || Settings.General.ChangeBackgroundEachDesktop;
@@ -91,6 +120,7 @@ namespace SylphyHorn.UI.Bindings
 			{
 				this._name = name;
 				this.OnPropertyChanged(nameof(this.Name));
+				this.OnPropertyChanged(nameof(this.Title));
 			}
 			var wallpaperPath = record.WallpaperPath.HasValue ? record.WallpaperPath.Value : null;
 			this._supportsWallpaperPath = record.WallpaperPath.ReadStatus != VirtualDesktopReadStatus.Unsupported;
@@ -116,6 +146,48 @@ namespace SylphyHorn.UI.Bindings
 		public void MoveToLast() => this._runtime.MoveLast(this.Id);
 		public void Switch() => this._runtime.Switch(this.Id);
 		public void Close() => this._runtime.Remove(this.Id);
+		public void ForgetCanonicalName()
+		{
+			lock (CanonicalNamesGate)
+			{
+				var names = ReadCanonicalNamesUnsafe();
+				if (!names.Remove(this.Id.ToString("D"))) return;
+				Settings.General.DesktopCanonicalNames.Value = JsonSerializer.Serialize(names);
+			}
+		}
+
+		private static string ReadCanonicalName(Guid id)
+		{
+			lock (CanonicalNamesGate)
+			{
+				var names = ReadCanonicalNamesUnsafe();
+				return names.TryGetValue(id.ToString("D"), out var value) ? value : null;
+			}
+		}
+
+		private static void WriteCanonicalName(Guid id, string value)
+		{
+			lock (CanonicalNamesGate)
+			{
+				var names = ReadCanonicalNamesUnsafe();
+				names[id.ToString("D")] = value;
+				Settings.General.DesktopCanonicalNames.Value = JsonSerializer.Serialize(names);
+			}
+		}
+
+		private static Dictionary<string, string> ReadCanonicalNamesUnsafe()
+		{
+			try
+			{
+				var json = Settings.General.DesktopCanonicalNames.Value;
+				if (string.IsNullOrWhiteSpace(json)) return new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+				return JsonSerializer.Deserialize<Dictionary<string, string>>(json) ?? new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+			}
+			catch
+			{
+				return new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+			}
+		}
 
 	}
 
