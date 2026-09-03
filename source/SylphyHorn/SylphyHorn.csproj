@@ -1,4 +1,4 @@
-﻿<Project Sdk="Microsoft.NET.Sdk">
+<Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
     <TargetFramework>net10.0-windows10.0.26100.0</TargetFramework>
@@ -6,13 +6,13 @@
     <OutputType>WinExe</OutputType>
     <Title>SylphyHornPlus</Title>
     <Product>SylphyHornPlus</Product>
-    <Version>4.0.0</Version>
+    <Version>0.31.0</Version>
     <Authors>hwtnb</Authors>
     <Company>hwtnb.net</Company>
     <Copyright>Copyright © 2015 - 2018 Manato KAMEYA, 2021 - 2022 hwtnb</Copyright>
     <Description>Virtual Desktop Tools for Windows 11 and 10</Description>
     <AssemblyTitle>SylphyHornPlus</AssemblyTitle>
-    <AssemblyVersion>4.0.0.0</AssemblyVersion>
+    <AssemblyVersion>0.31.0.0</AssemblyVersion>
     <UseApplicationTrust>false</UseApplicationTrust>
     <UseWPF>true</UseWPF>
     <UseWindowsForms>true</UseWindowsForms>
@@ -25,7 +25,7 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <AssemblyMetadata Include="ExtraVersion" Value="beta.16" />
+    <AssemblyMetadata Include="ExtraVersion" Value="" />
     <AssemblyMetadata Include="OriginalCompany" Value="grabacr.net" />
     <AssemblyMetadata Include="OriginalProduct" Value="SylphyHorn" />
   </ItemGroup>
@@ -113,10 +113,6 @@
     <Resource Include=".assets\tasktray.light.ico" />
     <Resource Include=".assets\app.white.ico" />
     <Resource Include=".assets\app.green.ico" />
-  </ItemGroup>
-
-  <ItemGroup>
-    <Service Include="{508349B6-6B84-4DF5-91F0-309BEEBAD82D}" />
   </ItemGroup>
 
   <ItemGroup>
