@@ -1,7 +1,7 @@
 $ErrorActionPreference = 'Stop'
 
-$Version = '0.26'
-$Revision = '0.26-ui-refactor-runtime'
+$Version = '0.27'
+$Revision = '0.27-lockfile-dirty-gate'
 $Repo = $env:SHPC_UPGRADE_REPO
 $TargetBranch = $env:SHPC_UPGRADE_BRANCH
 $ExpectedRemote = 'https://github.com/Suenee/SylphyHornPlusCon.git'
@@ -81,7 +81,14 @@ function Get-GitText([string[]]$Arguments, [string]$Phase = 'GIT') {
     return (($output | ForEach-Object { [string]$_ }) -join [Environment]::NewLine).Trim()
 }
 function Test-ProtectedTrackedDirty {
-    $pathspec = @('.', ':(exclude)upgrade.cmd', ':(exclude)upgrade.ps1', ':(exclude)run.cmd')
+    $pathspec = @(
+        '.',
+        ':(exclude)upgrade.cmd',
+        ':(exclude)upgrade.ps1',
+        ':(exclude)run.cmd',
+        ':(exclude)source/SylphyHorn/packages.lock.json',
+        ':(exclude)source/SylphyHorn.Tests/packages.lock.json'
+    )
     $savedPreference = $ErrorActionPreference
     try {
         $ErrorActionPreference = 'Continue'
@@ -109,7 +116,13 @@ function Show-ProtectedTrackedChanges {
     if ($rc -ne 0) { return }
     foreach ($line in $lines) {
         $text = [string]$line
-        if ($text -notmatch '^.. upgrade\.cmd$' -and $text -notmatch '^.. upgrade\.ps1$' -and $text -notmatch '^.. run\.cmd$') { Write-Line $text Yellow }
+        if ($text -notmatch '^.. upgrade\.cmd$' -and
+            $text -notmatch '^.. upgrade\.ps1$' -and
+            $text -notmatch '^.. run\.cmd$' -and
+            $text -notmatch '^.. source/SylphyHorn/packages\.lock\.json$' -and
+            $text -notmatch '^.. source/SylphyHorn\.Tests/packages\.lock\.json$') {
+            Write-Line $text Yellow
+        }
     }
 }
 function Restore-TrackedLockFiles {
@@ -272,7 +285,7 @@ try {
     }
 
     Info ("[BOOTSTRAP] Synchronizing tracked tree to origin/$TargetBranch.")
-    Info '[BOOTSTRAP] upgrade.cmd, upgrade.ps1 and run.cmd are authoritative remote maintenance files.'
+    Info '[BOOTSTRAP] upgrade.cmd, upgrade.ps1, run.cmd and generated NuGet lockfiles are authoritative maintenance state.'
     Run-Native -Phase $FailPhase -Exe 'git.exe' -ArgumentList @('reset','--hard',"origin/$TargetBranch") | Out-Null
 
     $head = Get-GitText @('rev-parse','HEAD') $FailPhase
