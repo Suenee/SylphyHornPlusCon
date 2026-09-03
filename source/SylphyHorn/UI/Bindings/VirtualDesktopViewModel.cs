@@ -120,7 +120,6 @@ namespace SylphyHorn.UI.Bindings
 			{
 				this._name = name;
 				this.OnPropertyChanged(nameof(this.Name));
-				this.OnPropertyChanged(nameof(this.Title));
 			}
 			var wallpaperPath = record.WallpaperPath.HasValue ? record.WallpaperPath.Value : null;
 			this._supportsWallpaperPath = record.WallpaperPath.ReadStatus != VirtualDesktopReadStatus.Unsupported;
