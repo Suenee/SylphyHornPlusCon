@@ -187,7 +187,7 @@ namespace SylphyHorn.UI
 			if (this._grid == null) return;
 			var query = this._search?.Text?.Trim();
 			var selectedSequence = (this._grid.SelectedItem as LogRow)?.Sequence;
-			var filtered = this._entries.Where(this.IsVisible).Where(entry => Matches(entry, query)).Select(LogRow.From).ToArray();
+			var filtered = this._entries.Where(this.MatchesLevelFilter).Where(entry => Matches(entry, query)).Select(LogRow.From).ToArray();
 			this._rows.Clear();
 			foreach (var row in filtered) this._rows.Add(row);
 			if (selectedSequence.HasValue)
@@ -202,7 +202,7 @@ namespace SylphyHorn.UI
 			}
 		}
 
-		private bool IsVisible(LogEntry entry)
+		private bool MatchesLevelFilter(LogEntry entry)
 		{
 			return entry.Level switch
 			{
