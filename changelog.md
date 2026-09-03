@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.36 - 04.09.2026
+
+- Added a transport-independent `DesktopControlService` as the application-facing command/state boundary for future external integrations; it has no JSON, WebSocket, VPP, SUB, or SUM dependency.
+- Added desktop selection by unique canonical name, Windows desktop ID, or one-based position, with canonical name intended as the primary stable automation identifier.
+- Added commands to activate a desktop and create a new desktop; `position = 0` appends at the end, while an explicit position inserts the new logical desktop at that position by reusing the existing cross-version logical reorder backend.
+- Added global `on` / `off` / `toggle` control for individual wallpaper management and per-desktop `on` / `off` / `toggle` control with remembered session wallpaper state for reversible disable/enable behavior.
+- Added immutable whole-system and per-desktop state snapshots plus a `StateChanged` event so future protocol adapters can provide feedback without polling the SHPC UI.
+- Added uniform `CommandResult<T>` results with stable error codes and returned state for command feedback.
+- Added a thread-safe `Enabled` gate. Read-only state remains available while disabled, but mutating control commands return `service_disabled`; the gate is intentionally transport-neutral so a future WebSocket layer can own its lifecycle.
+- Marshalled control commands onto the virtual-desktop owner Dispatcher so future callers may safely invoke the service from non-UI threads.
+- Bound the control service only after the virtual desktop runtime has initialized and integrated it with the existing application lifecycle and logging service.
+
 ## 0.35 - 04.09.2026
 
 - Fixed the desktop ViewModel characterization contract introduced by the 0.34 Title/Name behavior: when the Windows desktop name changes, `Title` now intentionally remains part of the observed `PropertyChanged` sequence because Title is derived from that same backing value.
@@ -163,7 +175,7 @@
 
 - Replaced updater source synchronization based on `git merge --ff-only` with `git reset --keep origin/<branch>` after the protected-change safety gate passes.
 - This avoids merge/index-state failures while preserving local tracked changes by aborting if an update would overwrite them.
-- `upgrade.cmd` remains maintenance-owned and is normalized to the current `HEAD` before branch synchronization.
+- `upgrade.cmd` remains maintenance-owned and is normalized to the current `HEAD` before source synchronization.
 - The updater now prints the exact Git synchronization error to the console as well as `logs/upgrade.log` if the reset cannot be completed.
 - Untracked files are not proactively cleaned or deleted by the updater.
 
