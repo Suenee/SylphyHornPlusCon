@@ -258,7 +258,7 @@ namespace SylphyHorn.UI
 			if (desktop == null) return;
 			var original = WallpaperService.Instance.OriginalWallpaperPath;
 			if (!Settings.General.ChangeBackgroundEachDesktop.Value && !this.ConfirmUnmanagedWallpaperChange()) return;
-			desktop.WallpaperPath = original;
+			desktop.ResetWallpaperPath(original);
 			if (Settings.General.OriginalWallpaperCaptured.Value) desktop.WallpaperPosition = WallpaperService.Instance.OriginalWallpaperPosition;
 			if (!Settings.General.ChangeBackgroundEachDesktop.Value) WallpaperService.Instance.ApplyDesktopWallpaperNow(original, desktop.WallpaperPosition);
 			LoggingService.Instance.Write(LogLevel.Info, "SETTINGS", "WallpaperReset", "Desktop wallpaper reset to the preserved Windows wallpaper.", desktop.Id.ToString("D"), original);
