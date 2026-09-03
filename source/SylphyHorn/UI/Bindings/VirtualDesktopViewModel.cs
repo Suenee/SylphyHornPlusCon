@@ -6,6 +6,7 @@ using SylphyHorn.Services;
 using SylphyHorn.Services.DesktopTransitions;
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.Text;
 using System.Text.Json;
 using System.Windows.Media;
@@ -19,6 +20,7 @@ namespace SylphyHorn.UI.Bindings
 		private readonly DesktopTransitionRuntime _runtime;
 		private string _name;
 		private string _canonicalName;
+		private bool _canonicalNameIsAutomatic;
 		private WallpaperViewModel _wallpaper;
 		private bool _supportsWallpaperPath;
 
@@ -31,11 +33,13 @@ namespace SylphyHorn.UI.Bindings
 			this._canonicalName = ReadCanonicalName(this.Id);
 			if (string.IsNullOrWhiteSpace(this._canonicalName))
 			{
+				this._canonicalNameIsAutomatic = string.IsNullOrWhiteSpace(this._name);
 				this._canonicalName = CreateUniqueCanonicalName(this.Id, this._name, index);
 				WriteCanonicalName(this.Id, this._canonicalName);
 			}
 			else
 			{
+				this._canonicalNameIsAutomatic = string.IsNullOrWhiteSpace(this._name) && IsAutomaticCanonicalName(this._canonicalName, index);
 				var normalized = CreateUniqueCanonicalName(this.Id, this._canonicalName, index);
 				if (!string.Equals(normalized, this._canonicalName, StringComparison.Ordinal))
 				{
@@ -62,19 +66,44 @@ namespace SylphyHorn.UI.Bindings
 		public RelayCommand SwitchCommand { get; }
 		public Guid Id { get; }
 		public int Index { get; private set; }
-		public string NumberText => (this.Index + 1).ToString();
+		public string NumberText => (this.Index + 1).ToString(CultureInfo.InvariantCulture);
 		public string Name { get => this._name; set { if (this._name != value) this._runtime.EditName(this.Id, value); } }
-		public string Title { get => this.Name; set => this.Name = value; }
+		public string Title
+		{
+			get
+			{
+				if (!string.IsNullOrWhiteSpace(this._name)) return this._name;
+				if (!this._canonicalNameIsAutomatic && !string.IsNullOrWhiteSpace(this._canonicalName)) return HumanizeCanonicalName(this._canonicalName);
+				return $"Desktop {this.Index + 1}";
+			}
+			set
+			{
+				var title = string.IsNullOrWhiteSpace(value) ? null : value.Trim();
+				if (title != null && this._canonicalNameIsAutomatic)
+				{
+					var canonical = CreateUniqueCanonicalName(this.Id, title, this.Index);
+					this._canonicalName = canonical;
+					this._canonicalNameIsAutomatic = false;
+					WriteCanonicalName(this.Id, canonical);
+					this.OnPropertyChanged(nameof(this.CanonicalName));
+				}
+				if (!string.Equals(this._name, title, StringComparison.Ordinal)) this._runtime.EditName(this.Id, title);
+			}
+		}
 		public string CanonicalName
 		{
 			get => this._canonicalName;
 			set
 			{
-				var canonical = CreateUniqueCanonicalName(this.Id, value, this.Index);
-				if (string.Equals(this._canonicalName, canonical, StringComparison.Ordinal)) return;
+				var requested = string.IsNullOrWhiteSpace(value) ? null : value;
+				var canonical = CreateUniqueCanonicalName(this.Id, requested ?? this._name, this.Index);
+				var automatic = requested == null && string.IsNullOrWhiteSpace(this._name);
+				if (string.Equals(this._canonicalName, canonical, StringComparison.Ordinal) && this._canonicalNameIsAutomatic == automatic) return;
 				this._canonicalName = canonical;
+				this._canonicalNameIsAutomatic = automatic;
 				WriteCanonicalName(this.Id, canonical);
 				this.OnPropertyChanged();
+				if (!automatic && string.IsNullOrWhiteSpace(this._name)) this._runtime.EditName(this.Id, HumanizeCanonicalName(canonical));
 			}
 		}
 		public bool IsWallpaperEnabled => ProductInfo.IsWallpaperSupportBuild || Settings.General.ChangeBackgroundEachDesktop;
@@ -101,7 +130,21 @@ namespace SylphyHorn.UI.Bindings
 		internal void Update(int index, DesktopRecord record)
 		{
 			if (record == null || record.Id != this.Id) throw new ArgumentException("A desktop view model can only be updated by its matching ID.", nameof(record));
-			if (this.Index != index) { this.Index = index; this.OnPropertyChanged(nameof(this.Index)); this.OnPropertyChanged(nameof(this.NumberText)); }
+			if (this.Index != index)
+			{
+				this.Index = index;
+				this.OnPropertyChanged(nameof(this.Index));
+				this.OnPropertyChanged(nameof(this.NumberText));
+				if (this._canonicalNameIsAutomatic)
+				{
+					var canonical = CreateUniqueCanonicalName(this.Id, null, index);
+					if (!string.Equals(this._canonicalName, canonical, StringComparison.Ordinal))
+					{
+						this._canonicalName = canonical;
+						WriteCanonicalName(this.Id, canonical);
+					}
+				}
+			}
 			var name = record.Name.HasValue ? record.Name.Value : null;
 			if (this._name != name) { this._name = name; this.OnPropertyChanged(nameof(this.Name)); }
 			var wallpaperPath = record.WallpaperPath.HasValue ? record.WallpaperPath.Value : null;
@@ -166,6 +209,22 @@ namespace SylphyHorn.UI.Bindings
 				else if (result.Length > 0 && !lastSeparator) { result.Append('-'); lastSeparator = true; }
 			}
 			return result.ToString().Trim('-');
+		}
+
+		private static string HumanizeCanonicalName(string value)
+		{
+			if (string.IsNullOrWhiteSpace(value)) return string.Empty;
+			var words = value.Replace('-', ' ').Replace('_', ' ');
+			return CultureInfo.InvariantCulture.TextInfo.ToTitleCase(words);
+		}
+
+		private static bool IsAutomaticCanonicalName(string value, int index)
+		{
+			if (string.IsNullOrWhiteSpace(value)) return false;
+			var prefix = $"desktop-{index + 1}";
+			if (string.Equals(value, prefix, StringComparison.OrdinalIgnoreCase)) return true;
+			if (!value.StartsWith(prefix + "-", StringComparison.OrdinalIgnoreCase)) return false;
+			return int.TryParse(value.Substring(prefix.Length + 1), NumberStyles.None, CultureInfo.InvariantCulture, out _);
 		}
 
 		private static bool ContainsCanonicalName(Dictionary<string, string> names, Guid id, string candidate)
