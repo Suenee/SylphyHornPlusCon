@@ -84,6 +84,11 @@ namespace SylphyHorn.UI.Bindings
 			set
 			{
 				if (this._wallpaper.FilePath == value) return;
+				if (this._supportsWallpaperPath && string.IsNullOrEmpty(value))
+				{
+					this.OnPropertyChanged(nameof(this.WallpaperPath));
+					return;
+				}
 				this._wallpaper.FilePath = value;
 			}
 		}
@@ -104,10 +109,20 @@ namespace SylphyHorn.UI.Bindings
 			var wallpaperPathChanged = this._wallpaper.FilePath != wallpaperPath;
 			var wallpaperPositionChanged = this._wallpaper.Position != record.WallpaperPosition;
 			this._wallpaper.Update(wallpaperPath, record.WallpaperPosition);
-			if (wallpaperPathChanged) { this.OnPropertyChanged(nameof(this.WallpaperPath)); this.OnPropertyChanged(nameof(this.WallpaperPathOrDefault)); this.OnPropertyChanged(nameof(this.HasWallpaper)); this.OnPropertyChanged(nameof(this.HasNoWallpaper)); }
+			if (wallpaperPathChanged)
+			{
+				this.OnPropertyChanged(nameof(this.WallpaperPath));
+				this.OnPropertyChanged(nameof(this.WallpaperPathOrDefault));
+			}
 			if (wallpaperPositionChanged) this.OnPropertyChanged(nameof(this.WallpaperPosition));
+			if (wallpaperPathChanged)
+			{
+				this.OnPropertyChanged(nameof(this.HasWallpaper));
+				this.OnPropertyChanged(nameof(this.HasNoWallpaper));
+			}
 		}
 
+		public void ResetWallpaperPath(string path) => this._runtime.EditWallpaperPath(this.Id, path);
 		public void MoveToPrevious() => this._runtime.MoveLeft(this.Id);
 		public void MoveToNext() => this._runtime.MoveRight(this.Id);
 		public void MoveToFirst() => this._runtime.MoveFirst(this.Id);
