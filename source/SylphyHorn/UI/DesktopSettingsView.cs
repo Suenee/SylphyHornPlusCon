@@ -373,7 +373,7 @@ namespace SylphyHorn.UI
 			}
 
 			var response = this._dialogs.ShowOpenFileDialog(
-				Resources.Settings_Background_SelectionDialog,
+				SylphyHorn.Properties.Resources.Settings_Background_SelectionDialog,
 				initialDirectory,
 				WallpaperService.SupportedFormats,
 				string.Empty);
