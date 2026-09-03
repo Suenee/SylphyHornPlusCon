@@ -18,7 +18,6 @@ namespace SylphyHorn.UI
 	internal sealed class DesktopSettingsView : UserControl, IDisposable
 	{
 		private readonly WrapPanel _desktopStrip;
-		private readonly TextBlock _hint;
 		private readonly ISettingsDialogService _dialogs = new SettingsDialogService();
 		private readonly WallpaperPathToImageSourceConverter _wallpaperConverter = new WallpaperPathToImageSourceConverter();
 		private SettingsWindowViewModel _viewModel;
@@ -34,16 +33,8 @@ namespace SylphyHorn.UI
 		internal DesktopSettingsView()
 		{
 			var root = new Grid { Margin = new Thickness(18, 14, 18, 18) };
-			root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
 			root.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
 			root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
-
-			this._hint = new TextBlock
-			{
-				Foreground = new SolidColorBrush(Color.FromRgb(183, 190, 200)), FontSize = 12, TextWrapping = TextWrapping.Wrap,
-				Margin = new Thickness(0, 2, 0, 12),
-			};
-			Grid.SetRow(this._hint, 0); root.Children.Add(this._hint);
 
 			this._desktopStrip = new WrapPanel { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Top };
 			var scroll = new ScrollViewer
@@ -51,10 +42,10 @@ namespace SylphyHorn.UI
 				Content = this._desktopStrip, HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled,
 				VerticalScrollBarVisibility = ScrollBarVisibility.Auto, CanContentScroll = false, Padding = new Thickness(0, 0, 0, 8),
 			};
-			Grid.SetRow(scroll, 1); root.Children.Add(scroll);
+			Grid.SetRow(scroll, 0); root.Children.Add(scroll);
 
 			var options = this.CreateGlobalOptions();
-			Grid.SetRow(options, 2); root.Children.Add(options);
+			Grid.SetRow(options, 1); root.Children.Add(options);
 
 			this.Content = root;
 			this.DataContextChanged += this.OnDataContextChanged;
@@ -103,19 +94,11 @@ namespace SylphyHorn.UI
 			if (ReferenceEquals(this._viewModel, viewModel)) return;
 			this.DetachViewModel(); this._viewModel = viewModel;
 			if (this._viewModel != null) this._viewModel.PropertyChanged += this.OnViewModelPropertyChanged;
-			this.UpdateHint();
 			this.RebuildDesktopStrip();
 		}
 		private void DetachViewModel() { if (this._viewModel != null) this._viewModel.PropertyChanged -= this.OnViewModelPropertyChanged; this._viewModel = null; }
 		private void OnViewModelPropertyChanged(object sender, PropertyChangedEventArgs e)
 		{ if (string.IsNullOrEmpty(e.PropertyName) || e.PropertyName == nameof(SettingsWindowViewModel.Desktops)) this.RebuildDesktopStrip(); }
-
-		private void UpdateHint()
-		{
-			this._hint.Text = this._viewModel?.IsReorderingSupport == true
-				? "Drag a desktop preview to reorder it. Right-click a preview or use its menu button for desktop actions."
-				: "Right-click a preview or use its menu button for desktop actions. Desktop reordering is not supported by this Windows build.";
-		}
 
 		private void RebuildDesktopStrip()
 		{
@@ -150,8 +133,8 @@ namespace SylphyHorn.UI
 			{
 				Width = 204, Height = 115, Background = new SolidColorBrush(Color.FromRgb(18, 21, 25)), BorderBrush = new SolidColorBrush(Color.FromRgb(79, 85, 95)),
 				BorderThickness = new Thickness(1), CornerRadius = new CornerRadius(3), ClipToBounds = true,
-				Cursor = this._viewModel?.IsReorderingSupport == true ? Cursors.SizeAll : Cursors.Arrow,
-				ToolTip = this._viewModel?.IsReorderingSupport == true ? "Drag to reorder. Right-click for desktop actions." : "Right-click for desktop actions.",
+				Cursor = Cursors.SizeAll,
+				ToolTip = "Drag to move this desktop. Right-click for desktop actions.",
 			};
 			var grid = new Grid();
 			var image = new Image { Stretch = Stretch.UniformToFill, SnapsToDevicePixels = true };
@@ -183,7 +166,7 @@ namespace SylphyHorn.UI
 		{
 			preview.PreviewMouseLeftButtonDown += (_, e) =>
 			{
-				if (this._viewModel?.IsReorderingSupport != true || FindAncestor<Button>(e.OriginalSource as DependencyObject) != null) return;
+				if (FindAncestor<Button>(e.OriginalSource as DependencyObject) != null) return;
 				this.CancelDrag();
 				this._dragSource = desktop;
 				this._dragCard = card;
@@ -288,17 +271,33 @@ namespace SylphyHorn.UI
 			{
 				menu.Items.Clear();
 				var change = new MenuItem { Header = "Change wallpaper..." }; change.Click += (_, _) => this.ChangeWallpaper(desktop); menu.Items.Add(change);
-				if (Settings.General.ChangeBackgroundEachDesktop.Value && desktop.HasWallpaper)
+				var restore = new MenuItem
 				{
-					var reset = new MenuItem { Header = "Reset..." }; reset.Click += (_, _) => this.ResetWallpaper(desktop); menu.Items.Add(reset);
-				}
+					Header = "Restore...",
+					IsEnabled = Settings.General.ChangeBackgroundEachDesktop.Value && desktop.HasWallpaper,
+					ToolTip = "Restore the preserved Windows wallpaper for this desktop."
+				};
+				restore.Click += (_, _) => this.RestoreWallpaper(desktop); menu.Items.Add(restore);
+
 				var fit = new MenuItem { Header = "Fit" };
 				foreach (var position in this._viewModel?.WallpaperPositions ?? Array.Empty<DisplayItem<WallpaperPosition>>())
 				{
 					var value = position.Value; var item = new MenuItem { Header = (position.Display ?? value.ToString()).Trim(), IsCheckable = true, IsChecked = desktop.WallpaperPosition == value };
 					item.Click += (_, _) => desktop.WallpaperPosition = value; fit.Items.Add(item);
 				}
-				menu.Items.Add(fit); menu.Items.Add(new Separator());
+				menu.Items.Add(fit);
+
+				var order = new MenuItem { Header = "Order", IsEnabled = (this._viewModel?.Desktops?.Length ?? 0) > 1 };
+				var count = this._viewModel?.Desktops?.Length ?? 0;
+				for (var index = 0; index < count; index++)
+				{
+					var targetIndex = index;
+					var item = new MenuItem { Header = (index + 1).ToString(CultureInfo.InvariantCulture), IsCheckable = true, IsChecked = desktop.Index == index };
+					item.Click += (_, _) => this.MoveDesktop(desktop, targetIndex);
+					order.Items.Add(item);
+				}
+				menu.Items.Add(order);
+				menu.Items.Add(new Separator());
 				var remove = new MenuItem { Header = "Remove desktop...", IsEnabled = (this._viewModel?.Desktops?.Length ?? 0) > 1 };
 				remove.Click += (_, _) => this.RemoveDesktop(desktop); menu.Items.Add(remove);
 			};
@@ -361,13 +360,13 @@ namespace SylphyHorn.UI
 			LoggingService.Instance.Write(LogLevel.Info, "SETTINGS", "WallpaperChanged", "Desktop wallpaper changed.", desktop.Id.ToString("D"), filePath);
 		}
 
-		private void ResetWallpaper(VirtualDesktopViewModel desktop)
+		private void RestoreWallpaper(VirtualDesktopViewModel desktop)
 		{
 			if (desktop == null || !Settings.General.ChangeBackgroundEachDesktop.Value || !desktop.HasWallpaper) return;
 			var original = WallpaperService.Instance.OriginalWallpaperPath;
 			desktop.ResetWallpaperPath(original);
 			if (Settings.General.OriginalWallpaperCaptured.Value) desktop.WallpaperPosition = WallpaperService.Instance.OriginalWallpaperPosition;
-			LoggingService.Instance.Write(LogLevel.Info, "SETTINGS", "WallpaperReset", "Desktop wallpaper reset to the preserved Windows wallpaper.", desktop.Id.ToString("D"), original);
+			LoggingService.Instance.Write(LogLevel.Info, "SETTINGS", "WallpaperRestored", "Desktop wallpaper restored to the preserved Windows wallpaper.", desktop.Id.ToString("D"), original);
 		}
 
 		private void RemoveDesktop(VirtualDesktopViewModel desktop)
@@ -382,11 +381,17 @@ namespace SylphyHorn.UI
 
 		private void MoveDesktop(VirtualDesktopViewModel desktop, int targetIndex)
 		{
-			if (desktop == null || this._viewModel?.IsReorderingSupport != true) return;
-			var sourceIndex = desktop.Index; if (sourceIndex == targetIndex) return;
-			if (sourceIndex < targetIndex) for (var i = sourceIndex; i < targetIndex; i++) desktop.MoveToNext();
-			else for (var i = sourceIndex; i > targetIndex; i--) desktop.MoveToPrevious();
-			LoggingService.Instance.Write(LogLevel.Info, "DESKTOP", "DesktopReorderRequested", $"Desktop reorder requested: {sourceIndex + 1} -> {targetIndex + 1}.", desktop.Id.ToString("D"));
+			var desktops = this._viewModel?.Desktops;
+			if (desktop == null || desktops == null || desktop.Index == targetIndex) return;
+			try
+			{
+				LogicalDesktopOrderService.Instance.Move(desktops, desktop.Index, targetIndex, this._viewModel.IsReorderingSupport);
+			}
+			catch (Exception ex)
+			{
+				LoggingService.Instance.Write(LogLevel.Error, "DESKTOP", "DesktopMoveFailed", "Desktop move failed.", desktop.Id.ToString("D"), ex.ToString());
+				MessageBox.Show($"The desktop could not be moved.\n\n{ex.Message}", "Move desktop", MessageBoxButton.OK, MessageBoxImage.Error);
+			}
 		}
 
 		private sealed class WallpaperPathToImageSourceConverter : IValueConverter
