@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.32 - 03.09.2026
+
+- Reworked the Desktops page into a responsive wrapping card layout that automatically reflows as the Settings window is resized.
+- Moved the global desktop options below the card area, separated them visually, and renamed them to `Restore saved desktop configuration on startup` and `Manage individual desktop wallpapers`.
+- Added a visible vertical-ellipsis menu button to every desktop preview while retaining the same right-click context menu.
+- Added `Reset...` to the desktop wallpaper menu to return a desktop to the preserved original Windows wallpaper state.
+- Added reversible wallpaper management: SHPC captures the original Windows wallpaper state before taking control and restores it when wallpaper management is disabled or SHPC exits normally.
+- Added a warning before wallpaper changes made while SHPC wallpaper management is disabled because the previous external wallpaper state may not be recoverable.
+- Kept wallpaper-management behavior OS-neutral in the UI so the same workflow applies on supported Windows 10 and Windows 11 systems while the runtime selects the available mechanism.
+- Canonical desktop `Name` values are now normalized to lowercase, limited to `a-z`, `0-9`, `-`, and `_`, compared case-insensitively, and made unique with numeric suffixes when needed.
+- Enlarged and centered the `+` symbol in the New desktop tile.
+- Preserved real Windows desktop reordering through the existing runtime on systems where the Windows desktop API reports reordering support.
+
 ## 0.31 - 03.09.2026
 
 - Established the project `x.xx` application-version contract for SylphyHornPlusCon.
@@ -219,7 +232,7 @@
 
 - Rolled back the overly strict remote-content bootstrap reconciliation introduced in 0.05/0.06.
 - Installer now treats only the known maintenance bootstrap files (`install.cmd`, `upgrade.cmd`, and the three legacy PowerShell bootstrap paths) as replaceable during a fresh-install refresh.
-- Any tracked change outside those maintenance-owned paths still blocks installation.
+- Any tracked change outside those maintenance paths still blocks installation.
 - Maintenance paths are restored individually from the current HEAD before the normal `--ff-only` update; the installer does not reset the whole working tree.
 
 ## 0.06 - 01.09.2026
