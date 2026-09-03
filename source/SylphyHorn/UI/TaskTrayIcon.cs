@@ -19,6 +19,7 @@ namespace SylphyHorn.UI
 		private DynamicInfoTrayIcon _infoIcon;
 		private DesktopTransitionRuntime _runtime;
 		private readonly string _showSettingsMenuName = Resources.TaskTray_Menu_Settings;
+		private bool _disposed;
 
 		public TaskTrayIcon(Icon darkIcon, Icon lightIcon, TaskTrayIconItem[] items)
 		{
@@ -34,6 +35,7 @@ namespace SylphyHorn.UI
 		internal void BindDesktopRuntime(DesktopTransitionRuntime runtime)
 		{
 			if (runtime == null) throw new ArgumentNullException(nameof(runtime));
+			if (this._disposed) throw new ObjectDisposedException(nameof(TaskTrayIcon));
 			if (this._runtime != null)
 			{
 				if (ReferenceEquals(this._runtime, runtime)) return;
@@ -47,7 +49,7 @@ namespace SylphyHorn.UI
 
 		public void Show()
 		{
-			if (this._notifyIcon != null) return;
+			if (this._disposed || this._notifyIcon != null) return;
 			var menus = this._items.Where(x => x.CanDisplay()).Select(this.CreateMenuItem).ToArray();
 			this._notifyIcon = new NotifyIcon
 			{
@@ -64,12 +66,14 @@ namespace SylphyHorn.UI
 
 		internal void ShowBaloon(TaskTrayBaloon baloon)
 		{
+			if (this._disposed) return;
 			if (this._notifyIcon == null) this.Show();
-			this._notifyIcon.ShowBalloonTip((int)baloon.Timespan.TotalMilliseconds, baloon.Title, baloon.Text, ToolTipIcon.None);
+			this._notifyIcon?.ShowBalloonTip((int)baloon.Timespan.TotalMilliseconds, baloon.Title, baloon.Text, ToolTipIcon.None);
 		}
 
 		public void Reload()
 		{
+			if (this._disposed) return;
 			if (Settings.General.TrayShowDesktop && this._runtime?.State != null) this.UpdateWithDesktopInfo(this._runtime.State);
 			else if (this._icon != this._darkIcon && this._icon != this._lightIcon)
 			{
@@ -149,6 +153,7 @@ namespace SylphyHorn.UI
 
 		private void ChangeIcon(Icon newIcon)
 		{
+			if (this._disposed) return;
 			if (this._icon != this._darkIcon && this._icon != this._lightIcon) this._icon?.Dispose();
 			this._icon = newIcon;
 			if (this._notifyIcon != null) this._notifyIcon.Icon = newIcon;
@@ -156,14 +161,35 @@ namespace SylphyHorn.UI
 
 		public void Dispose()
 		{
+			if (this._disposed) return;
+			this._disposed = true;
+
 			WindowsTheme.SystemTheme.Changed -= this.OnSystemThemeChanged;
 			WindowsTheme.Accent.Changed -= this.OnAccentChanged;
 			WindowsTheme.ColorPrevalence.Changed -= this.OnColorPrevalenceChanged;
-			if (this._runtime != null) this._runtime.StateChanged -= this.OnDesktopStateChanged;
-			if (this._notifyIcon != null) this._notifyIcon.MouseClick -= this.OnIconClick;
-			this._notifyIcon?.Dispose();
-			this._lightIcon?.Dispose();
-			this._icon?.Dispose();
+			if (this._runtime != null)
+			{
+				this._runtime.StateChanged -= this.OnDesktopStateChanged;
+				this._runtime = null;
+			}
+
+			var notifyIcon = this._notifyIcon;
+			this._notifyIcon = null;
+			if (notifyIcon != null)
+			{
+				notifyIcon.MouseClick -= this.OnIconClick;
+				notifyIcon.Visible = false;
+				var contextMenu = notifyIcon.ContextMenuStrip;
+				notifyIcon.ContextMenuStrip = null;
+				contextMenu?.Dispose();
+				notifyIcon.Dispose();
+			}
+
+			if (this._icon != null && this._icon != this._darkIcon && this._icon != this._lightIcon) this._icon.Dispose();
+			this._icon = null;
+			this._infoIcon = null;
+			this._darkIcon?.Dispose();
+			if (!ReferenceEquals(this._lightIcon, this._darkIcon)) this._lightIcon?.Dispose();
 		}
 	}
 	public class TaskTrayIconItem
