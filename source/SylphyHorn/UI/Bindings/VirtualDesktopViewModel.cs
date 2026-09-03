@@ -127,6 +127,9 @@ namespace SylphyHorn.UI.Bindings
 		public bool HasWallpaper => !string.IsNullOrEmpty(this.WallpaperPath);
 		public bool HasNoWallpaper => string.IsNullOrEmpty(this.WallpaperPath);
 
+		internal string StoredTitle => this._name;
+		internal bool CanonicalNameIsAutomatic => this._canonicalNameIsAutomatic;
+
 		internal void Update(int index, DesktopRecord record)
 		{
 			if (record == null || record.Id != this.Id) throw new ArgumentException("A desktop view model can only be updated by its matching ID.", nameof(record));
@@ -146,7 +149,7 @@ namespace SylphyHorn.UI.Bindings
 				}
 			}
 			var name = record.Name.HasValue ? record.Name.Value : null;
-			if (this._name != name) { this._name = name; this.OnPropertyChanged(nameof(this.Name)); }
+			if (this._name != name) { this._name = name; this.OnPropertyChanged(nameof(this.Name)); this.OnPropertyChanged(nameof(this.Title)); }
 			var wallpaperPath = record.WallpaperPath.HasValue ? record.WallpaperPath.Value : null;
 			this._supportsWallpaperPath = record.WallpaperPath.ReadStatus != VirtualDesktopReadStatus.Unsupported;
 			var wallpaperPathChanged = this._wallpaper.FilePath != wallpaperPath;
@@ -162,6 +165,49 @@ namespace SylphyHorn.UI.Bindings
 			{
 				this.OnPropertyChanged(nameof(this.HasWallpaper));
 				this.OnPropertyChanged(nameof(this.HasNoWallpaper));
+			}
+		}
+
+		internal void ApplyLogicalTitle(string value)
+		{
+			if (!string.Equals(this._name, value, StringComparison.Ordinal)) this._runtime.EditName(this.Id, value);
+		}
+
+		internal void ApplyLogicalWallpaper(string path, WallpaperPosition position)
+		{
+			this._runtime.EditWallpaperPath(this.Id, path);
+			this._runtime.EditWallpaperPosition(this.Id, position);
+		}
+
+		internal static void ApplyLogicalCanonicalNames(IReadOnlyList<VirtualDesktopViewModel> targets, IReadOnlyList<string> values, IReadOnlyList<bool> automaticFlags)
+		{
+			if (targets == null || values == null || automaticFlags == null || targets.Count != values.Count || targets.Count != automaticFlags.Count)
+				throw new ArgumentException("Logical canonical-name mapping must have matching target, value and automatic-flag counts.");
+
+			lock (CanonicalNamesGate)
+			{
+				var names = ReadCanonicalNamesUnsafe();
+				for (var i = 0; i < targets.Count; i++) names.Remove(targets[i].Id.ToString("D"));
+
+				for (var i = 0; i < targets.Count; i++)
+				{
+					var target = targets[i];
+					var baseName = NormalizeCanonicalName(values[i]);
+					if (string.IsNullOrEmpty(baseName)) baseName = $"desktop-{target.Index + 1}";
+					var candidate = baseName;
+					var suffix = 2;
+					while (ContainsCanonicalName(names, target.Id, candidate)) candidate = $"{baseName}-{suffix++}";
+					names[target.Id.ToString("D")] = candidate;
+					target._canonicalName = candidate;
+					target._canonicalNameIsAutomatic = automaticFlags[i];
+				}
+				Settings.General.DesktopCanonicalNames.Value = JsonSerializer.Serialize(names);
+			}
+
+			for (var i = 0; i < targets.Count; i++)
+			{
+				targets[i].OnPropertyChanged(nameof(CanonicalName));
+				targets[i].OnPropertyChanged(nameof(Title));
 			}
 		}
 
@@ -249,7 +295,10 @@ namespace SylphyHorn.UI.Bindings
 			{
 				var json = Settings.General.DesktopCanonicalNames.Value;
 				if (string.IsNullOrWhiteSpace(json)) return new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
-				return JsonSerializer.Deserialize<Dictionary<string, string>>(json) ?? new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+				var parsed = JsonSerializer.Deserialize<Dictionary<string, string>>(json);
+				return parsed == null
+					? new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+					: new Dictionary<string, string>(parsed, StringComparer.OrdinalIgnoreCase);
 			}
 			catch { return new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase); }
 		}
