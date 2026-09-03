@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.31 - 03.09.2026
+
+- Established the project `x.xx` application-version contract for SylphyHornPlusCon.
+- Changed the application package and assembly version from the inherited upstream `4.0.0` version to the project version `0.31`.
+- Updated the About page version source so the application displays exactly the same `x.xx` version announced for an upgrade and recorded in this changelog.
+- Removed the inherited `beta.16` suffix from the displayed application version.
+- Future application-changing upgrades must increment the project version and keep the announced version, built application version, and changelog version identical.
+
 ## 0.30 - 03.09.2026
 
 - Replaced the legacy vertical Desktop settings form with a horizontal desktop strip that mirrors the real Windows virtual desktop order.
