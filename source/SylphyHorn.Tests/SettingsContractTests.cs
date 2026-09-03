@@ -24,6 +24,7 @@ namespace SylphyHorn.Tests
 				Scalar("NotificationDuration", 2500),
 				Scalar("ChangeBackgroundEachDesktop", false),
 				Scalar<string>("DesktopBackgroundFolderPath", null),
+				Scalar("DesktopCanonicalNames", "{}"),
 				Scalar("OverrideWindowsDefaultKeyCombination", false),
 				Scalar("SuspendKeyDetection", false),
 				Scalar("FirstTime", true),
