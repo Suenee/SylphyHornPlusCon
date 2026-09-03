@@ -29,6 +29,8 @@ namespace SylphyHorn.Serialization
 
 		public SerializableProperty<string> DesktopBackgroundFolderPath => this.Cache(key => new SerializableProperty<string>(key, this._provider));
 
+		public SerializableProperty<string> DesktopCanonicalNames => this.Cache(key => new SerializableProperty<string>(key, this._provider, "{}"));
+
 		public SerializableProperty<bool> OverrideWindowsDefaultKeyCombination => this.Cache(key => new SerializableProperty<bool>(key, this._provider, OverrideWindowsDefaultKeyCombinationDefaultValue));
 
 		public SerializableProperty<bool> SuspendKeyDetection => this.Cache(key => new SerializableProperty<bool>(key, this._provider));
