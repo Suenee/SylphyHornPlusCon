@@ -24,7 +24,7 @@ namespace SylphyHorn.Serialization
 		public SerializableProperty<string> DesktopBackgroundFolderPath => this.Cache(key => new SerializableProperty<string>(key, this._provider));
 		public SerializableProperty<string> DesktopCanonicalNames => this.Cache(key => new SerializableProperty<string>(key, this._provider, "{}"));
 		public SerializableProperty<string> OriginalWallpaperPath => this.Cache(key => new SerializableProperty<string>(key, this._provider));
-		public SerializableProperty<byte> OriginalWallpaperPosition => this.Cache(key => new SerializableProperty<byte>(key, this._provider, (byte)WallpaperPosition.Fill));
+		public SerializableProperty<byte> OriginalWallpaperPosition => this.Cache(key => new SerializableProperty<byte>(key, this._provider, (byte)4));
 		public SerializableProperty<bool> OriginalWallpaperCaptured => this.Cache(key => new SerializableProperty<bool>(key, this._provider));
 		public SerializableProperty<bool> OverrideWindowsDefaultKeyCombination => this.Cache(key => new SerializableProperty<bool>(key, this._provider, OverrideWindowsDefaultKeyCombinationDefaultValue));
 		public SerializableProperty<bool> SuspendKeyDetection => this.Cache(key => new SerializableProperty<bool>(key, this._provider));
@@ -35,8 +35,8 @@ namespace SylphyHorn.Serialization
 		public SerializableProperty<uint> Display => this.Cache(key => new SerializableProperty<uint>(key, this._provider, 0));
 		public SerializableProperty<uint> NotificationWindowStyle => this.Cache(key => new SerializableProperty<uint>(key, this._provider, NotificationWindowStyleDefaultValue));
 		public SerializableProperty<uint> NotificationCornerStyle => this.Cache(key => new SerializableProperty<uint>(key, this._provider, NotificationCornerStyleDefaultValue));
-		public SerializableProperty<HorizontalAlignment> NotificationHeaderAlignment => this.Cache(key => new SerializableProperty<HorizontalAlignment>(key, this._provider, NotificationHeaderAlignmentDefaultValue));
-		public SerializableProperty<HorizontalAlignment> NotificationBodyAlignment => this.Cache(key => new SerializableProperty<HorizontalAlignment>(key, this._provider, NotificationBodyAlignmentDefaultValue));
+		public SerializableProperty<uint> NotificationHeaderAlignment => this.Cache(key => new SerializableProperty<uint>(key, this._provider, NotificationHeaderAlignmentDefaultValue));
+		public SerializableProperty<uint> NotificationBodyAlignment => this.Cache(key => new SerializableProperty<uint>(key, this._provider, NotificationBodyAlignmentDefaultValue));
 		public SerializableProperty<string> NotificationFontFamily => this.Cache(key => new SerializableProperty<string>(key, this._provider));
 		public SerializableProperty<int> NotificationHeaderFontSize => this.Cache(key => new SerializableProperty<int>(key, this._provider, NotificationHeaderFontSizeDefaultValue));
 		public SerializableProperty<int> NotificationBodyFontSize => this.Cache(key => new SerializableProperty<int>(key, this._provider, NotificationBodyFontSizeDefaultValue));
@@ -65,8 +65,8 @@ namespace SylphyHorn.Serialization
 		public static uint PlacementDefaultValue { get; } = 5;
 		public static uint NotificationWindowStyleDefaultValue { get; } = 4;
 		public static uint NotificationCornerStyleDefaultValue { get; } = 1;
-		public static HorizontalAlignment NotificationHeaderAlignmentDefaultValue { get; } = HorizontalAlignment.Left;
-		public static HorizontalAlignment NotificationBodyAlignmentDefaultValue { get; } = HorizontalAlignment.Left;
+		public static uint NotificationHeaderAlignmentDefaultValue { get; } = 0;
+		public static uint NotificationBodyAlignmentDefaultValue { get; } = 0;
 		public static int NotificationHeaderFontSizeDefaultValue { get; } = 18;
 		public static int NotificationBodyFontSizeDefaultValue { get; } = 32;
 		public static int NotificationLineSpacingDefaultValue { get; } = -4;
