@@ -192,6 +192,21 @@ Time: {now:O}"));
 		{
 			if (Interlocked.Exchange(ref this._shutdownStarted, 1) != 0) return;
 			LoggingService.Instance.Write(LogLevel.Info, "APP", "Shutdown", "Application shutdown started.");
+
+			// Remove the shell notification icon before awaiting desktop/runtime shutdown.
+			// If later cleanup stalls and an external updater must terminate the process,
+			// Explorer has already received the NotifyIcon delete operation and cannot keep
+			// a stale tray icon for the dead process.
+			try
+			{
+				this.TaskTrayIcon?.Dispose();
+				this.TaskTrayIcon = null;
+			}
+			catch (Exception ex)
+			{
+				LoggingService.Instance.Register(ex);
+			}
+
 			this._startupCancellation.Cancel();
 			try
 			{
