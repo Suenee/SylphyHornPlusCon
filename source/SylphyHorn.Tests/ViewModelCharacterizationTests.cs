@@ -151,6 +151,7 @@ namespace SylphyHorn.Tests
 					nameof(viewModel.Index),
 					nameof(viewModel.NumberText),
 					nameof(viewModel.Name),
+					nameof(viewModel.Title),
 					nameof(viewModel.WallpaperPath),
 					nameof(viewModel.WallpaperPathOrDefault),
 					nameof(viewModel.WallpaperPosition),
