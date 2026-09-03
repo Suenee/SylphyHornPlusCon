@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.33 - 03.09.2026
+
+- Refined the Desktops page based on the production VMU drag model: a dragged desktop card stays live under mouse capture, the nearest target card is highlighted, and the desktop list is allowed to refresh only after the mouse is released.
+- Kept real desktop reordering delegated to the existing Windows virtual desktop runtime and clearly reports when the current Windows build does not expose native reordering support.
+- Changed `Reset...` so it is available only when SHPC individual wallpaper management is enabled and the selected desktop currently has an individual wallpaper override.
+- Removed the redundant supported-image-formats line from the Desktops page because the file picker already constrains selectable wallpaper formats.
+- Reworked the `+ New desktop` tile to use the same card width, border, background, corner radius, spacing, and visual footprint as existing desktop cards.
+- Added deterministic Title/Name fallback behavior: Title is derived from Name when Title is missing, Name is derived from Title when Name is missing, and an otherwise anonymous desktop falls back to `Desktop X` / `desktop-x` based on its current position.
+- Kept canonical desktop Name values globally unique, case-insensitive, normalized to lowercase `a-z`, `0-9`, `-`, and `_`, with numeric suffixes used when a generated or edited name would collide.
+- Automatic `desktop-x` fallback names now follow the current desktop position when the desktop remains otherwise anonymous; manually assigned names remain stable across reordering.
+
 ## 0.32 - 03.09.2026
 
 - Reworked the Desktops page into a responsive wrapping card layout that automatically reflows as the Settings window is resized.
