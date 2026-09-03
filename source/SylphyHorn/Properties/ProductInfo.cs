@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Linq;
 using System.Reflection;
 
@@ -13,34 +13,22 @@ namespace SylphyHorn.Properties
 		private static readonly Lazy<string> _productLazy = new Lazy<string>(() => ((AssemblyProductAttribute)Attribute.GetCustomAttribute(_assembly, typeof(AssemblyProductAttribute))).Product);
 		private static readonly Lazy<string> _copyrightLazy = new Lazy<string>(() => ((AssemblyCopyrightAttribute)Attribute.GetCustomAttribute(_assembly, typeof(AssemblyCopyrightAttribute))).Copyright);
 		private static readonly Lazy<string> _trademarkLazy = new Lazy<string>(() => ((AssemblyTrademarkAttribute)Attribute.GetCustomAttribute(_assembly, typeof(AssemblyTrademarkAttribute))).Trademark);
-		private static readonly Lazy<string> _versionLazy = new Lazy<string>(() => $"{Version.ToString(3)}{(IsBetaRelease ? " β" : "")}{(Version.Revision == 0 ? "" : " rev." + Version.Revision)}");
+		private static readonly Lazy<string> _versionLazy = new Lazy<string>(() => $"{Version.Major}.{Version.Minor:00}");
 		private static readonly Lazy<string> _extraVersionLazy = new Lazy<string>(() => $"{CustomAttributes.FirstOrDefault(attr => attr.Key == "ExtraVersion").Value}");
 		private static readonly Lazy<string> _originalCompanyLazy = new Lazy<string>(() => $"{CustomAttributes.FirstOrDefault(attr => attr.Key == "OriginalCompany").Value}");
 		private static readonly Lazy<string> _originalProductLazy = new Lazy<string>(() => $"{CustomAttributes.FirstOrDefault(attr => attr.Key == "OriginalProduct").Value}");
 
-
 		public static string Title => _titleLazy.Value;
-
 		public static string Description => _descriptionLazy.Value;
-
 		public static string Company => _companyLazy.Value;
-
 		public static string Product => _productLazy.Value;
-
 		public static string Copyright => _copyrightLazy.Value;
-
 		public static string Trademark => _trademarkLazy.Value;
-
 		public static Version Version => _assembly.GetName().Version;
-
 		public static string VersionString => _versionLazy.Value;
-
 		public static string ExtraVersionString => _extraVersionLazy.Value;
-
 		public static string OriginalCompany => _originalCompanyLazy.Value;
-
 		public static string OriginalProduct => _originalProductLazy.Value;
-
 
 		public static bool IsBetaRelease
 		{
@@ -66,17 +54,11 @@ namespace SylphyHorn.Properties
 			}
 		}
 
-
 		internal static int OSBuild => Environment.OSVersion.Version.Build;
-
 		internal static bool IsWindows11OrLater => OSBuild >= 22000;
-
 		internal static bool IsNameSupportBuild => OSBuild >= 18975;
-
 		internal static bool IsWallpaperSupportBuild => OSBuild >= 21337;
-
 		internal static bool IsReorderingSupportBuild => IsWallpaperSupportBuild;
-
 		private static AssemblyMetadataAttribute[] CustomAttributes => (AssemblyMetadataAttribute[])Attribute.GetCustomAttributes(_assembly, typeof(AssemblyMetadataAttribute));
 	}
 }
