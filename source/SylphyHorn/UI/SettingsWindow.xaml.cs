@@ -21,6 +21,7 @@ namespace SylphyHorn.UI
 		private TextBlock _pageTitle;
 		private TextBlock _pageDescription;
 		private Button _selectedPrimaryButton;
+		private DesktopSettingsView _desktopSettingsView;
 		private AppLogView _appLogView;
 
 		public static SettingsWindow Instance { get; set; }
@@ -41,6 +42,7 @@ namespace SylphyHorn.UI
 		protected override void OnClosed(EventArgs e)
 		{
 			base.OnClosed(e);
+			this._desktopSettingsView?.Dispose();
 			this._appLogView?.Dispose();
 			(this.DataContext as IDisposable)?.Dispose();
 		}
@@ -65,6 +67,12 @@ namespace SylphyHorn.UI
 			this.WindowStartupLocation = WindowStartupLocation.CenterScreen;
 
 			this.MoveNotificationBehaviorSettings();
+
+			this._desktopSettingsView = new DesktopSettingsView();
+			if (this._legacySettingsTabs.Items[1] is TabItem desktopTab)
+			{
+				desktopTab.Content = this._desktopSettingsView;
+			}
 
 			this._appLogView = new AppLogView();
 			if (this._legacySettingsTabs.Items[12] is TabItem logTab)
