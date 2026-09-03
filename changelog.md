@@ -1,5 +1,20 @@
 # Changelog
 
+## 0.34 - 03.09.2026
+
+- Added one cross-version logical desktop move behavior shared by drag-and-drop and the new `Order > 1..N` desktop context submenu.
+- Windows 11 continues to use the native virtual-desktop reorder API, while Windows 10 emulates the same user-visible move by rotating application windows and SHPC desktop metadata between the fixed Windows desktop slots.
+- Windows 10 logical moves preserve the moved desktop's windows, Title, unique canonical Name, wallpaper path, wallpaper fit mode, and current-desktop focus; pinned windows and shell surfaces are excluded from window rotation.
+- Added rollback of already moved windows when a Windows 10 content-rotation step fails before metadata is committed.
+- Enabled LMB drag-and-drop from the wallpaper preview on every supported Windows build and kept the complete desktop card attached to the pointer while dragging, following the VMU live-node drag behavior.
+- Removed the explanatory reorder-support text above the desktop cards.
+- Renamed the wallpaper action from `Reset...` to `Restore...`; it now remains visible in the context menu and is disabled when there is no managed individual wallpaper to restore.
+- Added explicit early tray-icon disposal during application shutdown so Explorer receives the notification-icon delete operation before potentially slow runtime cleanup, preventing stale tray icons after updater-driven restarts.
+- Made tray-icon disposal idempotent so normal shutdown and final application disposal can safely share the same cleanup path.
+- Extended graceful updater shutdown from 5 to 15 seconds before project-owned process termination is used as a last resort.
+- Aligned `upgrade.ps1` console presentation with the shared FolderHeatMap upgrade standard: named phases, default/gray informational output, yellow warnings, red failures, green successful completion, and stable colored final status markers while retaining a plain-text diagnostic log.
+- Removed obsolete .NET 10 package references for `Microsoft.CSharp` and `System.Diagnostics.DiagnosticSource`, removed the missing legacy `MinimumRecommendedRules.ruleset` references, and renamed the App log level filter helper to eliminate the known build warnings at their source.
+
 ## 0.33 - 03.09.2026
 
 - Refined the Desktops page based on the production VMU drag model: a dragged desktop card stays live under mouse capture, the nearest target card is highlighted, and the desktop list is allowed to refresh only after the mouse is released.
