@@ -18,11 +18,17 @@ namespace SylphyHorn.UI
 	internal sealed class DesktopSettingsView : UserControl, IDisposable
 	{
 		private readonly WrapPanel _desktopStrip;
+		private readonly TextBlock _hint;
 		private readonly ISettingsDialogService _dialogs = new SettingsDialogService();
 		private readonly WallpaperPathToImageSourceConverter _wallpaperConverter = new WallpaperPathToImageSourceConverter();
 		private SettingsWindowViewModel _viewModel;
 		private Point _dragStart;
 		private VirtualDesktopViewModel _dragSource;
+		private Border _dragCard;
+		private Border _dragTargetCard;
+		private TranslateTransform _dragTransform;
+		private int _dragTargetIndex = -1;
+		private bool _dragMoved;
 		private bool _disposed;
 
 		internal DesktopSettingsView()
@@ -32,13 +38,12 @@ namespace SylphyHorn.UI
 			root.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
 			root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
 
-			var hint = new TextBlock
+			this._hint = new TextBlock
 			{
-				Text = "Drag desktop previews to reorder them. Right-click a preview or use its menu button for desktop actions.",
 				Foreground = new SolidColorBrush(Color.FromRgb(183, 190, 200)), FontSize = 12, TextWrapping = TextWrapping.Wrap,
 				Margin = new Thickness(0, 2, 0, 12),
 			};
-			Grid.SetRow(hint, 0); root.Children.Add(hint);
+			Grid.SetRow(this._hint, 0); root.Children.Add(this._hint);
 
 			this._desktopStrip = new WrapPanel { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Top };
 			var scroll = new ScrollViewer
@@ -76,14 +81,13 @@ namespace SylphyHorn.UI
 				IsChecked = Settings.General.ChangeBackgroundEachDesktop.Value,
 				ToolTip = "Let SHPC manage per-desktop wallpapers and preserve the original Windows wallpaper for restoration.",
 			};
-			wallpaper.Click += (_, _) => WallpaperService.Instance.SetManagementEnabled(wallpaper.IsChecked == true);
+			wallpaper.Click += (_, _) =>
+			{
+				WallpaperService.Instance.SetManagementEnabled(wallpaper.IsChecked == true);
+				this.RebuildDesktopStrip();
+			};
 			row.Children.Add(wallpaper);
 			panel.Children.Add(row);
-			panel.Children.Add(new TextBlock
-			{
-				Text = "Supported image formats: " + string.Join(", ", WallpaperService.SupportedFileTypes),
-				Foreground = new SolidColorBrush(Color.FromRgb(166, 173, 184)), FontSize = 11, Margin = new Thickness(0, 7, 0, 0),
-			});
 			return panel;
 		}
 
@@ -99,13 +103,23 @@ namespace SylphyHorn.UI
 			if (ReferenceEquals(this._viewModel, viewModel)) return;
 			this.DetachViewModel(); this._viewModel = viewModel;
 			if (this._viewModel != null) this._viewModel.PropertyChanged += this.OnViewModelPropertyChanged;
+			this.UpdateHint();
 			this.RebuildDesktopStrip();
 		}
 		private void DetachViewModel() { if (this._viewModel != null) this._viewModel.PropertyChanged -= this.OnViewModelPropertyChanged; this._viewModel = null; }
 		private void OnViewModelPropertyChanged(object sender, PropertyChangedEventArgs e)
 		{ if (string.IsNullOrEmpty(e.PropertyName) || e.PropertyName == nameof(SettingsWindowViewModel.Desktops)) this.RebuildDesktopStrip(); }
+
+		private void UpdateHint()
+		{
+			this._hint.Text = this._viewModel?.IsReorderingSupport == true
+				? "Drag a desktop preview to reorder it. Right-click a preview or use its menu button for desktop actions."
+				: "Right-click a preview or use its menu button for desktop actions. Desktop reordering is not supported by this Windows build.";
+		}
+
 		private void RebuildDesktopStrip()
 		{
+			this.CancelDrag();
 			this._desktopStrip.Children.Clear(); if (this._viewModel == null) return;
 			foreach (var desktop in this._viewModel.Desktops ?? Array.Empty<VirtualDesktopViewModel>()) this._desktopStrip.Children.Add(this.CreateDesktopCard(desktop));
 			this._desktopStrip.Children.Add(this.CreateNewDesktopTile());
@@ -117,14 +131,16 @@ namespace SylphyHorn.UI
 			{
 				Width = 224, Background = new SolidColorBrush(Color.FromRgb(28, 32, 38)), BorderBrush = new SolidColorBrush(Color.FromRgb(63, 69, 79)),
 				BorderThickness = new Thickness(1), CornerRadius = new CornerRadius(7), Padding = new Thickness(9), Margin = new Thickness(0, 0, 12, 12),
-				VerticalAlignment = VerticalAlignment.Top, DataContext = desktop,
+				VerticalAlignment = VerticalAlignment.Top, DataContext = desktop, Tag = desktop,
 			};
 			var stack = new StackPanel(); card.Child = stack;
-			stack.Children.Add(this.CreatePreview(desktop));
+			var preview = this.CreatePreview(desktop);
+			stack.Children.Add(preview);
 			stack.Children.Add(this.CreateFieldLabel("Title", new Thickness(1, 10, 0, 3)));
-			stack.Children.Add(this.CreateTextBox(nameof(VirtualDesktopViewModel.Name), "Display title used by Windows and SylphyHorn."));
+			stack.Children.Add(this.CreateTextBox(nameof(VirtualDesktopViewModel.Title), "Display title used by Windows and SylphyHorn. If empty, it is derived from Name."));
 			stack.Children.Add(this.CreateFieldLabel("Name", new Thickness(1, 8, 0, 3)));
-			stack.Children.Add(this.CreateTextBox(nameof(VirtualDesktopViewModel.CanonicalName), "Canonical name. Allowed: a-z, 0-9, hyphen and underscore. Comparison is case-insensitive."));
+			stack.Children.Add(this.CreateTextBox(nameof(VirtualDesktopViewModel.CanonicalName), "Unique canonical name. Allowed: a-z, 0-9, hyphen and underscore. Comparison is case-insensitive."));
+			this.WireDesktopDrag(card, preview, desktop);
 			return card;
 		}
 
@@ -133,7 +149,7 @@ namespace SylphyHorn.UI
 			var preview = new Border
 			{
 				Width = 204, Height = 115, Background = new SolidColorBrush(Color.FromRgb(18, 21, 25)), BorderBrush = new SolidColorBrush(Color.FromRgb(79, 85, 95)),
-				BorderThickness = new Thickness(1), CornerRadius = new CornerRadius(3), ClipToBounds = true, AllowDrop = true,
+				BorderThickness = new Thickness(1), CornerRadius = new CornerRadius(3), ClipToBounds = true,
 				Cursor = this._viewModel?.IsReorderingSupport == true ? Cursors.SizeAll : Cursors.Arrow,
 				ToolTip = this._viewModel?.IsReorderingSupport == true ? "Drag to reorder. Right-click for desktop actions." : "Right-click for desktop actions.",
 			};
@@ -160,27 +176,109 @@ namespace SylphyHorn.UI
 			menuButton.Click += (_, _) => { menu.PlacementTarget = menuButton; menu.IsOpen = true; };
 			grid.Children.Add(menuButton);
 			preview.Child = grid; preview.ContextMenu = menu;
-
-			preview.PreviewMouseLeftButtonDown += (_, e) => { this._dragStart = e.GetPosition(preview); this._dragSource = desktop; };
-			preview.MouseMove += (_, e) =>
-			{
-				if (this._viewModel?.IsReorderingSupport != true || e.LeftButton != MouseButtonState.Pressed || this._dragSource == null) return;
-				var point = e.GetPosition(preview);
-				if (Math.Abs(point.X - this._dragStart.X) < SystemParameters.MinimumHorizontalDragDistance && Math.Abs(point.Y - this._dragStart.Y) < SystemParameters.MinimumVerticalDragDistance) return;
-				var source = this._dragSource; this._dragSource = null; DragDrop.DoDragDrop(preview, source, DragDropEffects.Move);
-			};
-			preview.DragOver += (_, e) =>
-			{
-				var source = e.Data.GetData(typeof(VirtualDesktopViewModel)) as VirtualDesktopViewModel;
-				e.Effects = this._viewModel?.IsReorderingSupport == true && source != null && source.Id != desktop.Id ? DragDropEffects.Move : DragDropEffects.None; e.Handled = true;
-			};
-			preview.Drop += (_, e) =>
-			{
-				var source = e.Data.GetData(typeof(VirtualDesktopViewModel)) as VirtualDesktopViewModel;
-				if (source == null || source.Id == desktop.Id || this._viewModel?.IsReorderingSupport != true) return;
-				this.MoveDesktop(source, desktop.Index); e.Handled = true;
-			};
 			return preview;
+		}
+
+		private void WireDesktopDrag(Border card, FrameworkElement preview, VirtualDesktopViewModel desktop)
+		{
+			preview.PreviewMouseLeftButtonDown += (_, e) =>
+			{
+				if (this._viewModel?.IsReorderingSupport != true || FindAncestor<Button>(e.OriginalSource as DependencyObject) != null) return;
+				this.CancelDrag();
+				this._dragSource = desktop;
+				this._dragCard = card;
+				this._dragStart = e.GetPosition(this._desktopStrip);
+				this._dragTransform = new TranslateTransform();
+				this._dragCard.RenderTransform = this._dragTransform;
+				this._dragCard.Opacity = 0.92;
+				Panel.SetZIndex(this._dragCard, 1000);
+				preview.CaptureMouse();
+				e.Handled = true;
+			};
+
+			preview.PreviewMouseMove += (_, e) =>
+			{
+				if (this._dragSource == null || this._dragCard != card || e.LeftButton != MouseButtonState.Pressed) return;
+				var point = e.GetPosition(this._desktopStrip);
+				var dx = point.X - this._dragStart.X;
+				var dy = point.Y - this._dragStart.Y;
+				if (!this._dragMoved && Math.Abs(dx) + Math.Abs(dy) <= 3) return;
+				this._dragMoved = true;
+				this._dragTransform.X = dx;
+				this._dragTransform.Y = dy;
+				this.UpdateDragTarget(point);
+				e.Handled = true;
+			};
+
+			preview.PreviewMouseLeftButtonUp += (_, e) =>
+			{
+				if (this._dragSource == null || this._dragCard != card) return;
+				var source = this._dragSource;
+				var target = this._dragTargetIndex;
+				var moved = this._dragMoved;
+				if (preview.IsMouseCaptured) preview.ReleaseMouseCapture();
+				this.CancelDrag();
+				if (moved && target >= 0 && target != source.Index) this.MoveDesktop(source, target);
+				e.Handled = true;
+			};
+
+			preview.LostMouseCapture += (_, _) =>
+			{
+				if (this._dragCard == card) this.CancelDrag();
+			};
+		}
+
+		private void UpdateDragTarget(Point pointer)
+		{
+			Border nearest = null;
+			var nearestDistance = double.MaxValue;
+			var targetIndex = -1;
+			foreach (UIElement child in this._desktopStrip.Children)
+			{
+				if (!(child is Border candidate) || !(candidate.Tag is VirtualDesktopViewModel candidateDesktop) || candidateDesktop.Id == this._dragSource.Id) continue;
+				var center = candidate.TranslatePoint(new Point(candidate.ActualWidth / 2, candidate.ActualHeight / 2), this._desktopStrip);
+				var dx = pointer.X - center.X;
+				var dy = pointer.Y - center.Y;
+				var distance = dx * dx + dy * dy;
+				if (distance >= nearestDistance) continue;
+				nearestDistance = distance;
+				nearest = candidate;
+				targetIndex = candidateDesktop.Index;
+			}
+			if (!ReferenceEquals(this._dragTargetCard, nearest))
+			{
+				if (this._dragTargetCard != null) this._dragTargetCard.BorderBrush = new SolidColorBrush(Color.FromRgb(63, 69, 79));
+				this._dragTargetCard = nearest;
+				if (this._dragTargetCard != null) this._dragTargetCard.BorderBrush = new SolidColorBrush(Color.FromRgb(92, 169, 255));
+			}
+			this._dragTargetIndex = targetIndex;
+		}
+
+		private void CancelDrag()
+		{
+			if (this._dragTargetCard != null) this._dragTargetCard.BorderBrush = new SolidColorBrush(Color.FromRgb(63, 69, 79));
+			if (this._dragCard != null)
+			{
+				this._dragCard.RenderTransform = Transform.Identity;
+				this._dragCard.Opacity = 1;
+				Panel.SetZIndex(this._dragCard, 0);
+			}
+			this._dragTargetCard = null;
+			this._dragCard = null;
+			this._dragSource = null;
+			this._dragTransform = null;
+			this._dragTargetIndex = -1;
+			this._dragMoved = false;
+		}
+
+		private static T FindAncestor<T>(DependencyObject source) where T : DependencyObject
+		{
+			while (source != null)
+			{
+				if (source is T match) return match;
+				source = VisualTreeHelper.GetParent(source);
+			}
+			return null;
 		}
 
 		private ContextMenu CreateDesktopContextMenu(VirtualDesktopViewModel desktop)
@@ -190,7 +288,10 @@ namespace SylphyHorn.UI
 			{
 				menu.Items.Clear();
 				var change = new MenuItem { Header = "Change wallpaper..." }; change.Click += (_, _) => this.ChangeWallpaper(desktop); menu.Items.Add(change);
-				var reset = new MenuItem { Header = "Reset..." }; reset.Click += (_, _) => this.ResetWallpaper(desktop); menu.Items.Add(reset);
+				if (Settings.General.ChangeBackgroundEachDesktop.Value && desktop.HasWallpaper)
+				{
+					var reset = new MenuItem { Header = "Reset..." }; reset.Click += (_, _) => this.ResetWallpaper(desktop); menu.Items.Add(reset);
+				}
 				var fit = new MenuItem { Header = "Fit" };
 				foreach (var position in this._viewModel?.WallpaperPositions ?? Array.Empty<DisplayItem<WallpaperPosition>>())
 				{
@@ -222,10 +323,17 @@ namespace SylphyHorn.UI
 			content.Children.Add(new TextBlock { Text = "New desktop", FontSize = 14, HorizontalAlignment = HorizontalAlignment.Center });
 			var button = new Button
 			{
-				Width = 164, Height = 221, Content = content, Foreground = new SolidColorBrush(Color.FromRgb(222, 227, 234)), Background = new SolidColorBrush(Color.FromRgb(31, 36, 43)),
-				BorderBrush = new SolidColorBrush(Color.FromRgb(70, 77, 88)), BorderThickness = new Thickness(1), Margin = new Thickness(0, 0, 12, 12), Padding = new Thickness(12), Cursor = Cursors.Hand,
+				Content = content, Foreground = new SolidColorBrush(Color.FromRgb(222, 227, 234)), Background = Brushes.Transparent,
+				BorderThickness = new Thickness(0), Padding = new Thickness(12), Cursor = Cursors.Hand,
+				HorizontalContentAlignment = HorizontalAlignment.Center, VerticalContentAlignment = VerticalAlignment.Center,
 			};
-			button.Click += (_, _) => this._viewModel?.CreateDesktop(); return button;
+			button.Click += (_, _) => this._viewModel?.CreateDesktop();
+			return new Border
+			{
+				Width = 224, Height = 249, Background = new SolidColorBrush(Color.FromRgb(28, 32, 38)), BorderBrush = new SolidColorBrush(Color.FromRgb(63, 69, 79)),
+				BorderThickness = new Thickness(1), CornerRadius = new CornerRadius(7), Padding = new Thickness(9), Margin = new Thickness(0, 0, 12, 12),
+				VerticalAlignment = VerticalAlignment.Top, Child = button,
+			};
 		}
 
 		private bool ConfirmUnmanagedWallpaperChange()
@@ -255,19 +363,17 @@ namespace SylphyHorn.UI
 
 		private void ResetWallpaper(VirtualDesktopViewModel desktop)
 		{
-			if (desktop == null) return;
+			if (desktop == null || !Settings.General.ChangeBackgroundEachDesktop.Value || !desktop.HasWallpaper) return;
 			var original = WallpaperService.Instance.OriginalWallpaperPath;
-			if (!Settings.General.ChangeBackgroundEachDesktop.Value && !this.ConfirmUnmanagedWallpaperChange()) return;
 			desktop.ResetWallpaperPath(original);
 			if (Settings.General.OriginalWallpaperCaptured.Value) desktop.WallpaperPosition = WallpaperService.Instance.OriginalWallpaperPosition;
-			if (!Settings.General.ChangeBackgroundEachDesktop.Value) WallpaperService.Instance.ApplyDesktopWallpaperNow(original, desktop.WallpaperPosition);
 			LoggingService.Instance.Write(LogLevel.Info, "SETTINGS", "WallpaperReset", "Desktop wallpaper reset to the preserved Windows wallpaper.", desktop.Id.ToString("D"), original);
 		}
 
 		private void RemoveDesktop(VirtualDesktopViewModel desktop)
 		{
 			if (desktop == null || (this._viewModel?.Desktops?.Length ?? 0) <= 1) return;
-			var title = string.IsNullOrWhiteSpace(desktop.Name) ? $"Desktop {desktop.NumberText}" : desktop.Name;
+			var title = string.IsNullOrWhiteSpace(desktop.Title) ? $"Desktop {desktop.NumberText}" : desktop.Title;
 			var confirmed = this._dialogs.ShowOkCancelConfirmation($"Remove desktop \"{title}\"?\n\nWindows will move its open windows to another desktop.\nThis action cannot be undone.", "Remove desktop", MessageBoxImage.Warning);
 			if (!confirmed) return;
 			desktop.Close(); desktop.ForgetCanonicalName();
