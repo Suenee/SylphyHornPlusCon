@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.29 - 03.09.2026
+
+- Fixed a false `run.cmd` launch failure observed when SylphyHorn starts successfully from a mapped LAN repository but the CMD `FOR /F` PowerShell-output capture fails to return the matching process ID.
+- Bumped `run.cmd` to version 0.05.
+- Replaced fragile command-substitution PID capture with a temporary PID handoff file while preserving exact executable-path matching for an already-running instance.
+- `run.cmd` now launches SylphyHorn through `Start-Process -PassThru`, records the PID of the process it actually started, then validates that exact PID and executable path after the startup delay.
+- Confirmed the authoritative PowerShell upgrade runner already performs exact-path process detection directly in PowerShell and does not depend on the fragile CMD output-capture path, so no duplicate workaround was added there.
+
 ## 0.28 - 03.09.2026
 
 - Removed the redundant `SETTINGS` navigation heading from the modern Settings sidebar.
