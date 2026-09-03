@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.35 - 04.09.2026
+
+- Fixed the desktop ViewModel characterization contract introduced by the 0.34 Title/Name behavior: when the Windows desktop name changes, `Title` now intentionally remains part of the observed `PropertyChanged` sequence because Title is derived from that same backing value.
+- Kept the 0.34 runtime behavior unchanged; this release corrects the regression test so it validates the intended notification contract instead of rejecting the newly required Title notification.
+
 ## 0.34 - 03.09.2026
 
 - Added one cross-version logical desktop move behavior shared by drag-and-drop and the new `Order > 1..N` desktop context submenu.
