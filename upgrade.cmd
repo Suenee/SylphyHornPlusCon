@@ -3,7 +3,7 @@ cls
 setlocal EnableExtensions EnableDelayedExpansion
 
 rem SylphyHornPlusCon upgrade bootstrap
-rem Version: 0.22
+rem Version: 0.23
 rem Stage 0 always transfers control to the current remote upgrade.cmd in TEMP.
 rem Stage 1 then downloads and runs the authoritative upgrade.ps1 in TEMP.
 
@@ -58,7 +58,7 @@ if errorlevel 1 exit /b 1
 
 if not exist "!REPO_DIR!\logs" mkdir "!REPO_DIR!\logs" >NUL 2>NUL
 set "LOG=!REPO_DIR!\logs\upgrade.log"
->"!LOG!" echo SylphyHornPlusCon upgrade bootstrap 0.22
+>"!LOG!" echo SylphyHornPlusCon upgrade bootstrap 0.23
 >>"!LOG!" echo Repository: !REPO_DIR!
 >>"!LOG!" echo Branch: !BRANCH!
 >>"!LOG!" echo Launcher: current origin/!BRANCH!:upgrade.cmd running from TEMP
@@ -75,6 +75,9 @@ git -C "!REPO_DIR!" remote set-url origin "https://github.com/Suenee/SylphyHornP
 if errorlevel 1 goto :origin_fail_stage1
 git -C "!REPO_DIR!" fetch --prune origin "!BRANCH!" >NUL 2>>"!LOG!"
 if errorlevel 1 goto :fetch_fail_stage1
+
+rem Ask SHPC 0.34+ to perform its own graceful shutdown before the runner inspects processes.
+powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "try { $e=[Threading.EventWaitHandle]::OpenExisting('Local\SylphyHornPlusCon.UpgradeShutdown'); [void]$e.Set(); $e.Dispose() } catch { }" >NUL 2>NUL
 
 set "RUNNER_TEMP=%TEMP%\SHPC-upgrade-%RANDOM%-%RANDOM%.ps1"
 git -C "!REPO_DIR!" show "origin/!BRANCH!:upgrade.ps1" >"!RUNNER_TEMP!" 2>>"!LOG!"
