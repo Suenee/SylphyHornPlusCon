@@ -156,6 +156,8 @@ namespace SylphyHorn
 				this.CreateTaskTrayIcon().BindDesktopRuntime(runtime);
 				NotificationService.Instance.BindDesktopRuntime(runtime, Application.Current.Dispatcher);
 				WallpaperService.Instance.BindDesktopRuntime(runtime);
+				DesktopControlService.Instance.BindDesktopRuntime(runtime, Application.Current.Dispatcher);
+				DesktopControlService.Instance.AddTo(this._disposable);
 				SettingsService.StretchShortcutListsTo(runtime.State.Order.Count);
 				this.RegisterActions();
 				this.CompleteSuccessfulInitialization();
@@ -264,126 +266,39 @@ namespace SylphyHorn
 					.AddTo(this._disposable);
 			}
 
-			if (ProductInfo.IsReorderingSupportBuild)
+			register(() => settings.CloseCurrent.ToShortcutKey(), _ => VirtualDesktopService.CloseCurrent())
+				.AddTo(this._disposable);
+
+			register(() => settings.CreateNew.ToShortcutKey(), _ => VirtualDesktop.Create())
+				.AddTo(this._disposable);
+
+			for (var i = 0; i < settings.SwitchToIndices.Count; i++)
 			{
-				register(() => settings.SwapDesktopLeft.ToShortcutKey(), _ => VirtualDesktopService.SwapCurrentForLeft())
-					.AddTo(this._disposable);
-
-				register(() => settings.SwapDesktopRight.ToShortcutKey(), _ => VirtualDesktopService.SwapCurrentForRight())
-					.AddTo(this._disposable);
-
-				register(() => settings.SwapDesktopFirst.ToShortcutKey(), _ => VirtualDesktopService.SwapCurrentForFirst())
-					.AddTo(this._disposable);
-
-				register(() => settings.SwapDesktopLast.ToShortcutKey(), _ => VirtualDesktopService.SwapCurrentForLast())
-					.AddTo(this._disposable);
-			}
-			else
-			{
-				register(() => settings.SwapDesktopLeft.ToShortcutKey(), _ => { })
-					.AddTo(this._disposable);
-
-				register(() => settings.SwapDesktopRight.ToShortcutKey(), _ => { })
-					.AddTo(this._disposable);
-
-				register(() => settings.SwapDesktopFirst.ToShortcutKey(), _ => { })
-					.AddTo(this._disposable);
-
-				register(() => settings.SwapDesktopLast.ToShortcutKey(), _ => { })
+				var index = i;
+				register(() => settings.SwitchToIndices[index].ToShortcutKey(), _ => VirtualDesktopService.GetFromIndex(index)?.Switch())
 					.AddTo(this._disposable);
 			}
 
-			register(() => settings.CloseAndSwitchLeft.ToShortcutKey(), _ => VirtualDesktopService.CloseAndSwitchLeft())
-				.AddTo(this._disposable);
-
-			register(() => settings.CloseAndSwitchRight.ToShortcutKey(), _ => VirtualDesktopService.CloseAndSwitchRight())
-				.AddTo(this._disposable);
-
-			register(() => settings.ShowTaskView.ToShortcutKey(), _ => VirtualDesktopService.ShowTaskView())
-				.AddTo(this._disposable);
-
-			register(() => settings.ShowWindowSwitch.ToShortcutKey(), _ => VirtualDesktopService.ShowWindowSwitch())
-				.AddTo(this._disposable);
-
-			register(() => settings.Pin.ToShortcutKey(), hWnd => hWnd.Pin())
-				.AddTo(this._disposable);
-
-			register(() => settings.Unpin.ToShortcutKey(), hWnd => hWnd.Unpin())
-				.AddTo(this._disposable);
-
-			register(() => settings.TogglePin.ToShortcutKey(), hWnd => hWnd.TogglePin())
-				.AddTo(this._disposable);
-
-			register(() => settings.PinApp.ToShortcutKey(), hWnd => hWnd.PinApp())
-				.AddTo(this._disposable);
-
-			register(() => settings.UnpinApp.ToShortcutKey(), hWnd => hWnd.UnpinApp())
-				.AddTo(this._disposable);
-
-			register(() => settings.TogglePinApp.ToShortcutKey(), hWnd => hWnd.TogglePinApp())
-				.AddTo(this._disposable);
-
-			register(() => settings.ShowSettings.ToShortcutKey(), _ =>
-				{
-					if (Application.Args.CanSettings) this.ShowSettings();
-				})
-				.AddTo(this._disposable);
-
-			register(() => settings.ToggleDesktopNotification.ToShortcutKey(), _ => NotificationService.Instance.ToggleCurrentDesktop())
-				.AddTo(this._disposable);
-
-			var desktopCount = VirtualDesktopService.Count;
-			var switchToIndices = settings.SwitchToIndices.Value;
-			for (var index = 0; index < desktopCount && index < switchToIndices.Count; ++index)
+			for (var i = 0; i < settings.MoveToIndices.Count; i++)
 			{
-				RegisterSpecifiedDesktopSwitching(index, switchToIndices[index].ToShortcutKey());
-			}
-
-			var swapDesktopIndices = settings.SwapDesktopIndices.Value;
-			for (var index = 0; index < desktopCount && index < swapDesktopIndices.Count; ++index)
-			{
-				RegisterSpecifiedDesktopSwapping(index, swapDesktopIndices[index].ToShortcutKey());
-			}
-
-			var moveToIndices = settings.MoveToIndices.Value;
-			for (var index = 0; index < desktopCount && index < moveToIndices.Count; ++index)
-			{
-				RegisterMovingToSpecifiedDesktop(index, moveToIndices[index].ToShortcutKey());
-			}
-
-			var moveToIndicesAndSwitch = settings.MoveToIndicesAndSwitch.Value;
-			for (var index = 0; index < desktopCount && index < moveToIndicesAndSwitch.Count; ++index)
-			{
-				RegisterMovingToSpecifiedDesktopAndSwitch(index, moveToIndicesAndSwitch[index].ToShortcutKey());
-			}
-
-			void RegisterSpecifiedDesktopSwitching(int i, ShortcutKey shortcut)
-			{
-				register(() => shortcut, _ => VirtualDesktopService.GetByIndex(i)?.Switch())
+				var index = i;
+				register(() => settings.MoveToIndices[index].ToShortcutKey(), hWnd => hWnd.MoveToDesktop(VirtualDesktopService.GetFromIndex(index)))
 					.AddTo(this._disposable);
 			}
-			;
 
-			void RegisterSpecifiedDesktopSwapping(int i, ShortcutKey shortcut)
+			for (var i = 0; i < settings.MoveToIndicesAndSwitch.Count; i++)
 			{
-				register(() => shortcut, _ => VirtualDesktopService.SwapCurrentByIndex(i))
+				var index = i;
+				register(() => settings.MoveToIndicesAndSwitch[index].ToShortcutKey(), hWnd => hWnd.MoveToDesktop(VirtualDesktopService.GetFromIndex(index))?.Switch())
 					.AddTo(this._disposable);
 			}
-			;
 
-			void RegisterMovingToSpecifiedDesktop(int i, ShortcutKey shortcut)
+			for (var i = 0; i < settings.SwapDesktopIndices.Count; i++)
 			{
-				register(() => shortcut, hWnd => hWnd.MoveToIndex(i))
+				var index = i;
+				register(() => settings.SwapDesktopIndices[index].ToShortcutKey(), _ => VirtualDesktopService.SwapDesktop(VirtualDesktopService.GetFromIndex(index)))
 					.AddTo(this._disposable);
 			}
-			;
-
-			void RegisterMovingToSpecifiedDesktopAndSwitch(int i, ShortcutKey shortcut)
-			{
-				register(() => shortcut, hWnd => hWnd.MoveToIndex(i)?.Switch())
-					.AddTo(this._disposable);
-			}
-			;
 		}
 	}
 }
