@@ -16,137 +16,73 @@ namespace SylphyHorn.Serialization
 		}
 
 		public SerializableProperty<bool> LoopDesktop => this.Cache(key => new SerializableProperty<bool>(key, this._provider));
-
 		public SerializableProperty<bool> NotificationWhenSwitchedDesktop => this.Cache(key => new SerializableProperty<bool>(key, this._provider, NotificationWhenSwitchedDesktopDefaultValue));
-
 		public SerializableProperty<bool> AlwaysShowDesktopNotification => this.Cache(key => new SerializableProperty<bool>(key, this._provider, AlwaysShowDesktopNotificationDefaultValue));
-
 		public SerializableProperty<bool> SimpleNotification => this.Cache(key => new SerializableProperty<bool>(key, this._provider));
-
 		public SerializableProperty<int> NotificationDuration => this.Cache(key => new SerializableProperty<int>(key, this._provider, NotificationDurationDefaultValue));
-
 		public SerializableProperty<bool> ChangeBackgroundEachDesktop => this.Cache(key => new SerializableProperty<bool>(key, this._provider));
-
 		public SerializableProperty<string> DesktopBackgroundFolderPath => this.Cache(key => new SerializableProperty<string>(key, this._provider));
-
 		public SerializableProperty<string> DesktopCanonicalNames => this.Cache(key => new SerializableProperty<string>(key, this._provider, "{}"));
-
+		public SerializableProperty<string> OriginalWallpaperPath => this.Cache(key => new SerializableProperty<string>(key, this._provider));
+		public SerializableProperty<byte> OriginalWallpaperPosition => this.Cache(key => new SerializableProperty<byte>(key, this._provider, (byte)WallpaperPosition.Fill));
+		public SerializableProperty<bool> OriginalWallpaperCaptured => this.Cache(key => new SerializableProperty<bool>(key, this._provider));
 		public SerializableProperty<bool> OverrideWindowsDefaultKeyCombination => this.Cache(key => new SerializableProperty<bool>(key, this._provider, OverrideWindowsDefaultKeyCombinationDefaultValue));
-
 		public SerializableProperty<bool> SuspendKeyDetection => this.Cache(key => new SerializableProperty<bool>(key, this._provider));
-
 		public SerializableProperty<bool> FirstTime => this.Cache(key => new SerializableProperty<bool>(key, this._provider, true));
-
 		public SerializableProperty<string> Culture => this.Cache(key => new SerializableProperty<string>(key, this._provider));
-
 		public SerializableProperty<string> LoggingMode => this.Cache(key => new SerializableProperty<string>(key, this._provider, LoggingModeDefaultValue));
-
 		public SerializableProperty<uint> Placement => this.Cache(key => new SerializableProperty<uint>(key, this._provider, PlacementDefaultValue));
-
 		public SerializableProperty<uint> Display => this.Cache(key => new SerializableProperty<uint>(key, this._provider, 0));
-
 		public SerializableProperty<uint> NotificationWindowStyle => this.Cache(key => new SerializableProperty<uint>(key, this._provider, NotificationWindowStyleDefaultValue));
-
 		public SerializableProperty<uint> NotificationCornerStyle => this.Cache(key => new SerializableProperty<uint>(key, this._provider, NotificationCornerStyleDefaultValue));
-
-		public SerializableProperty<uint> NotificationHeaderAlignment => this.Cache(key => new SerializableProperty<uint>(key, this._provider, NotificationHeaderAlignmentDefaultValue));
-
-		public SerializableProperty<uint> NotificationBodyAlignment => this.Cache(key => new SerializableProperty<uint>(key, this._provider, NotificationBodyAlignmentDefaultValue));
-
+		public SerializableProperty<HorizontalAlignment> NotificationHeaderAlignment => this.Cache(key => new SerializableProperty<HorizontalAlignment>(key, this._provider, NotificationHeaderAlignmentDefaultValue));
+		public SerializableProperty<HorizontalAlignment> NotificationBodyAlignment => this.Cache(key => new SerializableProperty<HorizontalAlignment>(key, this._provider, NotificationBodyAlignmentDefaultValue));
 		public SerializableProperty<string> NotificationFontFamily => this.Cache(key => new SerializableProperty<string>(key, this._provider));
-
 		public SerializableProperty<int> NotificationHeaderFontSize => this.Cache(key => new SerializableProperty<int>(key, this._provider, NotificationHeaderFontSizeDefaultValue));
-
 		public SerializableProperty<int> NotificationBodyFontSize => this.Cache(key => new SerializableProperty<int>(key, this._provider, NotificationBodyFontSizeDefaultValue));
-
 		public SerializableProperty<int> NotificationLineSpacing => this.Cache(key => new SerializableProperty<int>(key, this._provider, NotificationLineSpacingDefaultValue));
-
 		public SerializableProperty<int> NotificationMinWidth => this.Cache(key => new SerializableProperty<int>(key, this._provider, NotificationMinWidthDefaultValue));
-
 		public SerializableProperty<int> SimpleNotificationMinWidth => this.Cache(key => new SerializableProperty<int>(key, this._provider, SimpleNotificationMinWidthDefaultValue));
-
 		public SerializableProperty<int> PinWindowMinWidth => this.Cache(key => new SerializableProperty<int>(key, this._provider, PinWindowMinWidthDefaultValue));
-
 		public SerializableProperty<int> NotificationMinHeight => this.Cache(key => new SerializableProperty<int>(key, this._provider, NotificationMinHeightDefaultValue));
-
 		public SerializableProperty<int> NotificationOffsetX => this.Cache(key => new SerializableProperty<int>(key, this._provider, NotificationOffsetXDefaultValue));
-
 		public SerializableProperty<int> NotificationOffsetY => this.Cache(key => new SerializableProperty<int>(key, this._provider, NotificationOffsetYDefaultValue));
-
 		public SerializableProperty<int> PinWindowOffsetX => this.Cache(key => new SerializableProperty<int>(key, this._provider, PinWindowOffsetXDefaultValue));
-
 		public SerializableProperty<int> PinWindowOffsetY => this.Cache(key => new SerializableProperty<int>(key, this._provider, PinWindowOffsetYDefaultValue));
-
 		public SerializableProperty<bool> TrayShowDesktop => this.Cache(key => new SerializableProperty<bool>(key, this._provider, TrayShowDesktopDefaultValue));
-
 		public SerializableProperty<bool> TrayShowOnlyCurrentNumber => this.Cache(key => new SerializableProperty<bool>(key, this._provider, TrayShowOnlyCurrentNumberDefaultValue));
-
 		public SerializableProperty<bool> UseDesktopName => this.Cache(key => new SerializableProperty<bool>(key, this._provider));
-
 		public SerializableProperty<bool> OverrideDesktopsOnStartup => this.Cache(key => new SerializableProperty<bool>(key, this._provider, OverrideDesktopsOnStartupDefaultValue));
-
 		public DesktopNamePropertyList DesktopNames => this.Cache(key => new DesktopNamePropertyList(key, this._provider));
-
 		public WallpaperPathPropertyList DesktopBackgroundImagePaths => this.Cache(key => new WallpaperPathPropertyList(key, this._provider));
-
 		public WallpaperPositionsPropertyList DesktopBackgroundPositions => this.Cache(key => new WallpaperPositionsPropertyList(key, this._provider));
 
-		#region default values
-
 		public static bool NotificationWhenSwitchedDesktopDefaultValue { get; } = true;
-
 		public static bool AlwaysShowDesktopNotificationDefaultValue { get; } = false;
-
-		public static int NotificationDurationDefaultValue { get; } = 2500 /* milliseconds */;
-
+		public static int NotificationDurationDefaultValue { get; } = 2500;
 		public static bool OverrideWindowsDefaultKeyCombinationDefaultValue { get; } = false;
-
 		public static string LoggingModeDefaultValue { get; } = "single";
-
-		public static uint PlacementDefaultValue { get; } = 5 /* Center */;
-
-		public static uint NotificationWindowStyleDefaultValue { get; } = 4 /* BlurWindowThemeMode.System */;
-
-		public static uint NotificationCornerStyleDefaultValue { get; } = 1 /* BlurWindowCornerMode.NotRounded */;
-
-		public static uint NotificationHeaderAlignmentDefaultValue { get; } = 0 /* Left */;
-
-		public static uint NotificationBodyAlignmentDefaultValue { get; } = 0 /* Left */;
-
-		public static int NotificationHeaderFontSizeDefaultValue { get; } = 18 /* px */;
-
-		public static int NotificationBodyFontSizeDefaultValue { get; } = 32 /* px */;
-
+		public static uint PlacementDefaultValue { get; } = 5;
+		public static uint NotificationWindowStyleDefaultValue { get; } = 4;
+		public static uint NotificationCornerStyleDefaultValue { get; } = 1;
+		public static HorizontalAlignment NotificationHeaderAlignmentDefaultValue { get; } = HorizontalAlignment.Left;
+		public static HorizontalAlignment NotificationBodyAlignmentDefaultValue { get; } = HorizontalAlignment.Left;
+		public static int NotificationHeaderFontSizeDefaultValue { get; } = 18;
+		public static int NotificationBodyFontSizeDefaultValue { get; } = 32;
 		public static int NotificationLineSpacingDefaultValue { get; } = -4;
-
-		public static int NotificationMinWidthDefaultValue { get; } = 500 /* px */;
-
-		public static int SimpleNotificationMinWidthDefaultValue { get; } = 210 /* px */;
-
-		public static int PinWindowMinWidthDefaultValue { get; } = 400 /* px */;
-
-		public static int NotificationMinHeightDefaultValue { get; } = 100 /* px */;
-
-		public static int NotificationOffsetXDefaultValue { get; } = 0 /* px */;
-
-		public static int NotificationOffsetYDefaultValue { get; } = 0 /* px */;
-
-		public static int NotificationOffsetXWithRoundedDefaultValue { get; } = 12 /* px */;
-
-		public static int NotificationOffsetYWithRoundedDefaultValue { get; } = 12 /* px */;
-
-		public static int PinWindowOffsetXDefaultValue { get; } = 0 /* px */;
-
-		public static int PinWindowOffsetYDefaultValue { get; } = 0 /* px */;
-
+		public static int NotificationMinWidthDefaultValue { get; } = 500;
+		public static int SimpleNotificationMinWidthDefaultValue { get; } = 210;
+		public static int PinWindowMinWidthDefaultValue { get; } = 400;
+		public static int NotificationMinHeightDefaultValue { get; } = 100;
+		public static int NotificationOffsetXDefaultValue { get; } = 0;
+		public static int NotificationOffsetYDefaultValue { get; } = 0;
+		public static int NotificationOffsetXWithRoundedDefaultValue { get; } = 12;
+		public static int NotificationOffsetYWithRoundedDefaultValue { get; } = 12;
+		public static int PinWindowOffsetXDefaultValue { get; } = 0;
+		public static int PinWindowOffsetYDefaultValue { get; } = 0;
 		public static string NotificationFontFamilyDefaultValue { get; } = "Segoe UI Light, Yu Gothic UI Light, Meiryo UI";
-
 		public static bool TrayShowDesktopDefaultValue { get; } = false;
-
 		public static bool TrayShowOnlyCurrentNumberDefaultValue { get; } = false;
-
 		public static bool OverrideDesktopsOnStartupDefaultValue { get; } = false;
-
-		#endregion
 	}
 }
