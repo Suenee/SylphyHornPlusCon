@@ -175,11 +175,11 @@ namespace SylphyHorn.UI
 			stack.Children.Add(preview);
 
 			stack.Children.Add(this.CreateFieldLabel("Title", new Thickness(1, 10, 0, 3)));
-			var title = this.CreateTextBox("Title", "Display title used by Windows and SylphyHorn.");
+			var title = this.CreateTextBox(nameof(VirtualDesktopViewModel.Name), "Display title used by Windows and SylphyHorn.");
 			stack.Children.Add(title);
 
 			stack.Children.Add(this.CreateFieldLabel("Name", new Thickness(1, 8, 0, 3)));
-			var canonicalName = this.CreateTextBox("CanonicalName", "Stable canonical desktop name for automation and future integrations.");
+			var canonicalName = this.CreateTextBox(nameof(VirtualDesktopViewModel.CanonicalName), "Stable canonical desktop name for automation and future integrations.");
 			stack.Children.Add(canonicalName);
 
 			return card;
@@ -277,19 +277,11 @@ namespace SylphyHorn.UI
 			{
 				menu.Items.Clear();
 
-				var changeWallpaper = new MenuItem
-				{
-					Header = "Change wallpaper...",
-					IsEnabled = desktop.IsWallpaperEnabled,
-				};
+				var changeWallpaper = new MenuItem { Header = "Change wallpaper..." };
 				changeWallpaper.Click += (_, _) => this.ChangeWallpaper(desktop);
 				menu.Items.Add(changeWallpaper);
 
-				var fit = new MenuItem
-				{
-					Header = "Fit",
-					IsEnabled = desktop.IsWallpaperEnabled,
-				};
+				var fit = new MenuItem { Header = "Fit" };
 				foreach (var position in this._viewModel?.WallpaperPositions ?? Array.Empty<DisplayItem<WallpaperPosition>>())
 				{
 					var value = position.Value;
@@ -372,7 +364,7 @@ namespace SylphyHorn.UI
 
 		private void ChangeWallpaper(VirtualDesktopViewModel desktop)
 		{
-			if (desktop == null || !desktop.IsWallpaperEnabled) return;
+			if (desktop == null) return;
 			var initialDirectory = Settings.General.DesktopBackgroundFolderPath.Value;
 			if (string.IsNullOrWhiteSpace(initialDirectory) || !Directory.Exists(initialDirectory))
 			{
@@ -390,6 +382,7 @@ namespace SylphyHorn.UI
 			var filePath = Path.GetFullPath(response[0]);
 			var folder = Path.GetDirectoryName(filePath);
 			if (!string.IsNullOrWhiteSpace(folder)) Settings.General.DesktopBackgroundFolderPath.Value = folder;
+			if (!ProductInfo.IsWallpaperSupportBuild) Settings.General.ChangeBackgroundEachDesktop.Value = true;
 			desktop.WallpaperPath = filePath;
 			LoggingService.Instance.Write(LogLevel.Info, "SETTINGS", "WallpaperChanged", "Desktop wallpaper changed.", desktop.Id.ToString("D"), filePath);
 		}
@@ -397,7 +390,7 @@ namespace SylphyHorn.UI
 		private void RemoveDesktop(VirtualDesktopViewModel desktop)
 		{
 			if (desktop == null || (this._viewModel?.Desktops?.Length ?? 0) <= 1) return;
-			var title = string.IsNullOrWhiteSpace(desktop.Title) ? $"Desktop {desktop.NumberText}" : desktop.Title;
+			var title = string.IsNullOrWhiteSpace(desktop.Name) ? $"Desktop {desktop.NumberText}" : desktop.Name;
 			var confirmed = this._dialogs.ShowOkCancelConfirmation(
 				$"Remove desktop \"{title}\"?\n\nWindows will move its open windows to another desktop.\nThis action cannot be undone.",
 				"Remove desktop",
