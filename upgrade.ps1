@@ -1,7 +1,7 @@
 $ErrorActionPreference = 'Stop'
 
-$Version = '0.27'
-$Revision = '0.27-lockfile-dirty-gate'
+$Version = '0.28'
+$Revision = '0.28-fhm-console-lifecycle'
 $Repo = $env:SHPC_UPGRADE_REPO
 $TargetBranch = $env:SHPC_UPGRADE_BRANCH
 $ExpectedRemote = 'https://github.com/Suenee/SylphyHornPlusCon.git'
@@ -32,6 +32,7 @@ function Write-Line([string]$Text, [ConsoleColor]$Color = [ConsoleColor]::Gray) 
     Write-Host $Text -ForegroundColor $Color
 }
 function Info([string]$Text) { Write-Line $Text Gray }
+function Phase([string]$Name, [string]$Text) { Write-Line ("[$Name] $Text") Gray }
 function Warn([string]$Text) { $script:HadWarning = $true; Write-Line ('WARNING: ' + $Text) Yellow }
 function Fail([string]$Phase, [string]$Text) {
     $script:FailPhase = $Phase
@@ -53,7 +54,7 @@ function Run-Native {
             if ($SuppressOutput) { return }
             $line = [string]$_
             if ($line -match '(?i)\b(error|failed|fatal)\b|MSB\d+.*\berror\b') { Write-Line $line Red }
-            elseif ($line -match '(?i)\bwarning\b') { Write-Line $line Yellow }
+            elseif ($line -match '(?i)\bwarning\b') { $script:HadWarning = $true; Write-Line $line Yellow }
             else { Write-Line $line Gray }
         }
         $rc = $LASTEXITCODE
@@ -137,7 +138,7 @@ function Restore-TrackedLockFiles {
             $ErrorActionPreference = $savedPreference
         }
         if ($tracked) {
-            Run-Native -Phase 'VALIDATION-CLEANUP' -Exe 'git.exe' -ArgumentList @('restore', '--source=HEAD', '--staged', '--worktree', '--', $path) -SuppressOutput | Out-Null
+            Run-Native -Phase 'VERIFY' -Exe 'git.exe' -ArgumentList @('restore', '--source=HEAD', '--staged', '--worktree', '--', $path) -SuppressOutput | Out-Null
         }
     }
 }
@@ -167,7 +168,7 @@ function Ensure-DotNetSdk([string]$RequiredVersion) {
 
     $winget = Get-Command winget.exe -ErrorAction SilentlyContinue
     if (-not $winget) { Fail 'DEPENDENCIES' (".NET SDK $RequiredVersion is missing and WinGet was not found.") }
-    Info ("[DEPENDENCIES] Installing Microsoft.DotNet.SDK.10 $RequiredVersion with WinGet...")
+    Phase 'DEPENDENCIES' ("Installing Microsoft.DotNet.SDK.10 $RequiredVersion with WinGet...")
     Run-Native -Phase 'DEPENDENCIES' -Exe $winget.Source -ArgumentList @('install','--id','Microsoft.DotNet.SDK.10','--exact','--version',$RequiredVersion,'--accept-package-agreements','--accept-source-agreements','--silent') | Out-Null
 
     $candidate = Join-Path $env:ProgramFiles 'dotnet\dotnet.exe'
@@ -207,14 +208,14 @@ function Test-SylphyHornRunning {
 function Stop-SylphyHorn {
     $running = @(Get-SylphyHornProcesses)
     if ($running.Count -eq 0) { return }
-    Info ("[RUNTIME] Stopping SylphyHorn PID(s): " + (($running | ForEach-Object { $_.Id }) -join ', '))
+    Phase 'STOP-RUNTIME' ("Requesting graceful shutdown of SylphyHorn PID(s): " + (($running | ForEach-Object { $_.Id }) -join ', '))
     foreach ($proc in $running) {
         try { [void]$proc.CloseMainWindow() } catch { }
     }
-    $deadline = [DateTime]::UtcNow.AddSeconds(5)
+    $deadline = [DateTime]::UtcNow.AddSeconds(15)
     while ((Test-SylphyHornRunning) -and [DateTime]::UtcNow -lt $deadline) { Start-Sleep -Milliseconds 250 }
     if (Test-SylphyHornRunning) {
-        Warn 'SylphyHorn did not exit within 5 seconds; forcing process termination before upgrade.'
+        Warn 'SylphyHorn did not exit within 15 seconds; forcing project-owned process termination before upgrade.'
         Get-SylphyHornProcesses | Stop-Process -Force -ErrorAction SilentlyContinue
         $deadline = [DateTime]::UtcNow.AddSeconds(5)
         while ((Test-SylphyHornRunning) -and [DateTime]::UtcNow -lt $deadline) { Start-Sleep -Milliseconds 250 }
@@ -229,7 +230,7 @@ function Restore-SylphyHornRuntime([switch]$FailurePath) {
         return
     }
     try {
-        Info '[RUNTIME] Restoring SylphyHorn because it was running before upgrade...'
+        Phase 'RESTART' 'Restoring SylphyHorn because it was running before upgrade...'
         Start-Process -FilePath $script:AppExe -WorkingDirectory (Split-Path -Parent $script:AppExe) | Out-Null
         Start-Sleep -Seconds 1
         if (-not (Test-SylphyHornRunning)) {
@@ -238,7 +239,7 @@ function Restore-SylphyHornRuntime([switch]$FailurePath) {
             return
         }
         $script:RuntimeRestored = $true
-        Info '[RUNTIME] SylphyHorn restarted successfully.'
+        Phase 'RESTART' 'SylphyHorn restarted successfully.'
     }
     catch {
         if ($FailurePath) { Warn ("SylphyHorn restart failed after upgrade failure: $($_.Exception.Message)") }
@@ -263,16 +264,16 @@ try {
     $FailPhase = 'STOP-RUNTIME'
     $AppWasRunning = Test-SylphyHornRunning
     if ($AppWasRunning) {
-        Info '[RUNTIME] SylphyHorn was running before upgrade.'
+        Phase 'STOP-RUNTIME' 'SylphyHorn was running before upgrade.'
         Stop-SylphyHorn
     }
     else {
-        Info '[RUNTIME] SylphyHorn was not running before upgrade.'
+        Phase 'STOP-RUNTIME' 'SylphyHorn was not running before upgrade.'
     }
 
     $FailPhase = 'SELF-UPDATE'
     if (-not (Get-Command git.exe -ErrorAction SilentlyContinue)) { Fail $FailPhase 'Git was not found in PATH.' }
-
+    Phase 'SELF-UPDATE' 'Fetching the authoritative target branch and verifying the current runner.'
     Run-Native -Phase $FailPhase -Exe 'git.exe' -ArgumentList @('remote','set-url','origin',$ExpectedRemote) -SuppressOutput | Out-Null
     Run-Native -Phase $FailPhase -Exe 'git.exe' -ArgumentList @('fetch','--prune','origin',$TargetBranch) | Out-Null
 
@@ -284,8 +285,8 @@ try {
         Fail $FailPhase 'Tracked local changes outside maintenance-owned launchers exist. Commit or revert them before upgrade.'
     }
 
-    Info ("[BOOTSTRAP] Synchronizing tracked tree to origin/$TargetBranch.")
-    Info '[BOOTSTRAP] upgrade.cmd, upgrade.ps1, run.cmd and generated NuGet lockfiles are authoritative maintenance state.'
+    $FailPhase = 'REPOSITORY'
+    Phase 'REPOSITORY' ("Synchronizing tracked tree to origin/$TargetBranch.")
     Run-Native -Phase $FailPhase -Exe 'git.exe' -ArgumentList @('reset','--hard',"origin/$TargetBranch") | Out-Null
 
     $head = Get-GitText @('rev-parse','HEAD') $FailPhase
@@ -294,35 +295,36 @@ try {
     $runnerHeadBlob = Get-GitText @('rev-parse','HEAD:upgrade.ps1') $FailPhase
     $runnerRemoteBlob = Get-GitText @('rev-parse',"origin/$TargetBranch`:upgrade.ps1") $FailPhase
     if ($runnerHeadBlob -ne $runnerRemoteBlob) { Fail $FailPhase 'Repository upgrade.ps1 does not match the authoritative remote runner.' }
-    Info '[BOOTSTRAP] Authoritative temporary runner verified against the fetched branch.'
-    Info ("[GIT] Build commit: $head")
+    Phase 'REPOSITORY' 'Authoritative temporary runner verified against the fetched branch.'
+    Phase 'REPOSITORY' ("Build commit: $head")
 
-    $FailPhase = 'SUBMODULES'
-    Info '[1/5] Synchronizing Git submodules...'
+    $FailPhase = 'REPOSITORY'
+    Phase 'REPOSITORY' 'Synchronizing Git submodules.'
     Run-Native -Phase $FailPhase -Exe 'git.exe' -ArgumentList @('submodule','sync','--recursive') | Out-Null
     Run-Native -Phase $FailPhase -Exe 'git.exe' -ArgumentList @('submodule','update','--init','--recursive','--force') | Out-Null
 
     $FailPhase = 'DEPENDENCIES'
-    Info '[2/5] Checking required .NET SDK...'
+    Phase 'DEPENDENCIES' 'Checking required .NET SDK.'
     $requiredSdk = Read-RequiredSdkVersion
     $dotnet = Ensure-DotNetSdk $requiredSdk
-    Info ("[DEPENDENCIES] .NET SDK: $requiredSdk")
+    Phase 'DEPENDENCIES' (".NET SDK: $requiredSdk")
 
     $FailPhase = 'RESTORE'
-    Info '[3/5] Restoring .NET 10 projects...'
+    Phase 'RESTORE' 'Restoring .NET 10 projects.'
     Run-Native -Phase $FailPhase -Exe $dotnet -ArgumentList @('restore','source\SylphyHorn\SylphyHorn.csproj',"-p:TargetFramework=$TargetFramework",'--force-evaluate') | Out-Null
     Run-Native -Phase $FailPhase -Exe $dotnet -ArgumentList @('restore','source\SylphyHorn.Tests\SylphyHorn.Tests.csproj',"-p:TargetFramework=$TargetFramework",'--force-evaluate') | Out-Null
 
     $FailPhase = 'BUILD'
-    Info '[4/5] Building Release x64 for .NET 10...'
+    Phase 'BUILD' 'Building Release x64 for .NET 10.'
     Run-Native -Phase $FailPhase -Exe $dotnet -ArgumentList @('build','source\SylphyHorn\SylphyHorn.csproj','-c','Release','-f',$TargetFramework,'-p:Platform=x64','-p:RunSylphyHornPostBuild=false','--no-restore') | Out-Null
 
     $FailPhase = 'TEST'
-    Info '[5/5] Running .NET 10 unit tests...'
+    Phase 'TEST' 'Running .NET 10 unit tests.'
     $solutionDir = (Join-Path $Repo 'source') + '\'
     Run-Native -Phase $FailPhase -Exe $dotnet -ArgumentList @('test','source\SylphyHorn.Tests\SylphyHorn.Tests.csproj','-c','Release','-f',$TargetFramework,'-p:Platform=x64','-p:RunSylphyHornPostBuild=false',("-p:SolutionDir=$solutionDir"),'--no-restore') | Out-Null
 
-    $FailPhase = 'VALIDATION-CLEANUP'
+    $FailPhase = 'VERIFY'
+    Phase 'VERIFY' 'Restoring maintenance-generated lock files and verifying the tracked tree.'
     Restore-TrackedLockFiles
     if (Test-ProtectedTrackedDirty) {
         Show-ProtectedTrackedChanges
@@ -335,11 +337,11 @@ try {
     Info '============================================================'
     if ($HadWarning) {
         Write-Line 'UPGRADE OK WITH WARNINGS' Yellow
-        Info 'STATUS: WARNING - phase=COMPLETE'
+        Write-Line 'STATUS: WARNING - phase=COMPLETE' Yellow
     }
     else {
         Write-Line 'UPGRADE OK' Green
-        Info 'STATUS: SUCCESS - phase=COMPLETE'
+        Write-Line 'STATUS: SUCCESS - phase=COMPLETE' Green
     }
     Info (".NET SDK: $requiredSdk")
     Info ("Target:   $TargetFramework")
