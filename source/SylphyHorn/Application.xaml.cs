@@ -21,8 +21,11 @@ namespace SylphyHorn
 {
 	sealed partial class Application : IDisposableHolder
 	{
+		private const string UpgradeShutdownEventName = @"Local\SylphyHornPlusCon.UpgradeShutdown";
 		private readonly DisposableCollection _compositeDisposable = new DisposableCollection();
 		private readonly CancellationTokenSource _startupCancellation = new CancellationTokenSource();
+		private EventWaitHandle _upgradeShutdownEvent;
+		private RegisteredWaitHandle _upgradeShutdownRegistration;
 		private ApplicationPreparation _preparation;
 		private StartupTrace _startupTrace;
 		private Task _startupTask;
@@ -80,9 +83,28 @@ Time: {now:O}"));
 				return;
 			}
 #endif
+			this.InitializeUpgradeShutdownSignal();
 			this._startupTrace.Write(StartupPhase.SingleInstance, StartupTraceResult.Succeeded);
 			base.OnStartup(e);
 			this._startupTask = this.StartApplicationAsync();
+		}
+
+		private void InitializeUpgradeShutdownSignal()
+		{
+			try
+			{
+				this._upgradeShutdownEvent = new EventWaitHandle(false, EventResetMode.AutoReset, UpgradeShutdownEventName);
+				this._upgradeShutdownRegistration = ThreadPool.RegisterWaitForSingleObject(
+					this._upgradeShutdownEvent,
+					(_, __) => this.Dispatcher.BeginInvoke((Action)this.BeginShutdown),
+					null,
+					Timeout.Infinite,
+					true);
+			}
+			catch (Exception ex)
+			{
+				LoggingService.Instance.Register(ex);
+			}
 		}
 
 		private async Task StartApplicationAsync()
@@ -193,10 +215,6 @@ Time: {now:O}"));
 			if (Interlocked.Exchange(ref this._shutdownStarted, 1) != 0) return;
 			LoggingService.Instance.Write(LogLevel.Info, "APP", "Shutdown", "Application shutdown started.");
 
-			// Remove the shell notification icon before awaiting desktop/runtime shutdown.
-			// If later cleanup stalls and an external updater must terminate the process,
-			// Explorer has already received the NotifyIcon delete operation and cannot keep
-			// a stale tray icon for the dead process.
 			try
 			{
 				this.TaskTrayIcon?.Dispose();
@@ -221,6 +239,10 @@ Time: {now:O}"));
 
 		protected override void OnExit(ExitEventArgs e)
 		{
+			this._upgradeShutdownRegistration?.Unregister(null);
+			this._upgradeShutdownRegistration = null;
+			this._upgradeShutdownEvent?.Dispose();
+			this._upgradeShutdownEvent = null;
 			base.OnExit(e);
 			((IDisposable)this).Dispose();
 		}
