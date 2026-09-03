@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.30 - 03.09.2026
+
+- Replaced the legacy vertical Desktop settings form with a horizontal desktop strip that mirrors the real Windows virtual desktop order.
+- Added 16:9 wallpaper preview cards with the desktop number retained in the upper-left corner and horizontally scrollable layout for larger desktop sets.
+- Added `Title` and `Name` fields below each preview: Title continues to use the Windows/SylphyHorn display name while Name is a stable canonical identifier persisted by desktop GUID for future automation and protocol integrations.
+- Added drag-and-drop desktop reordering that delegates to the existing virtual desktop move operations instead of maintaining a UI-only order.
+- Added a right-click desktop context menu with direct wallpaper selection, wallpaper fit mode, and desktop removal.
+- Reworked wallpaper selection to target the selected desktop object directly instead of relying on the legacy index-based command path; on Windows 10 selecting a wallpaper automatically enables per-desktop background handling.
+- Added destructive-action confirmation before removing a desktop and disabled removal when only one desktop remains.
+- Replaced the full-width New desktop button with a compact `+ New desktop` tile at the end of the desktop strip.
+- Added structured log events for wallpaper changes, desktop reorder requests, and desktop removal requests.
+- Extended the settings schema contract with persisted canonical desktop names while preserving the existing Windows desktop-name behavior and characterization contract.
+
 ## 0.29 - 03.09.2026
 
 - Fixed a false `run.cmd` launch failure observed when SylphyHorn starts successfully from a mapped LAN repository but the CMD `FOR /F` PowerShell-output capture fails to return the matching process ID.
