@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.42 - 04.09.2026
+
+- Extended `upgrade.cmd` so a standalone copy placed in an otherwise empty target folder can bootstrap a complete fresh `devel` checkout into that same folder.
+- Added fresh-install detection before normal repository probing, allowing the bootstrap path to install Git for Windows through WinGet when Git is not yet available.
+- Fresh bootstrap runs from `%TEMP%`, removes only the known standalone `upgrade.cmd` before checkout, downloads `Suenee/SylphyHornPlusCon` directly into the current folder, then hands control to the repository's current `upgrade.cmd` so the normal self-update, dependency, submodule, build, test, verification, and launch workflow remains authoritative.
+- Fresh installation is refused when unrelated files are present; no wildcard Git trust, broad cleanup, nested checkout, or destructive overwrite of unknown local data is used.
+- Added exact mapped-drive and UNC `safe.directory` registration to the fresh bootstrap path while preserving the existing network-drive support model.
+- Bumped the maintenance bootstrap version to `0.24`.
+
 ## 0.41 - 04.09.2026
 
 - Aligned the SHPC WebSocket transport endpoint with the generic SUB Socket Box route `ws://host:port/mailbox/<socketBox>?apiKey=<apiKey>` instead of the legacy direct `/<socketBox>` path.
