@@ -89,7 +89,8 @@ The runner:
 
 - verifies the expected remote and explicit target branch;
 - fetches the target branch before synchronization;
-- protects tracked local edits outside maintenance-owned launchers;
+- migrates explicitly allow-listed retired maintenance files only when they are still tracked by the local HEAD but are no longer tracked by `origin/<branch>`;
+- protects all other tracked local edits outside maintenance-owned launchers;
 - treats `upgrade.cmd` and `upgrade.ps1` as authoritative remote bootstrap state;
 - synchronizes the tracked repository deterministically only after protected tracked edits have been ruled out;
 - never runs broad `git clean -fd`;
@@ -113,7 +114,9 @@ Upgrade is deliberately conservative. Protected tracked local changes stop the u
 
 Maintenance-owned bootstrap files may be replaced by the authoritative remote state. User/runtime data must not be treated as disposable maintenance state.
 
-If a tracked file has been intentionally removed from the current remote branch, an older local modification of that obsolete file can block the first transition to the branch that deletes it. Resolve that one-time local change explicitly rather than weakening the general tracked-change protection.
+A narrow exception exists for explicitly retired maintenance files. If an older local HEAD still tracks such a file, the target `origin/<branch>` no longer tracks it, and that old file has local edits, the updater may discard those edits before the protected-change gate so the branch transition can complete. This is permitted only for paths explicitly listed by the updater as retired maintenance files; it is never inferred merely because an arbitrary remote file was deleted.
+
+The first recorded case is `install.cmd` during the 0.42/0.43 transition. A locally modified `install.cmd` previously caused the old checkout to stop in `SELF-UPDATE` before it could reach the remote commit that removed the obsolete installer. From runner 0.30 onward, `install.cmd` is migrated automatically only when `origin/<branch>` confirms that it is no longer tracked.
 
 ## Network drives and `safe.directory`
 
@@ -200,6 +203,16 @@ Symptom: first installation behaves differently from upgrade, fixes land in one 
 Root cause: separate `install.cmd` and `upgrade.cmd` implementations evolve independently.
 
 Prevention: `upgrade.cmd` is the only supported entry point. Fresh-install logic is limited to repository bootstrap; after checkout it immediately hands control to the same authoritative upgrade workflow used by existing installations.
+
+### Retired maintenance file blocks its own removal
+
+Symptom: after a maintenance file is deleted on the target branch, an older checkout reports that the same locally modified file is a protected tracked change and stops in `SELF-UPDATE`. The updater therefore cannot reach the commit that deletes the obsolete file. The concrete SHPC case was `M install.cmd` after `install.cmd` had already been retired remotely.
+
+Root cause: protected-change validation runs against the older local HEAD, where the obsolete maintenance file is still tracked, before the later `git reset --hard origin/<branch>` can remove it.
+
+Prevention: after fetching the target branch but before general tracked-change validation, inspect only an explicit allow-list of retired maintenance paths. A path may be normalized to the local HEAD only when it is still locally tracked and `origin/<branch>` confirms that the path no longer exists there. The normal remote reset then removes it. Never generalize this exception to arbitrary files deleted upstream.
+
+Regression rule: test a locally modified retired `install.cmd` against a target branch where `install.cmd` is absent. The upgrade must continue without manual `git restore`. A modified ordinary source file must still block the upgrade.
 
 ### Standalone bootstrap overwrites an unrelated folder
 
@@ -310,6 +323,8 @@ Before treating an updater change as stable, test at least:
 - immediate second run;
 - protected tracked source modification;
 - modified maintenance launcher from an older updater generation;
+- locally modified retired `install.cmd` while the target branch no longer tracks it; this must migrate automatically;
+- an ordinary modified tracked file must still block even when unrelated remote deletions exist;
 - CRLF-safe execution of a temporary CMD extracted from a Git blob;
 - untracked file in repository root;
 - untracked build files inside submodules;
