@@ -1,7 +1,7 @@
 $ErrorActionPreference = 'Stop'
 
-$Version = '0.29'
-$Revision = '0.29-application-version-verification'
+$Version = '0.30'
+$Revision = '0.30-retired-maintenance-migration'
 $Repo = $env:SHPC_UPGRADE_REPO
 $TargetBranch = $env:SHPC_UPGRADE_BRANCH
 $ExpectedRemote = 'https://github.com/Suenee/SylphyHornPlusCon.git'
@@ -70,6 +70,40 @@ function Get-GitText([string[]]$Arguments, [string]$Phase = 'GIT') {
     finally { $ErrorActionPreference = $savedPreference }
     if ($rc -ne 0) { foreach ($line in $output) { Write-Line ([string]$line) Red }; Fail $Phase ("git.exe failed with exit code $rc") }
     return (($output | ForEach-Object { [string]$_ }) -join [Environment]::NewLine).Trim()
+}
+function Test-LocalTrackedPath([string]$Path) {
+    $savedPreference = $ErrorActionPreference
+    try { $ErrorActionPreference = 'Continue'; & git.exe ls-files --error-unmatch -- $Path *> $null; $rc = $LASTEXITCODE }
+    finally { $ErrorActionPreference = $savedPreference }
+    return ($rc -eq 0)
+}
+function Test-RemoteTrackedPath([string]$Path) {
+    $savedPreference = $ErrorActionPreference
+    try { $ErrorActionPreference = 'Continue'; & git.exe cat-file -e "origin/$TargetBranch`:$Path" 2>$null; $rc = $LASTEXITCODE }
+    finally { $ErrorActionPreference = $savedPreference }
+    if ($rc -eq 0) { return $true }
+    if ($rc -eq 128) { return $false }
+    Fail 'SELF-UPDATE' ("Unable to determine whether origin/$TargetBranch tracks '$Path' (git exit code $rc).")
+}
+function Test-TrackedPathDirty([string]$Path) {
+    $savedPreference = $ErrorActionPreference
+    try {
+        $ErrorActionPreference = 'Continue'
+        & git.exe diff --quiet --ignore-submodules=untracked -- $Path; $worktreeDirty = ($LASTEXITCODE -ne 0)
+        & git.exe diff --cached --quiet --ignore-submodules=untracked -- $Path; $indexDirty = ($LASTEXITCODE -ne 0)
+    }
+    finally { $ErrorActionPreference = $savedPreference }
+    return ($worktreeDirty -or $indexDirty)
+}
+function Normalize-RetiredMaintenanceFiles {
+    foreach ($path in @('install.cmd')) {
+        if (-not (Test-LocalTrackedPath $path)) { continue }
+        if (Test-RemoteTrackedPath $path) { continue }
+        if (Test-TrackedPathDirty $path) {
+            Phase 'SELF-UPDATE' ("Discarding local changes in retired maintenance file '$path' because origin/$TargetBranch no longer tracks it.")
+            Run-Native -Phase 'SELF-UPDATE' -Exe 'git.exe' -ArgumentList @('restore','--source=HEAD','--staged','--worktree','--',$path) -SuppressOutput | Out-Null
+        }
+    }
 }
 function Test-ProtectedTrackedDirty {
     $pathspec = @('.',':(exclude)upgrade.cmd',':(exclude)upgrade.ps1',':(exclude)run.cmd',':(exclude)source/SylphyHorn/packages.lock.json',':(exclude)source/SylphyHorn.Tests/packages.lock.json')
@@ -195,6 +229,7 @@ try {
     Run-Native -Phase $FailPhase -Exe 'git.exe' -ArgumentList @('fetch','--prune','origin',$TargetBranch) | Out-Null
     $currentBranch = Get-GitText @('branch','--show-current') $FailPhase
     if ($currentBranch -ne $TargetBranch) { Fail $FailPhase ("Current branch '$currentBranch' does not match target branch '$TargetBranch'.") }
+    Normalize-RetiredMaintenanceFiles
     if (Test-ProtectedTrackedDirty) { Show-ProtectedTrackedChanges; Fail $FailPhase 'Tracked local changes outside maintenance-owned launchers exist. Commit or revert them before upgrade.' }
     $FailPhase = 'REPOSITORY'; Phase 'REPOSITORY' ("Synchronizing tracked tree to origin/$TargetBranch.")
     Run-Native -Phase $FailPhase -Exe 'git.exe' -ArgumentList @('reset','--hard',"origin/$TargetBranch") | Out-Null
