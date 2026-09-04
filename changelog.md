@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.38 - 04.09.2026
+
+- Simplified WebSocket connection failures shown in Settings to the readable `Unable to connect` status instead of exposing raw exception text in the status row.
+- Kept full WebSocket failure diagnostics in the structured App log, including the target endpoint, Socket box, and exception details needed for troubleshooting.
+- Added structured log entries for invalid WebSocket connection settings and for connection attempts that fail to reach the open state.
+- Simplified receive-loop failures to `Connection lost` in the UI while preserving the technical exception in the App log.
+
 ## 0.37 - 04.09.2026
 
 - Added a new `WebSocket` settings page with connection status, IP, socket port, `Socket box`, protected API key, and a single `Connect` / `Disconnect` action.
@@ -185,7 +192,7 @@
 
 - Replaced updater source synchronization based on `git merge --ff-only` with `git reset --keep origin/<branch>` after the protected-change safety gate passes.
 - This avoids merge/index-state failures while preserving local tracked changes by aborting if an update would overwrite them.
-- `upgrade.cmd` remains maintenance-owned and is normalized to the current `HEAD` before branch synchronization.
+- `upgrade.cmd` remains maintenance-owned and is normalized to the current `HEAD` before source synchronization.
 - The updater now prints the exact Git synchronization error to the console as well as `logs/upgrade.log` if the reset cannot be completed.
 - Untracked files are not proactively cleaned or deleted by the updater.
 
@@ -209,7 +216,7 @@
 
 ## 0.16 - 02.09.2026
 
-- Fixed `upgrade.cmd` self-update so the working-tree copy of `upgrade.cmd` is updated from `origin/<branch>` before control is transferred to the temporary updater.
+- Fixed `upgrade.cmd` self-update so the working-tree copy of `upgrade.cmd` is updated from `origin/devel` before control is transferred to the temporary updater.
 - Prevented the updater from blocking itself during the subsequent tracked-change safety check.
 - The self-update step still changes only `upgrade.cmd`; all other tracked local edits remain protected and continue to block an upgrade.
 
