@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.44 - 05.09.2026
+
+- Changed the WebSocket settings API KEY field from a masked password control to a normal readable text field while keeping the persisted value protected with the existing Windows DPAPI storage path.
+- Bumped the authoritative upgrade runner to `0.30-retired-maintenance-migration`.
+- Added a narrow migration for explicitly retired maintenance files: a locally modified `install.cmd` no longer blocks the upgrade when the fetched target branch confirms that `install.cmd` is no longer tracked there.
+- Kept the normal tracked-source protection strict; the retired-file exception is allow-listed and is not generalized to arbitrary files deleted upstream.
+- Expanded `UPGRADE.md` with the concrete `M install.cmd` failure from the 0.42/0.43 transition, its root cause, prevention rule, and regression tests so the same updater trap is not repeated in other projects.
+
 ## 0.43 - 04.09.2026
 
 - Retired the obsolete standalone `install.cmd`; `upgrade.cmd` is now the single supported entry point for both fresh installation and existing-repository upgrades.
