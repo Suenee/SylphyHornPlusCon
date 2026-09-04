@@ -1,5 +1,6 @@
 using System;
 using System.Globalization;
+using System.Linq;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Media;
@@ -18,6 +19,7 @@ namespace SylphyHorn.UI
 		private readonly TextBox _socketBox;
 		private readonly PasswordBox _apiKeyBox;
 		private readonly Button _connectButton;
+		private bool _negotiationDialogOpen;
 		private bool _disposed;
 
 		internal WebSocketSettingsView()
@@ -83,6 +85,7 @@ namespace SylphyHorn.UI
 
 			this.Content = root;
 			WebSocketConnectionService.Instance.StateChanged += this.OnConnectionStateChanged;
+			WebSocketConnectionService.Instance.ReplacementNegotiationRequested += this.OnReplacementNegotiationRequested;
 			this.ApplyState(WebSocketConnectionService.Instance.State, WebSocketConnectionService.Instance.StatusMessage);
 		}
 
@@ -90,18 +93,20 @@ namespace SylphyHorn.UI
 		{
 			try
 			{
-				if (WebSocketConnectionService.Instance.IsConnected)
+				var service = WebSocketConnectionService.Instance;
+				if (service.IsConnected)
 				{
-					await WebSocketConnectionService.Instance.DisconnectAsync();
+					await service.DisconnectAsync();
+					return;
+				}
+				if (service.IsNegotiating)
+				{
+					await service.CancelConnectionNegotiationAsync();
 					return;
 				}
 
 				if (!int.TryParse(this._portBox.Text, NumberStyles.None, CultureInfo.InvariantCulture, out var port)) port = 0;
-				await WebSocketConnectionService.Instance.ConnectAsync(
-					this._addressBox.Text,
-					port,
-					this._socketBox.Text,
-					this._apiKeyBox.Password);
+				await service.ConnectAsync(this._addressBox.Text, port, this._socketBox.Text, this._apiKeyBox.Password);
 			}
 			catch (Exception ex)
 			{
@@ -115,10 +120,35 @@ namespace SylphyHorn.UI
 			else _ = this.Dispatcher.BeginInvoke((Action)(() => this.ApplyState(e.State, e.Message)));
 		}
 
+		private void OnReplacementNegotiationRequested(object sender, ReplacementNegotiationEventArgs e)
+		{
+			if (this.Dispatcher.CheckAccess()) _ = this.ShowReplacementNegotiationAsync(e);
+			else _ = this.Dispatcher.BeginInvoke((Action)(() => _ = this.ShowReplacementNegotiationAsync(e)));
+		}
+
+		private async System.Threading.Tasks.Task ShowReplacementNegotiationAsync(ReplacementNegotiationEventArgs e)
+		{
+			if (this._disposed || this._negotiationDialogOpen) return;
+			this._negotiationDialogOpen = true;
+			try
+			{
+				var dialog = new ConnectionReplacementDialog(e)
+				{
+					Owner = Window.GetWindow(this),
+				};
+				var accepted = dialog.ShowDialog() == true;
+				if (accepted && dialog.SelectedConnection != null)
+					await WebSocketConnectionService.Instance.ReplaceConnectionAsync(dialog.SelectedConnection.ConnectionId);
+				else if (WebSocketConnectionService.Instance.IsNegotiating)
+					await WebSocketConnectionService.Instance.CancelConnectionNegotiationAsync();
+			}
+			finally { this._negotiationDialogOpen = false; }
+		}
+
 		private void ApplyState(WebSocketConnectionState state, string message)
 		{
 			this._statusText.Text = string.IsNullOrWhiteSpace(message) ? state.ToString() : message;
-			this._connectButton.Content = state == WebSocketConnectionState.Connected ? "Disconnect" : "Connect";
+			this._connectButton.Content = state == WebSocketConnectionState.Connected ? "Disconnect" : state == WebSocketConnectionState.Negotiating ? "Cancel" : "Connect";
 			this._connectButton.IsEnabled = state != WebSocketConnectionState.Connecting;
 			switch (state)
 			{
@@ -126,6 +156,7 @@ namespace SylphyHorn.UI
 					this._statusLight.Fill = new SolidColorBrush(Color.FromRgb(61, 190, 105));
 					break;
 				case WebSocketConnectionState.Connecting:
+				case WebSocketConnectionState.Negotiating:
 					this._statusLight.Fill = new SolidColorBrush(Color.FromRgb(235, 184, 54));
 					break;
 				case WebSocketConnectionState.Error:
@@ -178,7 +209,64 @@ namespace SylphyHorn.UI
 			if (this._disposed) return;
 			this._disposed = true;
 			WebSocketConnectionService.Instance.StateChanged -= this.OnConnectionStateChanged;
+			WebSocketConnectionService.Instance.ReplacementNegotiationRequested -= this.OnReplacementNegotiationRequested;
 			this._connectButton.Click -= this.OnConnectClick;
+		}
+
+		private sealed class ConnectionReplacementDialog : Window
+		{
+			private readonly ListBox _connections;
+			internal ConnectionReplacementDialog(ReplacementNegotiationEventArgs negotiation)
+			{
+				this.Title = "Connection limit reached";
+				this.Width = 560;
+				this.Height = 390;
+				this.WindowStartupLocation = WindowStartupLocation.CenterOwner;
+				this.ResizeMode = ResizeMode.NoResize;
+				this.Background = new SolidColorBrush(Color.FromRgb(24, 27, 32));
+				this.Foreground = Brushes.White;
+
+				var root = new DockPanel { Margin = new Thickness(22) };
+				var buttons = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right, Margin = new Thickness(0, 18, 0, 0) };
+				DockPanel.SetDock(buttons, Dock.Bottom);
+				var cancel = new Button { Content = "Cancel", Width = 100, Height = 34, Margin = new Thickness(8, 0, 0, 0) };
+				var replace = new Button { Content = "Replace selected", Width = 140, Height = 34, IsDefault = true };
+				cancel.Click += (_, _) => { this.DialogResult = false; this.Close(); };
+				replace.Click += (_, _) =>
+				{
+					if (this._connections.SelectedItem is SocketBoxConnectionInfo) { this.DialogResult = true; this.Close(); }
+				};
+				buttons.Children.Add(replace);
+				buttons.Children.Add(cancel);
+				root.Children.Add(buttons);
+
+				var content = new StackPanel();
+				content.Children.Add(new TextBlock
+				{
+					Text = $"This Socket Box allows a maximum of {negotiation.MaxConnections} connection(s). Select the existing connection that may be replaced.",
+					TextWrapping = TextWrapping.Wrap,
+					Margin = new Thickness(0, 0, 0, 10),
+					Foreground = Brushes.White,
+				});
+				if (!string.IsNullOrWhiteSpace(negotiation.ExpiresAt))
+					content.Children.Add(new TextBlock { Text = $"Negotiation expires: {negotiation.ExpiresAt}", Foreground = new SolidColorBrush(Color.FromRgb(190, 195, 202)), Margin = new Thickness(0, 0, 0, 12) });
+
+				this._connections = new ListBox
+				{
+					Height = 220,
+					Background = new SolidColorBrush(Color.FromRgb(28, 32, 38)),
+					Foreground = Brushes.White,
+					BorderBrush = new SolidColorBrush(Color.FromRgb(72, 79, 89)),
+					DisplayMemberPath = nameof(SocketBoxConnectionInfo.DisplayName),
+					ItemsSource = negotiation.Connections.ToArray(),
+				};
+				if (negotiation.Connections.Count > 0) this._connections.SelectedIndex = 0;
+				content.Children.Add(this._connections);
+				root.Children.Add(content);
+				this.Content = root;
+			}
+
+			internal SocketBoxConnectionInfo SelectedConnection => this._connections.SelectedItem as SocketBoxConnectionInfo;
 		}
 	}
 }
