@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.40 - 04.09.2026
+
+- Added authoritative application-version verification to `upgrade.ps1`: the expected `x.xx` version is read from `SylphyHorn.csproj` and compared with the ProductVersion of the built `SylphyHorn.exe`.
+- Upgrade now fails in the `VERIFY` phase when the built executable version does not match the project application version, preventing a successful status from being reported for a stale or mismatched build.
+- Added `Application version: x.xx` to the final successful upgrade summary so the locally completed version can be compared directly with the version announced before running `upgrade.cmd`.
+- Bumped the upgrade runner to `0.29-application-version-verification`.
+
 ## 0.39 - 04.09.2026
 
 - Added the VPP v1 translation layer between the transport-independent `DesktopControlService` and the WebSocket client, exposing `activateDesktop`, `addDesktop`, `setIndividualWallpapers`, `setDesktopWallpaper`, `getDesktopState`, and `getDesktop` without leaking VPP concerns into the application API.
@@ -82,7 +89,7 @@
 - Kept wallpaper-management behavior OS-neutral in the UI so the same workflow applies on supported Windows 10 and Windows 11 systems while the runtime selects the available mechanism.
 - Canonical desktop `Name` values are now normalized to lowercase, limited to `a-z`, `0-9`, `-`, and `_`, compared case-insensitively, and made unique with numeric suffixes when needed.
 - Enlarged and centered the `+` symbol in the New desktop tile.
-- Preserved real Windows desktop reordering through the existing runtime on systems where the Windows desktop API reports reordering support.
+- Preserved real Windows desktop reordering through the existing runtime on systems where the Windows virtual desktop API reports reordering support.
 
 ## 0.31 - 03.09.2026
 
@@ -297,7 +304,6 @@
 - Installer now checks tracked changes only by path: known maintenance files are disposable, while any source/user tracked edit stops the install.
 - After the safety check, the installer force-checks out `devel` directly from `origin/devel`, eliminating CRLF/hash/self-update reconciliation loops.
 - Untracked files are preserved; no broad `git clean` is used.
-- Recursive submodules are synchronized with `--force` after the tracked tree is rebuilt.
 
 ## 0.07 - 01.09.2026
 
