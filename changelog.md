@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.41 - 04.09.2026
+
+- Aligned the SHPC WebSocket transport endpoint with the generic SUB Socket Box route `ws://host:port/mailbox/<socketBox>?apiKey=<apiKey>` instead of the legacy direct `/<socketBox>` path.
+- Removed the hard-coded VPP source version from `WebSocketConnectionService`; outgoing VPP envelopes now derive the application `x.xx` version from the running assembly so protocol diagnostics stay synchronized with the installed application version.
+- Stabilized runtime peer binding for unsolicited `desktopStateChanged` events: the first valid admitted application peer remains bound until it disconnects, while later traffic from another Socket Box no longer silently replaces the active peer.
+- Kept VPP v1 `registerConnection`, replacement negotiation, heartbeat, correlation, and graceful disconnect behavior unchanged while aligning the client with the current protocol contract.
+
 ## 0.40 - 04.09.2026
 
 - Added authoritative application-version verification to `upgrade.ps1`: the expected `x.xx` version is read from `SylphyHorn.csproj` and compared with the ProductVersion of the built `SylphyHorn.exe`.
