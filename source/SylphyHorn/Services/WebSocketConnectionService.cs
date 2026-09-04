@@ -61,12 +61,14 @@ namespace SylphyHorn.Services
 				if (this.IsConnected || this._state == WebSocketConnectionState.Connecting) return;
 				if (string.IsNullOrWhiteSpace(address))
 				{
-					this.SetState(WebSocketConnectionState.Error, "IP is required.");
+					this.SetState(WebSocketConnectionState.Error, "Unable to connect");
+					LoggingService.Instance.Write(LogLevel.Error, "WEBSOCKET", "ConnectValidationFailed", "WebSocket connection validation failed.", details: "IP is required.");
 					return;
 				}
 				if (port < 1 || port > 65535)
 				{
-					this.SetState(WebSocketConnectionState.Error, "Socket port must be between 1 and 65535.");
+					this.SetState(WebSocketConnectionState.Error, "Unable to connect");
+					LoggingService.Instance.Write(LogLevel.Error, "WEBSOCKET", "ConnectValidationFailed", "WebSocket connection validation failed.", details: "Socket port must be between 1 and 65535.");
 					return;
 				}
 
@@ -80,7 +82,8 @@ namespace SylphyHorn.Services
 					await this._client.ConnectAsync(uri, this._lifetimeCts.Token).ConfigureAwait(false);
 					if (this._client.State != WebSocketState.Open)
 					{
-						this.SetState(WebSocketConnectionState.Error, "WebSocket did not reach the open state.");
+						this.SetState(WebSocketConnectionState.Error, "Unable to connect");
+						LoggingService.Instance.Write(LogLevel.Error, "WEBSOCKET", "ConnectFailed", "WebSocket did not reach the open state.", details: $"Endpoint={uri};State={this._client.State};SocketBox={socketBox ?? string.Empty}");
 						this.CleanupClient();
 						return;
 					}
@@ -99,8 +102,8 @@ namespace SylphyHorn.Services
 				catch (Exception ex)
 				{
 					DesktopControlService.Instance.SetEnabled(false);
-					this.SetState(WebSocketConnectionState.Error, ex.Message);
-					LoggingService.Instance.Write(LogLevel.Error, "WEBSOCKET", "ConnectFailed", "WebSocket connection failed.", details: ex.ToString());
+					this.SetState(WebSocketConnectionState.Error, "Unable to connect");
+					LoggingService.Instance.Write(LogLevel.Error, "WEBSOCKET", "ConnectFailed", "WebSocket connection failed.", details: $"Endpoint={uri};SocketBox={socketBox ?? string.Empty}{Environment.NewLine}{ex}");
 					this.CleanupClient();
 				}
 			}
@@ -146,7 +149,7 @@ namespace SylphyHorn.Services
 				{
 					var result = await client.ReceiveAsync(new ArraySegment<byte>(buffer), cancellationToken).ConfigureAwait(false);
 					if (result.MessageType == WebSocketMessageType.Close) break;
-					// VPP payload handling is intentionally not implemented in 0.37.
+					// VPP payload handling is intentionally not implemented in 0.38.
 				}
 			}
 			catch (OperationCanceledException) { return; }
@@ -155,7 +158,7 @@ namespace SylphyHorn.Services
 				if (!cancellationToken.IsCancellationRequested)
 				{
 					LoggingService.Instance.Write(LogLevel.Warning, "WEBSOCKET", "ReceiveStopped", "WebSocket receive loop stopped.", details: ex.ToString());
-					this.SetState(WebSocketConnectionState.Error, ex.Message);
+					this.SetState(WebSocketConnectionState.Error, "Connection lost");
 				}
 			}
 			finally
@@ -163,7 +166,7 @@ namespace SylphyHorn.Services
 				if (!cancellationToken.IsCancellationRequested)
 				{
 					DesktopControlService.Instance.SetEnabled(false);
-					if (this._state != WebSocketConnectionState.Error) this.SetState(WebSocketConnectionState.Disconnected, "Disconnected by remote endpoint");
+					if (this._state != WebSocketConnectionState.Error) this.SetState(WebSocketConnectionState.Disconnected, "Disconnected");
 					this.CleanupClient(client);
 				}
 			}
