@@ -194,7 +194,7 @@
     <Compile Update="Properties\Settings.Designer.cs">
       <DesignTimeSharedInput>true</DesignTimeSharedInput>
       <AutoGen>True</AutoGen>
-      <DependentUpon>Properties\Settings.settings</DependentUpon>
+      <DependentUpon>Settings.settings</DependentUpon>
     </Compile>
     <Compile Remove="UI\TaskTrayTestWindow.xaml.cs" />
   </ItemGroup>
