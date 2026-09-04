@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.37 - 04.09.2026
+
+- Added a new `WebSocket` settings page with connection status, IP, socket port, `Socket box`, protected API key, and a single `Connect` / `Disconnect` action.
+- Added a four-state connection indicator: gray for disconnected, yellow for connecting, green for connected, and red for errors.
+- Added a real `ClientWebSocket` connection attempt to the configured endpoint while intentionally leaving VPP payload handling for the next protocol-adapter step.
+- Added persistent WebSocket endpoint settings to the existing per-user `Settings.xml` store and protected the API key with Windows DPAPI instead of storing it as plain text.
+- Connected WebSocket lifecycle to `DesktopControlService.Enabled`: successful connection unlocks mutating desktop commands; disconnect, remote close, connection error, and application exit lock them again.
+- Kept `Socket box` persisted as the future SUB mailbox `cname`; it is not yet consumed by the 0.37 transport-only connection attempt.
+- Fixed the 0.36 build failure in `DesktopControlService.AddAsync` by making the dispatcher lambda return a concrete value so generic type inference succeeds.
+
 ## 0.36 - 04.09.2026
 
 - Added a transport-independent `DesktopControlService` as the application-facing command/state boundary for future external integrations; it has no JSON, WebSocket, VPP, SUB, or SUM dependency.
@@ -175,7 +185,7 @@
 
 - Replaced updater source synchronization based on `git merge --ff-only` with `git reset --keep origin/<branch>` after the protected-change safety gate passes.
 - This avoids merge/index-state failures while preserving local tracked changes by aborting if an update would overwrite them.
-- `upgrade.cmd` remains maintenance-owned and is normalized to the current `HEAD` before source synchronization.
+- `upgrade.cmd` remains maintenance-owned and is normalized to the current `HEAD` before branch synchronization.
 - The updater now prints the exact Git synchronization error to the console as well as `logs/upgrade.log` if the reset cannot be completed.
 - Untracked files are not proactively cleaned or deleted by the updater.
 
