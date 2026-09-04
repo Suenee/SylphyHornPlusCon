@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.43 - 04.09.2026
+
+- Retired the obsolete standalone `install.cmd`; `upgrade.cmd` is now the single supported entry point for both fresh installation and existing-repository upgrades.
+- Consolidated maintenance behavior so fresh installation performs only the minimal repository bootstrap and then immediately hands control to the same authoritative upgrade workflow used for normal updates.
+- Reworked `UPGRADE.md` around the single-entry-point model and documented the parallel-installer drift problem as a regression class that must not be reintroduced.
+- Preserved strict fresh-install folder safety, mapped/UNC drive support, exact Git `safe.directory` handling, self-update through `%TEMP%`, protected tracked-change checks, build/tests, and application-version verification.
+
 ## 0.42 - 04.09.2026
 
 - Extended `upgrade.cmd` so a standalone copy placed in an otherwise empty target folder can bootstrap a complete fresh `devel` checkout into that same folder.
@@ -265,7 +272,7 @@
 ## 0.14 - 02.09.2026
 
 - Aligned `upgrade.cmd` with the verified .NET 10 validation flow used by `install.cmd` 0.13.
-- Kept upgrade behavior conservative: tracked local changes still stop the update before source synchronization.
+- Kept upgrade behavior conservative: tracked local changes still stop when tracked local changes are present.
 - Removed the temporary second `--locked-mode` restore from the updater while repository lock files are still being migrated.
 - Upgrade now uses `--force-evaluate` restore, Release x64 build, and .NET 10 unit tests against `net10.0-windows10.0.26100.0`.
 - Fixed updater lock-file cleanup so only lock files actually tracked by Git are restored.
