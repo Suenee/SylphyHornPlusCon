@@ -60,11 +60,11 @@ namespace SylphyHorn.Services
 	public sealed class WebSocketConnectionService : IDisposable
 	{
 		private const int VppVersion = 1;
-		private const string AppVersion = "0.39";
 		private const string ServerSocketBox = "server";
 		private const int DefaultHeartbeatMs = 30000;
 		private const int HeartbeatGraceMs = 5000;
 		private const int MaxMessageBytes = 1024 * 1024;
+		private static readonly string AppVersion = GetApplicationVersion();
 		private static readonly Regex ApiKeyRegex = new Regex("^[0-9a-fA-F]{64}$", RegexOptions.Compiled | RegexOptions.CultureInvariant);
 
 		private readonly SemaphoreSlim _gate = new SemaphoreSlim(1, 1);
@@ -331,8 +331,15 @@ namespace SylphyHorn.Services
 				var learnedPeer = false;
 				if (this._state == WebSocketConnectionState.Connected && string.Equals(recipient, this._socketBox, StringComparison.Ordinal) && !string.Equals(from, ServerSocketBox, StringComparison.Ordinal))
 				{
-					if (string.IsNullOrWhiteSpace(this._peerSocketBox)) learnedPeer = true;
-					this._peerSocketBox = from;
+					if (string.IsNullOrWhiteSpace(this._peerSocketBox))
+					{
+						this._peerSocketBox = from;
+						learnedPeer = true;
+					}
+					else if (!string.Equals(this._peerSocketBox, from, StringComparison.Ordinal))
+					{
+						LoggingService.Instance.Write(LogLevel.Warning, "VPP", "PeerBindingPreserved", "Ignored an alternate peer for unsolicited state routing because a peer is already bound.", details: $"BoundPeer={this._peerSocketBox};IncomingPeer={from}");
+					}
 				}
 
 				if (type == "event") await this.HandleEventAsync(message, cancellationToken).ConfigureAwait(false);
@@ -516,12 +523,17 @@ namespace SylphyHorn.Services
 				var supplied = new Uri(address, UriKind.Absolute); builder = new UriBuilder(supplied) { Port = port };
 			}
 			else builder = new UriBuilder("ws", address, port);
-			builder.Path = "/" + Uri.EscapeDataString(socketBox);
+			builder.Path = "/mailbox/" + Uri.EscapeDataString(socketBox);
 			builder.Query = "apiKey=" + Uri.EscapeDataString(apiKey);
 			return builder.Uri;
 		}
 
 		private static string GetDisplayUri(Uri uri) => uri == null ? string.Empty : $"{uri.Scheme}://{uri.Host}:{uri.Port}{uri.AbsolutePath}";
+		private static string GetApplicationVersion()
+		{
+			var version = typeof(WebSocketConnectionService).Assembly.GetName().Version;
+			return version == null ? "unknown" : $"{version.Major}.{version.Minor:00}";
+		}
 		private static bool TryGetResult(JsonElement response, out JsonElement result)
 		{
 			if (response.ValueKind == JsonValueKind.Object && response.TryGetProperty("result", out result) && result.ValueKind == JsonValueKind.Object) return true;
