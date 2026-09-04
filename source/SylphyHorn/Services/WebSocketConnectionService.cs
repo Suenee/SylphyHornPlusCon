@@ -26,12 +26,7 @@ namespace SylphyHorn.Services
 
 	public sealed class WebSocketConnectionStateChangedEventArgs : EventArgs
 	{
-		internal WebSocketConnectionStateChangedEventArgs(WebSocketConnectionState state, string message)
-		{
-			this.State = state;
-			this.Message = message;
-		}
-
+		internal WebSocketConnectionStateChangedEventArgs(WebSocketConnectionState state, string message) { this.State = state; this.Message = message; }
 		public WebSocketConnectionState State { get; }
 		public string Message { get; }
 	}
@@ -40,14 +35,8 @@ namespace SylphyHorn.Services
 	{
 		internal SocketBoxConnectionInfo(string connectionId, string socketBox, string hostName, string ip, string service, string connectedAt)
 		{
-			this.ConnectionId = connectionId;
-			this.SocketBox = socketBox;
-			this.HostName = hostName;
-			this.Ip = ip;
-			this.Service = service;
-			this.ConnectedAt = connectedAt;
+			this.ConnectionId = connectionId; this.SocketBox = socketBox; this.HostName = hostName; this.Ip = ip; this.Service = service; this.ConnectedAt = connectedAt;
 		}
-
 		public string ConnectionId { get; }
 		public string SocketBox { get; }
 		public string HostName { get; }
@@ -61,11 +50,8 @@ namespace SylphyHorn.Services
 	{
 		internal ReplacementNegotiationEventArgs(int maxConnections, string expiresAt, IReadOnlyList<SocketBoxConnectionInfo> connections)
 		{
-			this.MaxConnections = maxConnections;
-			this.ExpiresAt = expiresAt;
-			this.Connections = connections ?? Array.Empty<SocketBoxConnectionInfo>();
+			this.MaxConnections = maxConnections; this.ExpiresAt = expiresAt; this.Connections = connections ?? Array.Empty<SocketBoxConnectionInfo>();
 		}
-
 		public int MaxConnections { get; }
 		public string ExpiresAt { get; }
 		public IReadOnlyList<SocketBoxConnectionInfo> Connections { get; }
@@ -92,12 +78,12 @@ namespace SylphyHorn.Services
 		private WebSocketConnectionState _state = WebSocketConnectionState.Disconnected;
 		private string _statusMessage = "Disconnected";
 		private string _socketBox;
+		private string _peerSocketBox;
 		private int _heartbeatIntervalMs = DefaultHeartbeatMs;
 		private DateTimeOffset _lastActivity = DateTimeOffset.UtcNow;
 		private bool _disposed;
 
 		public static WebSocketConnectionService Instance { get; } = new WebSocketConnectionService();
-
 		private WebSocketConnectionService()
 		{
 			if (Application.Current != null) Application.Current.Exit += this.OnApplicationExit;
@@ -106,7 +92,6 @@ namespace SylphyHorn.Services
 
 		public event EventHandler<WebSocketConnectionStateChangedEventArgs> StateChanged;
 		public event EventHandler<ReplacementNegotiationEventArgs> ReplacementNegotiationRequested;
-
 		public WebSocketConnectionState State => this._state;
 		public string StatusMessage => this._statusMessage;
 		public bool IsConnected => this._state == WebSocketConnectionState.Connected;
@@ -128,27 +113,26 @@ namespace SylphyHorn.Services
 
 				this.CleanupClient();
 				this._socketBox = socketBox.Trim();
+				this._peerSocketBox = null;
 				this._heartbeatIntervalMs = DefaultHeartbeatMs;
 				this._lastActivity = DateTimeOffset.UtcNow;
 				this.SetState(WebSocketConnectionState.Connecting, "Connecting...");
 				this._lifetimeCts = new CancellationTokenSource();
 				this._client = new ClientWebSocket();
 				var uri = BuildUri(address.Trim(), port, this._socketBox, apiKey.Trim());
-
 				try
 				{
 					await this._client.ConnectAsync(uri, this._lifetimeCts.Token).ConfigureAwait(false);
 					if (this._client.State != WebSocketState.Open)
 					{
 						this.SetState(WebSocketConnectionState.Error, "Unable to connect");
-						LoggingService.Instance.Write(LogLevel.Error, "WEBSOCKET", "ConnectFailed", "WebSocket did not reach the open state.", details: $"Endpoint={uri};State={this._client.State};SocketBox={this._socketBox}");
+						LoggingService.Instance.Write(LogLevel.Error, "WEBSOCKET", "ConnectFailed", "WebSocket did not reach the open state.", details: $"Endpoint={GetDisplayUri(uri)};State={this._client.State};SocketBox={this._socketBox}");
 						this.CleanupClient();
 						return;
 					}
 
 					this._receiveTask = Task.Run(() => this.ReceiveLoopAsync(this._client, this._lifetimeCts.Token));
 					LoggingService.Instance.Write(LogLevel.Info, "WEBSOCKET", "TransportConnected", "Authenticated WebSocket transport connected; starting VPP admission.", details: $"Endpoint={GetDisplayUri(uri)};SocketBox={this._socketBox}");
-
 					var registration = await this.SendServerCallAsync("registerConnection", new { hostName = Environment.MachineName }, TimeSpan.FromSeconds(10), this._lifetimeCts.Token).ConfigureAwait(false);
 					await this.ApplyAdmissionResponseAsync(registration).ConfigureAwait(false);
 				}
@@ -166,10 +150,7 @@ namespace SylphyHorn.Services
 					this.CleanupClient();
 				}
 			}
-			finally
-			{
-				this._gate.Release();
-			}
+			finally { this._gate.Release(); }
 		}
 
 		public async Task ReplaceConnectionAsync(string connectionId)
@@ -214,9 +195,9 @@ namespace SylphyHorn.Services
 				DesktopControlService.Instance.SetEnabled(false);
 				var client = this._client;
 				var cts = this._lifetimeCts;
-				if (client != null && client.State == WebSocketState.Open && !string.IsNullOrWhiteSpace(this._socketBox))
+				if (client != null && client.State == WebSocketState.Open && !string.IsNullOrWhiteSpace(this._peerSocketBox))
 				{
-					try { await this.SendEventAsync("disconnecting", new { reason = "user" }, ServerSocketBox, false, cts?.Token ?? CancellationToken.None).ConfigureAwait(false); }
+					try { await this.SendEventAsync("disconnecting", new { reason = "user" }, this._peerSocketBox, false, cts?.Token ?? CancellationToken.None).ConfigureAwait(false); }
 					catch { }
 				}
 				try { cts?.Cancel(); } catch { }
@@ -240,7 +221,6 @@ namespace SylphyHorn.Services
 		{
 			if (!TryGetResult(response, out var result) || !result.TryGetProperty("status", out var statusElement) || statusElement.ValueKind != JsonValueKind.String)
 				throw new InvalidOperationException("SUB returned an invalid registerConnection result.");
-
 			var status = statusElement.GetString();
 			if (string.Equals(status, "admitted", StringComparison.Ordinal))
 			{
@@ -248,10 +228,8 @@ namespace SylphyHorn.Services
 				DesktopControlService.Instance.SetEnabled(true);
 				this.StartHeartbeat();
 				LoggingService.Instance.Write(LogLevel.Info, "WEBSOCKET", "VppAdmitted", "VPP connection admitted by SUB.", details: $"SocketBox={this._socketBox}");
-				await this.SendDesktopStateEventAsync(DesktopControlService.Instance.GetState()).ConfigureAwait(false);
 				return;
 			}
-
 			if (string.Equals(status, "replacementNegotiation", StringComparison.Ordinal))
 			{
 				DesktopControlService.Instance.SetEnabled(false);
@@ -263,19 +241,13 @@ namespace SylphyHorn.Services
 				this.RaiseReplacementNegotiation(new ReplacementNegotiationEventArgs(maxConnections, expiresAt, connections));
 				return;
 			}
-
 			throw new InvalidOperationException($"SUB returned unsupported admission status '{status}'.");
 		}
 
 		private async Task<JsonElement> SendServerCallAsync(string method, object args, TimeSpan timeout, CancellationToken cancellationToken)
 		{
 			var id = Guid.CreateVersion7().ToString("D");
-			var message = CreateEnvelope("call", ServerSocketBox, id, new Dictionary<string, object>
-			{
-				["method"] = method,
-				["args"] = args,
-				["expectsResponse"] = true,
-			});
+			var message = CreateEnvelope("call", ServerSocketBox, id, new Dictionary<string, object> { ["method"] = method, ["args"] = args, ["expectsResponse"] = true });
 			var tcs = new TaskCompletionSource<JsonElement>(TaskCreationOptions.RunContinuationsAsynchronously);
 			if (!this._pendingRequests.TryAdd(id, tcs)) throw new InvalidOperationException("Duplicate VPP request id.");
 			try
@@ -338,7 +310,6 @@ namespace SylphyHorn.Services
 				LoggingService.Instance.Write(LogLevel.Warning, "VPP", "InvalidJson", "Invalid JSON received from SUB.", details: ex.Message);
 				return;
 			}
-
 			using (document)
 			{
 				var message = document.RootElement;
@@ -347,7 +318,6 @@ namespace SylphyHorn.Services
 					LoggingService.Instance.Write(LogLevel.Warning, "VPP", "InvalidEnvelope", "Invalid VPP envelope received.", details: validationError);
 					return;
 				}
-
 				var type = message.GetProperty("type").GetString();
 				if ((type == "response" || type == "error") && message.TryGetProperty("correlationId", out var correlationId) && correlationId.ValueKind == JsonValueKind.String)
 				{
@@ -356,13 +326,23 @@ namespace SylphyHorn.Services
 					return;
 				}
 
-				if (type == "event")
+				var recipient = message.GetProperty("recipient").GetString();
+				var from = message.GetProperty("from").GetString();
+				var learnedPeer = false;
+				if (this._state == WebSocketConnectionState.Connected && string.Equals(recipient, this._socketBox, StringComparison.Ordinal) && !string.Equals(from, ServerSocketBox, StringComparison.Ordinal))
 				{
-					await this.HandleEventAsync(message, cancellationToken).ConfigureAwait(false);
-					return;
+					if (string.IsNullOrWhiteSpace(this._peerSocketBox)) learnedPeer = true;
+					this._peerSocketBox = from;
 				}
 
-				if (type == "call") await this.HandleCallAsync(message, cancellationToken).ConfigureAwait(false);
+				if (type == "event") await this.HandleEventAsync(message, cancellationToken).ConfigureAwait(false);
+				else if (type == "call") await this.HandleCallAsync(message, cancellationToken).ConfigureAwait(false);
+
+				if (learnedPeer)
+				{
+					LoggingService.Instance.Write(LogLevel.Info, "VPP", "PeerLearned", "Learned the runtime peer Socket Box from admitted VPP traffic.", details: $"Peer={this._peerSocketBox}");
+					await this.SendDesktopStateEventSafeAsync(DesktopControlService.Instance.GetState(), cancellationToken).ConfigureAwait(false);
+				}
 			}
 		}
 
@@ -377,7 +357,6 @@ namespace SylphyHorn.Services
 				if (expectsResponse) await this.SendErrorAsync(from, id, "INVALID_ROUTING", "The VPP call is not addressed to this SHPC Socket Box.", null, cancellationToken).ConfigureAwait(false);
 				return;
 			}
-
 			var method = message.TryGetProperty("method", out var methodElement) && methodElement.ValueKind == JsonValueKind.String ? methodElement.GetString() : null;
 			var args = message.TryGetProperty("args", out var argsElement) ? argsElement : default;
 			var result = await this._desktopAdapter.DispatchAsync(method, args).ConfigureAwait(false);
@@ -397,6 +376,7 @@ namespace SylphyHorn.Services
 			{
 				var reason = message.TryGetProperty("args", out var args) && args.ValueKind == JsonValueKind.Object ? TryReadString(args, "reason") : string.Empty;
 				LoggingService.Instance.Write(LogLevel.Info, "VPP", "PeerDisconnecting", "A VPP peer or SUB announced graceful disconnection.", details: $"From={from};Reason={reason}");
+				if (string.Equals(from, this._peerSocketBox, StringComparison.Ordinal)) this._peerSocketBox = null;
 			}
 			if (expectsResponse) await this.SendResponseAsync(from, id, new { success = true }, cancellationToken).ConfigureAwait(false);
 		}
@@ -442,7 +422,7 @@ namespace SylphyHorn.Services
 
 		private void OnDesktopStateChanged(object sender, DesktopSystemStateChangedEventArgs e)
 		{
-			if (this._state != WebSocketConnectionState.Connected || this._lifetimeCts == null) return;
+			if (this._state != WebSocketConnectionState.Connected || this._lifetimeCts == null || string.IsNullOrWhiteSpace(this._peerSocketBox)) return;
 			_ = this.SendDesktopStateEventSafeAsync(e.State, this._lifetimeCts.Token);
 		}
 
@@ -453,37 +433,27 @@ namespace SylphyHorn.Services
 			catch (Exception ex) { LoggingService.Instance.Write(LogLevel.Warning, "VPP", "StateEventFailed", "Desktop state event could not be sent.", details: ex.ToString()); }
 		}
 
-		private Task SendDesktopStateEventAsync(DesktopSystemState state, CancellationToken cancellationToken = default)
-			=> this.SendEventAsync("desktopStateChanged", this._desktopAdapter.CreateStateEventArgs(state), null, false, cancellationToken);
+		private Task SendDesktopStateEventAsync(DesktopSystemState state, CancellationToken cancellationToken)
+		{
+			var peer = this._peerSocketBox;
+			return string.IsNullOrWhiteSpace(peer) ? Task.CompletedTask : this.SendEventAsync("desktopStateChanged", this._desktopAdapter.CreateStateEventArgs(state), peer, false, cancellationToken);
+		}
 
 		private Task SendResponseAsync(string recipient, string correlationId, object result, CancellationToken cancellationToken)
 			=> this.SendJsonAsync(CreateEnvelope("response", recipient, Guid.CreateVersion7().ToString("D"), new Dictionary<string, object> { ["correlationId"] = correlationId, ["result"] = result }), cancellationToken);
 
 		private Task SendErrorAsync(string recipient, string correlationId, string code, string message, object details, CancellationToken cancellationToken)
-			=> this.SendJsonAsync(CreateEnvelope("error", recipient, Guid.CreateVersion7().ToString("D"), new Dictionary<string, object>
-			{
-				["correlationId"] = correlationId,
-				["error"] = new { code = code ?? "COMMAND_FAILED", message = message ?? "The command failed.", details },
-			}), cancellationToken);
+			=> this.SendJsonAsync(CreateEnvelope("error", recipient, Guid.CreateVersion7().ToString("D"), new Dictionary<string, object> { ["correlationId"] = correlationId, ["error"] = new { code = code ?? "COMMAND_FAILED", message = message ?? "The command failed.", details } }), cancellationToken);
 
 		private Task SendEventAsync(string eventName, object args, string recipient, bool expectsResponse, CancellationToken cancellationToken)
-			=> this.SendJsonAsync(CreateEnvelope("event", string.IsNullOrWhiteSpace(recipient) ? this._socketBox : recipient, Guid.CreateVersion7().ToString("D"), new Dictionary<string, object>
-			{
-				["event"] = eventName,
-				["args"] = args,
-				["expectsResponse"] = expectsResponse,
-			}), cancellationToken);
+		{
+			if (string.IsNullOrWhiteSpace(recipient)) return Task.CompletedTask;
+			return this.SendJsonAsync(CreateEnvelope("event", recipient, Guid.CreateVersion7().ToString("D"), new Dictionary<string, object> { ["event"] = eventName, ["args"] = args, ["expectsResponse"] = expectsResponse }), cancellationToken);
+		}
 
 		private Dictionary<string, object> CreateEnvelope(string type, string recipient, string id, IDictionary<string, object> extra)
 		{
-			var message = new Dictionary<string, object>
-			{
-				["protocolVersion"] = VppVersion,
-				["id"] = id,
-				["type"] = type,
-				["from"] = this._socketBox,
-				["recipient"] = recipient,
-			};
+			var message = new Dictionary<string, object> { ["protocolVersion"] = VppVersion, ["id"] = id, ["type"] = type, ["from"] = this._socketBox, ["recipient"] = recipient };
 			if (extra != null) foreach (var pair in extra) message[pair.Key] = pair.Value;
 			message["source"] = new { app = "SylphyHornPlusCon", version = AppVersion };
 			message["timestamp"] = DateTimeOffset.Now.ToString("O");
@@ -535,8 +505,7 @@ namespace SylphyHorn.Services
 			if (string.IsNullOrWhiteSpace(socketBox)) { error = "Socket box is required."; return false; }
 			if (socketBox.Trim().Contains("/") || socketBox.Trim().Contains("?") || string.Equals(socketBox.Trim(), ServerSocketBox, StringComparison.OrdinalIgnoreCase)) { error = "Socket box contains an invalid reserved/path character or name."; return false; }
 			if (string.IsNullOrWhiteSpace(apiKey) || !ApiKeyRegex.IsMatch(apiKey.Trim())) { error = "API KEY must contain exactly 64 hexadecimal characters."; return false; }
-			error = null;
-			return true;
+			error = null; return true;
 		}
 
 		private static Uri BuildUri(string address, int port, string socketBox, string apiKey)
@@ -544,8 +513,7 @@ namespace SylphyHorn.Services
 			UriBuilder builder;
 			if (address.StartsWith("ws://", StringComparison.OrdinalIgnoreCase) || address.StartsWith("wss://", StringComparison.OrdinalIgnoreCase))
 			{
-				var supplied = new Uri(address, UriKind.Absolute);
-				builder = new UriBuilder(supplied) { Port = port };
+				var supplied = new Uri(address, UriKind.Absolute); builder = new UriBuilder(supplied) { Port = port };
 			}
 			else builder = new UriBuilder("ws", address, port);
 			builder.Path = "/" + Uri.EscapeDataString(socketBox);
@@ -554,33 +522,22 @@ namespace SylphyHorn.Services
 		}
 
 		private static string GetDisplayUri(Uri uri) => uri == null ? string.Empty : $"{uri.Scheme}://{uri.Host}:{uri.Port}{uri.AbsolutePath}";
-
 		private static bool TryGetResult(JsonElement response, out JsonElement result)
 		{
 			if (response.ValueKind == JsonValueKind.Object && response.TryGetProperty("result", out result) && result.ValueKind == JsonValueKind.Object) return true;
-			result = default;
-			return false;
+			result = default; return false;
 		}
-
-		private static int TryReadInt(JsonElement obj, string property)
-			=> obj.ValueKind == JsonValueKind.Object && obj.TryGetProperty(property, out var value) && value.ValueKind == JsonValueKind.Number && value.TryGetInt32(out var parsed) ? parsed : 0;
-
-		private static string TryReadString(JsonElement obj, string property)
-			=> obj.ValueKind == JsonValueKind.Object && obj.TryGetProperty(property, out var value) && value.ValueKind == JsonValueKind.String ? value.GetString() ?? string.Empty : string.Empty;
-
+		private static int TryReadInt(JsonElement obj, string property) => obj.ValueKind == JsonValueKind.Object && obj.TryGetProperty(property, out var value) && value.ValueKind == JsonValueKind.Number && value.TryGetInt32(out var parsed) ? parsed : 0;
+		private static string TryReadString(JsonElement obj, string property) => obj.ValueKind == JsonValueKind.Object && obj.TryGetProperty(property, out var value) && value.ValueKind == JsonValueKind.String ? value.GetString() ?? string.Empty : string.Empty;
 		private static IReadOnlyList<SocketBoxConnectionInfo> ParseConnectionRoster(JsonElement result)
 		{
 			if (!result.TryGetProperty("connections", out var list) || list.ValueKind != JsonValueKind.Array) return Array.Empty<SocketBoxConnectionInfo>();
-			return list.EnumerateArray()
-				.Where(item => item.ValueKind == JsonValueKind.Object && !string.IsNullOrWhiteSpace(TryReadString(item, "connectionId")))
-				.Select(item => new SocketBoxConnectionInfo(TryReadString(item, "connectionId"), TryReadString(item, "socketBox"), TryReadString(item, "hostName"), TryReadString(item, "ip"), TryReadString(item, "service"), TryReadString(item, "connectedAt")))
-				.ToArray();
+			return list.EnumerateArray().Where(item => item.ValueKind == JsonValueKind.Object && !string.IsNullOrWhiteSpace(TryReadString(item, "connectionId"))).Select(item => new SocketBoxConnectionInfo(TryReadString(item, "connectionId"), TryReadString(item, "socketBox"), TryReadString(item, "hostName"), TryReadString(item, "ip"), TryReadString(item, "service"), TryReadString(item, "connectedAt"))).ToArray();
 		}
 
 		private void RaiseReplacementNegotiation(ReplacementNegotiationEventArgs args)
 		{
-			var handlers = this.ReplacementNegotiationRequested;
-			if (handlers == null) return;
+			var handlers = this.ReplacementNegotiationRequested; if (handlers == null) return;
 			foreach (EventHandler<ReplacementNegotiationEventArgs> handler in handlers.GetInvocationList())
 			{
 				try { handler(this, args); }
@@ -590,10 +547,8 @@ namespace SylphyHorn.Services
 
 		private void SetState(WebSocketConnectionState state, string message)
 		{
-			this._state = state;
-			this._statusMessage = string.IsNullOrWhiteSpace(message) ? state.ToString() : message;
-			var handlers = this.StateChanged;
-			if (handlers == null) return;
+			this._state = state; this._statusMessage = string.IsNullOrWhiteSpace(message) ? state.ToString() : message;
+			var handlers = this.StateChanged; if (handlers == null) return;
 			var args = new WebSocketConnectionStateChangedEventArgs(this._state, this._statusMessage);
 			foreach (EventHandler<WebSocketConnectionStateChangedEventArgs> handler in handlers.GetInvocationList())
 			{
@@ -614,100 +569,51 @@ namespace SylphyHorn.Services
 			this._receiveTask = null;
 			this._heartbeatTask = null;
 			this._socketBox = null;
+			this._peerSocketBox = null;
 		}
 
-		public static string ProtectApiKey(string value)
-		{
-			if (string.IsNullOrEmpty(value)) return null;
-			return Dpapi.Protect(value);
-		}
-
-		public static string UnprotectApiKey(string value)
-		{
-			if (string.IsNullOrEmpty(value)) return string.Empty;
-			try { return Dpapi.Unprotect(value); }
-			catch { return string.Empty; }
-		}
-
+		public static string ProtectApiKey(string value) { if (string.IsNullOrEmpty(value)) return null; return Dpapi.Protect(value); }
+		public static string UnprotectApiKey(string value) { if (string.IsNullOrEmpty(value)) return string.Empty; try { return Dpapi.Unprotect(value); } catch { return string.Empty; } }
 		private void OnApplicationExit(object sender, ExitEventArgs e) => this.Dispose();
-
 		public void Dispose()
 		{
-			if (this._disposed) return;
-			this._disposed = true;
+			if (this._disposed) return; this._disposed = true;
 			DesktopControlService.Instance.StateChanged -= this.OnDesktopStateChanged;
 			DesktopControlService.Instance.SetEnabled(false);
 			try { this._lifetimeCts?.Cancel(); } catch { }
-			this.CleanupClient();
-			this._sendGate.Dispose();
-			this._gate.Dispose();
+			this.CleanupClient(); this._sendGate.Dispose(); this._gate.Dispose();
 			if (Application.Current != null) Application.Current.Exit -= this.OnApplicationExit;
 		}
 
 		private static class Dpapi
 		{
-			[StructLayout(LayoutKind.Sequential)]
-			private struct DataBlob
-			{
-				public int Size;
-				public IntPtr Data;
-			}
-
-			[DllImport("Crypt32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
-			[return: MarshalAs(UnmanagedType.Bool)]
-			private static extern bool CryptProtectData(ref DataBlob dataIn, string description, IntPtr optionalEntropy, IntPtr reserved, IntPtr prompt, int flags, out DataBlob dataOut);
-
-			[DllImport("Crypt32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
-			[return: MarshalAs(UnmanagedType.Bool)]
-			private static extern bool CryptUnprotectData(ref DataBlob dataIn, IntPtr description, IntPtr optionalEntropy, IntPtr reserved, IntPtr prompt, int flags, out DataBlob dataOut);
-
-			[DllImport("Kernel32.dll", SetLastError = true)]
-			private static extern IntPtr LocalFree(IntPtr memory);
-
+			[StructLayout(LayoutKind.Sequential)] private struct DataBlob { public int Size; public IntPtr Data; }
+			[DllImport("Crypt32.dll", CharSet = CharSet.Unicode, SetLastError = true)] [return: MarshalAs(UnmanagedType.Bool)] private static extern bool CryptProtectData(ref DataBlob dataIn, string description, IntPtr optionalEntropy, IntPtr reserved, IntPtr prompt, int flags, out DataBlob dataOut);
+			[DllImport("Crypt32.dll", CharSet = CharSet.Unicode, SetLastError = true)] [return: MarshalAs(UnmanagedType.Bool)] private static extern bool CryptUnprotectData(ref DataBlob dataIn, IntPtr description, IntPtr optionalEntropy, IntPtr reserved, IntPtr prompt, int flags, out DataBlob dataOut);
+			[DllImport("Kernel32.dll", SetLastError = true)] private static extern IntPtr LocalFree(IntPtr memory);
 			internal static string Protect(string value)
 			{
-				var bytes = Encoding.UTF8.GetBytes(value);
-				var input = CreateBlob(bytes);
+				var bytes = Encoding.UTF8.GetBytes(value); var input = CreateBlob(bytes);
 				try
 				{
-					if (!CryptProtectData(ref input, "SylphyHornPlusCon WebSocket API key", IntPtr.Zero, IntPtr.Zero, IntPtr.Zero, 0, out var output))
-						throw new InvalidOperationException("Windows could not protect the API key.", new System.ComponentModel.Win32Exception(Marshal.GetLastWin32Error()));
-					try
-					{
-						var protectedBytes = new byte[output.Size];
-						Marshal.Copy(output.Data, protectedBytes, 0, output.Size);
-						return Convert.ToBase64String(protectedBytes);
-					}
+					if (!CryptProtectData(ref input, "SylphyHornPlusCon WebSocket API key", IntPtr.Zero, IntPtr.Zero, IntPtr.Zero, 0, out var output)) throw new InvalidOperationException("Windows could not protect the API key.", new System.ComponentModel.Win32Exception(Marshal.GetLastWin32Error()));
+					try { var protectedBytes = new byte[output.Size]; Marshal.Copy(output.Data, protectedBytes, 0, output.Size); return Convert.ToBase64String(protectedBytes); }
 					finally { if (output.Data != IntPtr.Zero) LocalFree(output.Data); }
 				}
 				finally { if (input.Data != IntPtr.Zero) Marshal.FreeHGlobal(input.Data); }
 			}
-
 			internal static string Unprotect(string value)
 			{
-				var bytes = Convert.FromBase64String(value);
-				var input = CreateBlob(bytes);
+				var bytes = Convert.FromBase64String(value); var input = CreateBlob(bytes);
 				try
 				{
-					if (!CryptUnprotectData(ref input, IntPtr.Zero, IntPtr.Zero, IntPtr.Zero, IntPtr.Zero, 0, out var output))
-						throw new InvalidOperationException("Windows could not unprotect the API key.", new System.ComponentModel.Win32Exception(Marshal.GetLastWin32Error()));
-					try
-					{
-						var plainBytes = new byte[output.Size];
-						Marshal.Copy(output.Data, plainBytes, 0, output.Size);
-						return Encoding.UTF8.GetString(plainBytes);
-					}
+					if (!CryptUnprotectData(ref input, IntPtr.Zero, IntPtr.Zero, IntPtr.Zero, IntPtr.Zero, 0, out var output)) throw new InvalidOperationException("Windows could not unprotect the API key.", new System.ComponentModel.Win32Exception(Marshal.GetLastWin32Error()));
+					try { var plainBytes = new byte[output.Size]; Marshal.Copy(output.Data, plainBytes, 0, output.Size); return Encoding.UTF8.GetString(plainBytes); }
 					finally { if (output.Data != IntPtr.Zero) LocalFree(output.Data); }
 				}
 				finally { if (input.Data != IntPtr.Zero) Marshal.FreeHGlobal(input.Data); }
 			}
-
-			private static DataBlob CreateBlob(byte[] bytes)
-			{
-				var blob = new DataBlob { Size = bytes.Length, Data = Marshal.AllocHGlobal(bytes.Length) };
-				Marshal.Copy(bytes, 0, blob.Data, bytes.Length);
-				return blob;
-			}
+			private static DataBlob CreateBlob(byte[] bytes) { var blob = new DataBlob { Size = bytes.Length, Data = Marshal.AllocHGlobal(bytes.Length) }; Marshal.Copy(bytes, 0, blob.Data, bytes.Length); return blob; }
 		}
 	}
 }
