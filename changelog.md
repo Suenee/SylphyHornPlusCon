@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.39 - 04.09.2026
+
+- Added the VPP v1 translation layer between the transport-independent `DesktopControlService` and the WebSocket client, exposing `activateDesktop`, `addDesktop`, `setIndividualWallpapers`, `setDesktopWallpaper`, `getDesktopState`, and `getDesktop` without leaking VPP concerns into the application API.
+- Changed the WebSocket endpoint to the SUB contract `ws://host:port/<socketBox>?apiKey=<apiKey>` and added validation for a 64-character hexadecimal API key and a valid local Socket Box name.
+- Added mandatory VPP `registerConnection` admission after authenticated WebSocket transport establishment; `DesktopControlService` is enabled only after SUB returns `status: admitted`.
+- Added VPP maximum-connection replacement negotiation, including the `replacementNegotiation` state, existing-connection roster, explicit `replaceConnection` selection, and `cancelConnectionNegotiation` support in the WebSocket settings UI.
+- Added UUIDv7 VPP envelopes, request/response correlation, structured VPP errors, fragmented text-message reception, a 1 MiB message safety limit, SUB heartbeat `ping`, and graceful `disconnecting` signaling.
+- Added runtime peer discovery from valid application traffic so SHPC does not encode a target Socket Box in its manifest or settings; outgoing desktop-state events are routed only after the peer mailbox is learned.
+- Added `desktopStateChanged` feedback sourced from `DesktopControlService.StateChanged` so SUM can expose the current desktop, canonical name, title, position, desktop count, wallpaper-management state, and desktop-list JSON as Companion variables.
+- Added `manifest/sylphyhornpluscon.json` as the SUM communication manifest. The manifest defines the SHPC actions, methods, variables, event mapping, and queue policies while intentionally leaving target Socket Box routing to SUM runtime configuration.
+
 ## 0.38 - 04.09.2026
 
 - Simplified WebSocket connection failures shown in Settings to the readable `Unable to connect` status instead of exposing raw exception text in the status row.
