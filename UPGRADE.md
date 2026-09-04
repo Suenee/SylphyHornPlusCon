@@ -1,16 +1,36 @@
 # Install and Upgrade Protocol
 
-SylphyHornPlusCon uses a two-stage bootstrap-based Windows maintenance workflow. The design follows the proven updater architecture documented in `Suenee/FolderHeatMap/UPGRADE.md`: keep `upgrade.cmd` small, always execute the current branch launcher from `%TEMP%`, then execute the current branch version of `upgrade.ps1` from `%TEMP%`, and keep all substantial upgrade logic in that authoritative runner.
+SylphyHornPlusCon uses a bootstrap-based Windows maintenance workflow. Existing repositories follow the proven updater architecture documented in `Suenee/FolderHeatMap/UPGRADE.md`: keep `upgrade.cmd` small, always execute the current branch launcher from `%TEMP%`, then execute the current branch version of `upgrade.ps1` from `%TEMP%`, and keep all substantial upgrade logic in that authoritative runner.
+
+A standalone `upgrade.cmd` also supports a minimal fresh-install bootstrap when it is the only file in the target folder. That path exists only to create the initial repository checkout; once the checkout exists, control returns immediately to the normal self-updating upgrade architecture.
 
 ## First installation
 
-Run:
+The full repair/authoritative installer remains:
 
 ```cmd
 install.cmd
 ```
 
-`install.cmd` remains the authoritative fresh-install/repair path. It may rebuild tracked checkout state from `origin/devel`, initializes submodules, installs the exact .NET SDK declared in `global.json`, restores dependencies, builds Release x64, runs unit tests, and logs to `logs/install.log`.
+`install.cmd` may rebuild tracked checkout state from `origin/devel`, initializes submodules, installs the exact .NET SDK declared in `global.json`, restores dependencies, builds Release x64, runs unit tests, and logs to `logs/install.log`.
+
+For a new empty target folder, it is also valid to place only the current `upgrade.cmd` in that folder and run it:
+
+```cmd
+upgrade.cmd
+```
+
+The standalone bootstrap MUST:
+
+- require that the target folder contains only `upgrade.cmd`;
+- refuse installation when any unrelated file or directory is present;
+- run its destructive checkout step from a temporary copy under `%TEMP%`, never from the repository copy that Git is about to replace;
+- install Git for Windows through WinGet when Git is missing and WinGet is available;
+- register only the exact local/mapped path and, where applicable, its exact UNC equivalent as Git `safe.directory` values;
+- create the checkout directly in the current folder, never in a nested repository directory;
+- use `devel` as the fresh-install branch;
+- restore the bootstrap file when repository creation/download fails before a usable checkout has been materialized;
+- hand control to the freshly downloaded repository `upgrade.cmd` immediately after checkout so current self-update, submodules, dependencies, build, tests, version verification, and runtime handling remain authoritative.
 
 Repository/runtime data may live on local, mapped-network, or UNC paths. Git `safe.directory` handling must never use a wildcard trust rule.
 
@@ -22,7 +42,7 @@ Normally run only:
 upgrade.cmd
 ```
 
-The upgrade architecture is deliberately split into three execution layers.
+For an existing repository the upgrade architecture is deliberately split into three execution layers.
 
 ### Stage 0 - local `upgrade.cmd`
 
@@ -31,7 +51,8 @@ The repository copy is only an entry point. Before running any substantial boots
 Stage 0 responsibilities are intentionally limited to:
 
 - resolve and normalize the repository path;
-- verify Git and Windows PowerShell availability;
+- detect the special standalone fresh-install case before Git repository probing;
+- verify Git and Windows PowerShell availability for an existing checkout;
 - recover exact Git `safe.directory` when required;
 - determine the active supported branch (`main` or `devel`);
 - verify/set the expected `origin` URL;
@@ -42,6 +63,8 @@ Stage 0 responsibilities are intentionally limited to:
 - return exactly the child launcher's exit code.
 
 Stage 0 must not assume that the repository copy of `upgrade.cmd` is current. This is the core self-update contract.
+
+The fresh-install exception does not weaken this rule: the standalone launcher performs only enough work to create the checkout. It then invokes the repository launcher, which immediately enters the normal Stage-0 self-update path before dependency/build work begins.
 
 ### Stage 1 - current remote `upgrade.cmd` in `%TEMP%`
 
@@ -107,9 +130,11 @@ This is the deterministic synchronization model recommended by the FolderHeatMap
 
 ## Network drives and `safe.directory`
 
-Mapped and UNC repositories are supported first-class scenarios.
+Mapped and UNC repositories are supported first-class scenarios, including the standalone fresh-install bootstrap.
 
-If `git rev-parse` fails with `detected dubious ownership`, the launcher must:
+For a fresh install, the exact target path is registered before repository creation. If the target is a mapped drive and Windows exposes its `HKCU\Network` remote mapping, the exact UNC equivalent is registered as well. Wildcard trust is prohibited.
+
+If `git rev-parse` on an existing repository fails with `detected dubious ownership`, the launcher must:
 
 1. preserve the exact Git diagnostic;
 2. detect that specific failure signature;
@@ -123,7 +148,7 @@ Never use:
 safe.directory=*
 ```
 
-A failed Git repository check must never be interpreted as permission to clone a nested repository until `dubious ownership` has been ruled out.
+A failed Git repository check must never be interpreted as permission to clone a nested repository until `dubious ownership` has been ruled out. Fresh installation is permitted only by the explicit bootstrap-only-folder check.
 
 The launcher parses Git's own `safe.directory` suggestion directly in CMD. Do not embed a complex `powershell.exe -Command "..."` expression containing parentheses inside a parenthesized CMD block; `cmd.exe` parses block delimiters before PowerShell receives the text and can terminate the block early.
 
@@ -161,6 +186,8 @@ Upgrade must preserve configuration, logs, credentials, databases, local state, 
 
 Never use `git stash -u` or broad `git clean -fd` as routine upgrade operations. Untracked files are left untouched by the synchronization model.
 
+Fresh bootstrap is intentionally stricter: it only proceeds when the target contains exactly the known bootstrap `upgrade.cmd`. It must not reinterpret an arbitrary non-repository folder as disposable installation space.
+
 All project-generated logs remain under repository-root `logs/`. `logs/upgrade.log` is single-run and truncated for every runner invocation.
 
 ## Final status contract
@@ -178,6 +205,22 @@ Process exit code and final status must agree.
 ## Known updater traps and prevention rules
 
 The following failures are considered regression tests for this project family.
+
+### Standalone installer overwrites an unrelated folder
+
+Symptom: a downloaded `upgrade.cmd` turns an existing ordinary folder into a repository or destroys unrelated files.
+
+Root cause: fresh-install detection is based only on “not a Git repository” rather than on a strict bootstrap-only-folder contract.
+
+Prevention: fresh bootstrap proceeds only when the target contains exactly `upgrade.cmd`. Any other item aborts before repository creation or file deletion.
+
+### Standalone bootstrap overwrites itself while running
+
+Symptom: batch labels disappear, mixed generations execute, or checkout fails because `upgrade.cmd` is an untracked file that would be overwritten.
+
+Root cause: Git checkout replaces the same batch file that `cmd.exe` is actively reading.
+
+Prevention: copy the bootstrap to `%TEMP%`, transfer control there, and only then remove the known target `upgrade.cmd` before materializing the checkout. After checkout, invoke the repository launcher as a new process.
 
 ### Old launcher cannot reach the new launcher
 
@@ -257,7 +300,7 @@ Prevention: never use broad `git clean -fd`. Remove only known generated paths w
 
 Symptom: successful build from an unintended commit.
 
-Prevention: branch is explicit, limited to `main`/`devel`, fetched explicitly, and final `HEAD` must equal `origin/<branch>` before build.
+Prevention: existing checkouts use an explicit branch limited to `main`/`devel`; fresh bootstrap explicitly installs `devel`; final `HEAD` must equal `origin/<branch>` before build.
 
 ### Native stderr treated as fatal
 
@@ -287,6 +330,11 @@ Prevention: normalize repository path and remove the trailing separator before s
 
 Before treating the updater as stable, test at least:
 
+- standalone `upgrade.cmd` as the only file in an empty local target folder;
+- standalone `upgrade.cmd` as the only file on a mapped network target;
+- standalone fresh install with Git missing and WinGet available;
+- standalone fresh install with an unrelated file present must abort without overwriting it;
+- standalone fresh-install download failure must leave/recover a usable bootstrap path;
 - clean `devel` repository;
 - no remote update;
 - remote source update;
