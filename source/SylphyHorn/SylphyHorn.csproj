@@ -31,68 +31,31 @@
   </ItemGroup>
 
   <ItemGroup>
-    <AssemblyAttribute Include="System.Runtime.CompilerServices.InternalsVisibleToAttribute">
-      <_Parameter1>SylphyHorn.Tests</_Parameter1>
-    </AssemblyAttribute>
-    <AssemblyAttribute Include="System.Runtime.CompilerServices.InternalsVisibleToAttribute">
-      <_Parameter1>SylphyHorn.WindowsIntegrationTests</_Parameter1>
-    </AssemblyAttribute>
-    <AssemblyAttribute Include="System.Runtime.CompilerServices.InternalsVisibleToAttribute">
-      <_Parameter1>SylphyHorn.SingleInstanceTestHost</_Parameter1>
-    </AssemblyAttribute>
+    <AssemblyAttribute Include="System.Runtime.CompilerServices.InternalsVisibleToAttribute"><_Parameter1>SylphyHorn.Tests</_Parameter1></AssemblyAttribute>
+    <AssemblyAttribute Include="System.Runtime.CompilerServices.InternalsVisibleToAttribute"><_Parameter1>SylphyHorn.WindowsIntegrationTests</_Parameter1></AssemblyAttribute>
+    <AssemblyAttribute Include="System.Runtime.CompilerServices.InternalsVisibleToAttribute"><_Parameter1>SylphyHorn.SingleInstanceTestHost</_Parameter1></AssemblyAttribute>
   </ItemGroup>
 
-  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|AnyCPU'">
-    <PlatformTarget>AnyCPU</PlatformTarget>
-  </PropertyGroup>
-
-  <PropertyGroup Condition="'$(Configuration)|$(Platform)' == 'Release|x64'">
-    <PlatformTarget>x64</PlatformTarget>
-  </PropertyGroup>
-
-  <PropertyGroup Condition="'$(Configuration)|$(Platform)' == 'Release|x86'">
-    <PlatformTarget>x86</PlatformTarget>
-  </PropertyGroup>
-
-  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|AnyCPU'">
-    <PlatformTarget>AnyCPU</PlatformTarget>
-  </PropertyGroup>
-
-  <PropertyGroup Condition="'$(Configuration)|$(Platform)' == 'Debug|x64'">
-    <PlatformTarget>x64</PlatformTarget>
-  </PropertyGroup>
-
-  <PropertyGroup Condition="'$(Configuration)|$(Platform)' == 'Debug|x86'">
-    <PlatformTarget>x86</PlatformTarget>
-  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|AnyCPU'"><PlatformTarget>AnyCPU</PlatformTarget></PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)' == 'Release|x64'"><PlatformTarget>x64</PlatformTarget></PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)' == 'Release|x86'"><PlatformTarget>x86</PlatformTarget></PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|AnyCPU'"><PlatformTarget>AnyCPU</PlatformTarget></PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)' == 'Debug|x64'"><PlatformTarget>x64</PlatformTarget></PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)' == 'Debug|x86'"><PlatformTarget>x86</PlatformTarget></PropertyGroup>
 
   <ItemGroup>
-    <Reference Include="MetroRadiance">
-      <HintPath>..\libraries\MetroTrilithon.Desktop\$(MetroBinaryTfm)\MetroRadiance.dll</HintPath>
-    </Reference>
-    <Reference Include="MetroRadiance.Chrome">
-      <HintPath>..\libraries\MetroTrilithon.Desktop\$(MetroBinaryTfm)\MetroRadiance.Chrome.dll</HintPath>
-    </Reference>
-    <Reference Include="MetroRadiance.Core">
-      <HintPath>..\libraries\MetroTrilithon.Desktop\$(MetroBinaryTfm)\MetroRadiance.Core.dll</HintPath>
-    </Reference>
-    <Reference Include="MetroTrilithon">
-      <HintPath>..\libraries\MetroTrilithon.Desktop\$(MetroBinaryTfm)\MetroTrilithon.dll</HintPath>
-    </Reference>
-    <Reference Include="MetroTrilithon.Desktop">
-      <HintPath>..\libraries\MetroTrilithon.Desktop\$(MetroBinaryTfm)\MetroTrilithon.Desktop.dll</HintPath>
-    </Reference>
+    <Reference Include="MetroRadiance"><HintPath>..\libraries\MetroTrilithon.Desktop\$(MetroBinaryTfm)\MetroRadiance.dll</HintPath></Reference>
+    <Reference Include="MetroRadiance.Chrome"><HintPath>..\libraries\MetroTrilithon.Desktop\$(MetroBinaryTfm)\MetroRadiance.Chrome.dll</HintPath></Reference>
+    <Reference Include="MetroRadiance.Core"><HintPath>..\libraries\MetroTrilithon.Desktop\$(MetroBinaryTfm)\MetroRadiance.Core.dll</HintPath></Reference>
+    <Reference Include="MetroTrilithon"><HintPath>..\libraries\MetroTrilithon.Desktop\$(MetroBinaryTfm)\MetroTrilithon.dll</HintPath></Reference>
+    <Reference Include="MetroTrilithon.Desktop"><HintPath>..\libraries\MetroTrilithon.Desktop\$(MetroBinaryTfm)\MetroTrilithon.Desktop.dll</HintPath></Reference>
   </ItemGroup>
 
   <ItemGroup>
     <None Include=".build\post-build.ps1" />
-    <None Update="app.manifest">
-      <SubType>Designer</SubType>
-    </None>
-    <None Update="Properties\Settings.settings">
-      <Generator>SettingsSingleFileGenerator</Generator>
-      <LastGenOutput>Settings.Designer.cs</LastGenOutput>
-    </None>
+    <None Update="app.manifest"><SubType>Designer</SubType></None>
+    <None Update="Properties\Settings.settings"><Generator>SettingsSingleFileGenerator</Generator><LastGenOutput>Settings.Designer.cs</LastGenOutput></None>
+    <AppDesigner Include="Properties\" />
   </ItemGroup>
 
   <ItemGroup>
@@ -102,18 +65,11 @@
   </ItemGroup>
 
   <ItemGroup>
-    <Resource Include=".assets\tasktray.dark.ico" />
-    <Resource Include=".assets\tasktray.light.ico" />
-    <Resource Include=".assets\app.white.ico" />
-    <Resource Include=".assets\app.green.ico" />
+    <Resource Include=".assets\tasktray.dark.ico" /><Resource Include=".assets\tasktray.light.ico" /><Resource Include=".assets\app.white.ico" /><Resource Include=".assets\app.green.ico" />
   </ItemGroup>
 
   <ItemGroup>
-    <EmbeddedResource Include=".licenses\CommunityToolkit.Mvvm.txt" />
-    <EmbeddedResource Include=".licenses\MetroTrilithon.txt" />
-    <EmbeddedResource Include=".licenses\MetroRadiance.txt" />
-    <EmbeddedResource Include=".licenses\VirtualDesktop.txt" />
-    <EmbeddedResource Include=".licenses\TaskScheduler.txt" />
+    <EmbeddedResource Include=".licenses\CommunityToolkit.Mvvm.txt" /><EmbeddedResource Include=".licenses\MetroTrilithon.txt" /><EmbeddedResource Include=".licenses\MetroRadiance.txt" /><EmbeddedResource Include=".licenses\VirtualDesktop.txt" /><EmbeddedResource Include=".licenses\TaskScheduler.txt" />
   </ItemGroup>
 
   <ItemGroup>
@@ -152,9 +108,7 @@
     <Compile Remove="UI\TaskTrayTestWindow.xaml.cs" />
   </ItemGroup>
 
-  <ItemGroup Condition="'$(Configuration)' == 'Debug'">
-    <Compile Update="UI\TaskTrayTestWindow.xaml.cs"><DependentUpon>TaskTrayTestWindow.xaml</DependentUpon></Compile>
-  </ItemGroup>
+  <ItemGroup Condition="'$(Configuration)' == 'Debug'"><Compile Update="UI\TaskTrayTestWindow.xaml.cs"><DependentUpon>TaskTrayTestWindow.xaml</DependentUpon></Compile></ItemGroup>
 
   <Target Name="PostBuild" AfterTargets="PostBuildEvent" Condition="'$(RunSylphyHornPostBuild)' != 'false'">
     <Exec Command="powershell -ExecutionPolicy RemoteSigned -File &quot;$(ProjectDir).build\post-build.ps1&quot; &quot;$([System.IO.Path]::GetDirectoryName('$(TargetPath)'))&quot; &quot;$(TargetFramework)&quot;" />
