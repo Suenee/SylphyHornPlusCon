@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.45 - 05.09.2026
+
+- Added persistent desired WebSocket connection state. A successful manual SUB connection enables automatic restoration on later SHPC starts, while an explicit manual Disconnect clears that intent.
+- SHPC now restores the saved SUB endpoint after the virtual-desktop runtime is ready and uses a bounded reconnect schedule of 2, 5, 15, 30, and 60 seconds; exhaustion leaves SHPC running normally without entering an endless retry loop.
+- Aligned graceful VPP disconnect handling with the current protocol contract: application-peer/SUM `reason: user` immediately clears the learned peer without closing the SUB transport, while SUB `shutdown`, `restart`, and `exit` keep bounded reconnect active.
+- SUB `replaced` and `negotiationTimeout` graceful disconnects suspend automatic reconnect for the current SHPC run to avoid an admission/replacement loop; the persistent desired-connection state remains available for a later application start or explicit manual retry.
+- Graceful SHPC shutdown now sends VPP `disconnecting` with `reason: user` to the learned application peer when possible while preserving the desired connection state for the next launch.
+- Heartbeat peer activity is refreshed only after an incoming VPP envelope passes validation.
+- Expanded WebSocket reconnect diagnostics without logging the API key itself and added tests for persisted settings and reconnect-policy decisions.
+
 ## 0.44 - 05.09.2026
 
 - Changed the WebSocket settings API KEY field from a masked password control to a normal readable text field while keeping the persisted value protected with the existing Windows DPAPI storage path.
