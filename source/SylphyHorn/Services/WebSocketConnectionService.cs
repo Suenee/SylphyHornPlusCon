@@ -235,7 +235,7 @@ namespace SylphyHorn.Services
 			{
 				if (this._disposed) throw new ObjectDisposedException(nameof(WebSocketConnectionService));
 				if (this._state == WebSocketConnectionState.Connected) return ConnectionAttemptResult.Admitted;
-				if (this._state == WebSocketConnectionState.Connecting || this._state == WebSocketConnectionState.Negotiating) return ConnectionAttemptResult.Failed;
+				if ((this._state == WebSocketConnectionState.Connecting || this._state == WebSocketConnectionState.Negotiating) && this._client != null) return ConnectionAttemptResult.Failed;
 				if (!TryValidateConnectionSettings(address, port, socketBox, apiKey, out var validationError))
 				{
 					this.SetState(WebSocketConnectionState.Error, "Unable to connect");
