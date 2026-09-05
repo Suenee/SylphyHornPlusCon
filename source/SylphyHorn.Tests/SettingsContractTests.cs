@@ -37,6 +37,7 @@ namespace SylphyHorn.Tests
 				Scalar("WebSocketPort", 0),
 				Scalar<string>("WebSocketSocketBox", null),
 				Scalar<string>("WebSocketApiKeyProtected", null),
+				Scalar("WebSocketAutoConnect", false),
 				Scalar("Placement", 5U),
 				Scalar("Display", 0U),
 				Scalar("NotificationWindowStyle", 4U),
