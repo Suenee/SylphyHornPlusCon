@@ -174,6 +174,7 @@ Time: {now:O}"));
 				{
 					NotificationService.Instance.ShowCurrentDesktop();
 				}
+				WebSocketConnectionService.Instance.RestoreDesiredConnectionAsync().Forget();
 			};
 			preparation.VirtualDesktopInitializationCanceled += () =>
 			{
@@ -226,6 +227,14 @@ Time: {now:O}"));
 			}
 
 			this._startupCancellation.Cancel();
+			try
+			{
+				await WebSocketConnectionService.Instance.DisconnectForShutdownAsync();
+			}
+			catch (Exception ex)
+			{
+				LoggingService.Instance.Register(ex);
+			}
 			try
 			{
 				if (this._preparation != null) await this._preparation.ShutdownAsync();
