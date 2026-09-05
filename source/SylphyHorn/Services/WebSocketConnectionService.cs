@@ -59,6 +59,13 @@ namespace SylphyHorn.Services
 
 	public sealed class WebSocketConnectionService : IDisposable
 	{
+		private enum ConnectionAttemptResult
+		{
+			Failed,
+			Admitted,
+			Negotiating,
+		}
+
 		private const int VppVersion = 1;
 		private const string ServerSocketBox = "server";
 		private const int DefaultHeartbeatMs = 30000;
@@ -71,14 +78,22 @@ namespace SylphyHorn.Services
 		private readonly SemaphoreSlim _sendGate = new SemaphoreSlim(1, 1);
 		private readonly ConcurrentDictionary<string, TaskCompletionSource<JsonElement>> _pendingRequests = new ConcurrentDictionary<string, TaskCompletionSource<JsonElement>>(StringComparer.Ordinal);
 		private readonly VppDesktopAdapter _desktopAdapter = new VppDesktopAdapter(DesktopControlService.Instance);
+		private readonly object _reconnectSync = new object();
 		private ClientWebSocket _client;
 		private CancellationTokenSource _lifetimeCts;
+		private CancellationTokenSource _reconnectCts;
 		private Task _receiveTask;
 		private Task _heartbeatTask;
+		private Task _reconnectTask;
 		private WebSocketConnectionState _state = WebSocketConnectionState.Disconnected;
 		private string _statusMessage = "Disconnected";
 		private string _socketBox;
 		private string _peerSocketBox;
+		private string _serverDisconnectReason;
+		private string _lastAddress;
+		private int _lastPort;
+		private string _lastSocketBox;
+		private string _lastApiKey;
 		private int _heartbeatIntervalMs = DefaultHeartbeatMs;
 		private DateTimeOffset _lastActivity = DateTimeOffset.UtcNow;
 		private bool _disposed;
@@ -99,58 +114,38 @@ namespace SylphyHorn.Services
 
 		public async Task ConnectAsync(string address, int port, string socketBox, string apiKey)
 		{
-			await this._gate.WaitAsync().ConfigureAwait(false);
-			try
+			this.CancelReconnectSeries();
+			this.RememberConnectionSettings(address, port, socketBox, apiKey);
+			var result = await this.ConnectCoreAsync(address, port, socketBox, apiKey, CancellationToken.None).ConfigureAwait(false);
+			if (result == ConnectionAttemptResult.Admitted)
+				await this.PersistConnectionPreferenceAsync(true, address, port, socketBox, apiKey).ConfigureAwait(false);
+		}
+
+		public async Task RestoreDesiredConnectionAsync()
+		{
+			if (this._disposed || !Settings.General.WebSocketAutoConnect.Value) return;
+
+			var address = Settings.General.WebSocketAddress.Value ?? string.Empty;
+			var port = Settings.General.WebSocketPort.Value;
+			var socketBox = Settings.General.WebSocketSocketBox.Value ?? string.Empty;
+			var apiKey = UnprotectApiKey(Settings.General.WebSocketApiKeyProtected.Value);
+			this.RememberConnectionSettings(address, port, socketBox, apiKey);
+
+			if (!TryValidateConnectionSettings(address, port, socketBox, apiKey, out var validationError))
 			{
-				if (this._disposed) throw new ObjectDisposedException(nameof(WebSocketConnectionService));
-				if (this._state == WebSocketConnectionState.Connected || this._state == WebSocketConnectionState.Connecting || this._state == WebSocketConnectionState.Negotiating) return;
-				if (!TryValidateConnectionSettings(address, port, socketBox, apiKey, out var validationError))
-				{
-					this.SetState(WebSocketConnectionState.Error, "Unable to connect");
-					LoggingService.Instance.Write(LogLevel.Error, "WEBSOCKET", "ConnectValidationFailed", "WebSocket connection validation failed.", details: validationError);
-					return;
-				}
-
-				this.CleanupClient();
-				this._socketBox = socketBox.Trim();
-				this._peerSocketBox = null;
-				this._heartbeatIntervalMs = DefaultHeartbeatMs;
-				this._lastActivity = DateTimeOffset.UtcNow;
-				this.SetState(WebSocketConnectionState.Connecting, "Connecting...");
-				this._lifetimeCts = new CancellationTokenSource();
-				this._client = new ClientWebSocket();
-				var uri = BuildUri(address.Trim(), port, this._socketBox, apiKey.Trim());
-				try
-				{
-					await this._client.ConnectAsync(uri, this._lifetimeCts.Token).ConfigureAwait(false);
-					if (this._client.State != WebSocketState.Open)
-					{
-						this.SetState(WebSocketConnectionState.Error, "Unable to connect");
-						LoggingService.Instance.Write(LogLevel.Error, "WEBSOCKET", "ConnectFailed", "WebSocket did not reach the open state.", details: $"Endpoint={GetDisplayUri(uri)};State={this._client.State};SocketBox={this._socketBox}");
-						this.CleanupClient();
-						return;
-					}
-
-					this._receiveTask = Task.Run(() => this.ReceiveLoopAsync(this._client, this._lifetimeCts.Token));
-					LoggingService.Instance.Write(LogLevel.Info, "WEBSOCKET", "TransportConnected", "Authenticated WebSocket transport connected; starting VPP admission.", details: $"Endpoint={GetDisplayUri(uri)};SocketBox={this._socketBox}");
-					var registration = await this.SendServerCallAsync("registerConnection", new { hostName = Environment.MachineName }, TimeSpan.FromSeconds(10), this._lifetimeCts.Token).ConfigureAwait(false);
-					await this.ApplyAdmissionResponseAsync(registration).ConfigureAwait(false);
-				}
-				catch (OperationCanceledException)
-				{
-					DesktopControlService.Instance.SetEnabled(false);
-					this.SetState(WebSocketConnectionState.Disconnected, "Disconnected");
-					this.CleanupClient();
-				}
-				catch (Exception ex)
-				{
-					DesktopControlService.Instance.SetEnabled(false);
-					this.SetState(WebSocketConnectionState.Error, "Unable to connect");
-					LoggingService.Instance.Write(LogLevel.Error, "WEBSOCKET", "ConnectFailed", "WebSocket/VPP connection failed.", details: $"Endpoint={GetDisplayUri(uri)};SocketBox={this._socketBox}{Environment.NewLine}{ex}");
-					this.CleanupClient();
-				}
+				this.SetState(WebSocketConnectionState.Error, "Unable to reconnect");
+				LoggingService.Instance.Write(LogLevel.Warning, "WEBSOCKET", "AutoConnectSkipped", "Saved WebSocket connection cannot be restored because its settings are invalid.", details: validationError);
+				return;
 			}
-			finally { this._gate.Release(); }
+
+			LoggingService.Instance.Write(LogLevel.Info, "WEBSOCKET", "AutoConnectStarted", "Restoring the previously desired SUB connection.", details: $"Endpoint={GetDisplayUri(BuildUri(address.Trim(), port, socketBox.Trim(), apiKey.Trim()))};SocketBox={socketBox.Trim()}");
+			var result = await this.ConnectCoreAsync(address, port, socketBox, apiKey, CancellationToken.None).ConfigureAwait(false);
+			if (result == ConnectionAttemptResult.Admitted)
+			{
+				LoggingService.Instance.Write(LogLevel.Info, "WEBSOCKET", "AutoConnectRestored", "Saved SUB connection restored successfully.");
+				return;
+			}
+			if (result == ConnectionAttemptResult.Failed) this.StartReconnectSeries("startup");
 		}
 
 		public async Task ReplaceConnectionAsync(string connectionId)
@@ -161,7 +156,9 @@ namespace SylphyHorn.Services
 			{
 				if (this._state != WebSocketConnectionState.Negotiating || this._lifetimeCts == null) return;
 				var response = await this.SendServerCallAsync("replaceConnection", new { connectionId = connectionId.Trim() }, TimeSpan.FromSeconds(10), this._lifetimeCts.Token).ConfigureAwait(false);
-				await this.ApplyAdmissionResponseAsync(response).ConfigureAwait(false);
+				var result = await this.ApplyAdmissionResponseAsync(response).ConfigureAwait(false);
+				if (result == ConnectionAttemptResult.Admitted && this.HasRememberedConnectionSettings())
+					await this.PersistConnectionPreferenceAsync(true, this._lastAddress, this._lastPort, this._lastSocketBox, this._lastApiKey).ConfigureAwait(false);
 			}
 			catch (Exception ex)
 			{
@@ -189,18 +186,31 @@ namespace SylphyHorn.Services
 
 		public async Task DisconnectAsync()
 		{
+			this.CancelReconnectSeries();
+			await this.PersistConnectionPreferenceAsync(false, null, 0, null, null).ConfigureAwait(false);
+			await this.DisconnectCoreAsync().ConfigureAwait(false);
+		}
+
+		public async Task DisconnectForShutdownAsync()
+		{
+			this.CancelReconnectSeries();
+			await this.DisconnectCoreAsync().ConfigureAwait(false);
+		}
+
+		private async Task DisconnectCoreAsync()
+		{
 			await this._gate.WaitAsync().ConfigureAwait(false);
 			try
 			{
 				DesktopControlService.Instance.SetEnabled(false);
+				this._serverDisconnectReason = null;
 				var client = this._client;
 				var cts = this._lifetimeCts;
 				if (client != null && client.State == WebSocketState.Open && !string.IsNullOrWhiteSpace(this._peerSocketBox))
 				{
 					try { await this.SendEventAsync("disconnecting", new { reason = "user" }, this._peerSocketBox, false, cts?.Token ?? CancellationToken.None).ConfigureAwait(false); }
-					catch { }
+					catch (Exception ex) { LoggingService.Instance.Write(LogLevel.Warning, "VPP", "DisconnectingSendFailed", "Graceful VPP disconnect notification could not be sent.", details: ex.Message); }
 				}
-				try { cts?.Cancel(); } catch { }
 				if (client != null && (client.State == WebSocketState.Open || client.State == WebSocketState.CloseReceived))
 				{
 					try
@@ -210,6 +220,7 @@ namespace SylphyHorn.Services
 					}
 					catch { }
 				}
+				try { cts?.Cancel(); } catch { }
 				this.CleanupClient();
 				this.SetState(WebSocketConnectionState.Disconnected, "Disconnected");
 				LoggingService.Instance.Write(LogLevel.Info, "WEBSOCKET", "Disconnected", "WebSocket/VPP session disconnected.");
@@ -217,18 +228,80 @@ namespace SylphyHorn.Services
 			finally { this._gate.Release(); }
 		}
 
-		private async Task ApplyAdmissionResponseAsync(JsonElement response)
+		private async Task<ConnectionAttemptResult> ConnectCoreAsync(string address, int port, string socketBox, string apiKey, CancellationToken cancellationToken)
+		{
+			await this._gate.WaitAsync(cancellationToken).ConfigureAwait(false);
+			try
+			{
+				if (this._disposed) throw new ObjectDisposedException(nameof(WebSocketConnectionService));
+				if (this._state == WebSocketConnectionState.Connected) return ConnectionAttemptResult.Admitted;
+				if (this._state == WebSocketConnectionState.Connecting || this._state == WebSocketConnectionState.Negotiating) return ConnectionAttemptResult.Failed;
+				if (!TryValidateConnectionSettings(address, port, socketBox, apiKey, out var validationError))
+				{
+					this.SetState(WebSocketConnectionState.Error, "Unable to connect");
+					LoggingService.Instance.Write(LogLevel.Error, "WEBSOCKET", "ConnectValidationFailed", "WebSocket connection validation failed.", details: validationError);
+					return ConnectionAttemptResult.Failed;
+				}
+
+				this.CleanupClient();
+				this._socketBox = socketBox.Trim();
+				this._peerSocketBox = null;
+				this._serverDisconnectReason = null;
+				this._heartbeatIntervalMs = DefaultHeartbeatMs;
+				this._lastActivity = DateTimeOffset.UtcNow;
+				this.SetState(WebSocketConnectionState.Connecting, "Connecting...");
+				this._lifetimeCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+				this._client = new ClientWebSocket();
+				var uri = BuildUri(address.Trim(), port, this._socketBox, apiKey.Trim());
+				LoggingService.Instance.Write(LogLevel.Info, "WEBSOCKET", "ConnectStarted", "Starting SUB WebSocket connection.", details: $"Endpoint={GetDisplayUri(uri)};SocketBox={this._socketBox};ApiKeyPresent={!string.IsNullOrWhiteSpace(apiKey)}");
+				try
+				{
+					await this._client.ConnectAsync(uri, this._lifetimeCts.Token).ConfigureAwait(false);
+					if (this._client.State != WebSocketState.Open)
+					{
+						this.SetState(WebSocketConnectionState.Error, "Unable to connect");
+						LoggingService.Instance.Write(LogLevel.Error, "WEBSOCKET", "ConnectFailed", "WebSocket did not reach the open state.", details: $"Endpoint={GetDisplayUri(uri)};State={this._client.State};SocketBox={this._socketBox}");
+						this.CleanupClient();
+						return ConnectionAttemptResult.Failed;
+					}
+
+					this._receiveTask = Task.Run(() => this.ReceiveLoopAsync(this._client, this._lifetimeCts.Token));
+					LoggingService.Instance.Write(LogLevel.Info, "WEBSOCKET", "TransportConnected", "Authenticated WebSocket transport connected; starting VPP admission.", details: $"Endpoint={GetDisplayUri(uri)};SocketBox={this._socketBox}");
+					var registration = await this.SendServerCallAsync("registerConnection", new { hostName = Environment.MachineName }, TimeSpan.FromSeconds(10), this._lifetimeCts.Token).ConfigureAwait(false);
+					return await this.ApplyAdmissionResponseAsync(registration).ConfigureAwait(false);
+				}
+				catch (OperationCanceledException)
+				{
+					DesktopControlService.Instance.SetEnabled(false);
+					this.SetState(WebSocketConnectionState.Disconnected, "Disconnected");
+					this.CleanupClient();
+					return ConnectionAttemptResult.Failed;
+				}
+				catch (Exception ex)
+				{
+					DesktopControlService.Instance.SetEnabled(false);
+					this.SetState(WebSocketConnectionState.Error, "Unable to connect");
+					LoggingService.Instance.Write(LogLevel.Error, "WEBSOCKET", "ConnectFailed", "WebSocket/VPP connection failed.", details: $"Endpoint={GetDisplayUri(uri)};SocketBox={this._socketBox}{Environment.NewLine}{ex}");
+					this.CleanupClient();
+					return ConnectionAttemptResult.Failed;
+				}
+			}
+			finally { this._gate.Release(); }
+		}
+
+		private async Task<ConnectionAttemptResult> ApplyAdmissionResponseAsync(JsonElement response)
 		{
 			if (!TryGetResult(response, out var result) || !result.TryGetProperty("status", out var statusElement) || statusElement.ValueKind != JsonValueKind.String)
 				throw new InvalidOperationException("SUB returned an invalid registerConnection result.");
 			var status = statusElement.GetString();
 			if (string.Equals(status, "admitted", StringComparison.Ordinal))
 			{
+				this._serverDisconnectReason = null;
 				this.SetState(WebSocketConnectionState.Connected, "Connected");
 				DesktopControlService.Instance.SetEnabled(true);
 				this.StartHeartbeat();
 				LoggingService.Instance.Write(LogLevel.Info, "WEBSOCKET", "VppAdmitted", "VPP connection admitted by SUB.", details: $"SocketBox={this._socketBox}");
-				return;
+				return ConnectionAttemptResult.Admitted;
 			}
 			if (string.Equals(status, "replacementNegotiation", StringComparison.Ordinal))
 			{
@@ -239,7 +312,7 @@ namespace SylphyHorn.Services
 				var connections = ParseConnectionRoster(result);
 				LoggingService.Instance.Write(LogLevel.Warning, "WEBSOCKET", "ReplacementNegotiation", "SUB requires explicit connection replacement before admission.", details: $"SocketBox={this._socketBox};MaxConnections={maxConnections};Connections={connections.Count};ExpiresAt={expiresAt}");
 				this.RaiseReplacementNegotiation(new ReplacementNegotiationEventArgs(maxConnections, expiresAt, connections));
-				return;
+				return ConnectionAttemptResult.Negotiating;
 			}
 			throw new InvalidOperationException($"SUB returned unsupported admission status '{status}'.");
 		}
@@ -277,7 +350,6 @@ namespace SylphyHorn.Services
 				{
 					var raw = await ReceiveTextMessageAsync(client, cancellationToken).ConfigureAwait(false);
 					if (raw == null) break;
-					this._lastActivity = DateTimeOffset.UtcNow;
 					await this.HandleIncomingAsync(raw, cancellationToken).ConfigureAwait(false);
 				}
 			}
@@ -296,7 +368,9 @@ namespace SylphyHorn.Services
 				{
 					DesktopControlService.Instance.SetEnabled(false);
 					if (this._state != WebSocketConnectionState.Error) this.SetState(WebSocketConnectionState.Disconnected, "Disconnected");
+					var serverReason = this.TakeServerDisconnectReason();
 					this.CleanupClient(client);
+					this.HandleTransportEnded(serverReason, "receive-loop");
 				}
 			}
 		}
@@ -318,6 +392,7 @@ namespace SylphyHorn.Services
 					LoggingService.Instance.Write(LogLevel.Warning, "VPP", "InvalidEnvelope", "Invalid VPP envelope received.", details: validationError);
 					return;
 				}
+				this._lastActivity = DateTimeOffset.UtcNow;
 				var type = message.GetProperty("type").GetString();
 				if ((type == "response" || type == "error") && message.TryGetProperty("correlationId", out var correlationId) && correlationId.ValueKind == JsonValueKind.String)
 				{
@@ -377,13 +452,28 @@ namespace SylphyHorn.Services
 		{
 			var eventName = message.TryGetProperty("event", out var eventElement) && eventElement.ValueKind == JsonValueKind.String ? eventElement.GetString() : null;
 			var from = message.GetProperty("from").GetString();
+			var recipient = message.GetProperty("recipient").GetString();
 			var id = message.GetProperty("id").GetString();
 			var expectsResponse = message.TryGetProperty("expectsResponse", out var expects) && expects.ValueKind == JsonValueKind.True;
-			if (eventName == "disconnecting")
+			if (eventName == "disconnecting" && string.Equals(recipient, this._socketBox, StringComparison.Ordinal))
 			{
 				var reason = message.TryGetProperty("args", out var args) && args.ValueKind == JsonValueKind.Object ? TryReadString(args, "reason") : string.Empty;
-				LoggingService.Instance.Write(LogLevel.Info, "VPP", "PeerDisconnecting", "A VPP peer or SUB announced graceful disconnection.", details: $"From={from};Reason={reason}");
-				if (string.Equals(from, this._peerSocketBox, StringComparison.Ordinal)) this._peerSocketBox = null;
+				if (string.Equals(from, ServerSocketBox, StringComparison.Ordinal))
+				{
+					this._serverDisconnectReason = reason;
+					DesktopControlService.Instance.SetEnabled(false);
+					var decision = WebSocketReconnectPolicy.ForServerDisconnectReason(reason);
+					var status = decision == WebSocketReconnectDecision.Retry ? "SUB disconnecting..." : "Disconnected by SUB";
+					this.SetState(WebSocketConnectionState.Disconnected, status);
+					LoggingService.Instance.Write(LogLevel.Info, "VPP", "ServerDisconnecting", "SUB announced graceful disconnection.", details: $"Reason={reason};ReconnectDecision={decision}");
+				}
+				else
+				{
+					if (!WebSocketReconnectPolicy.IsClientDisconnectReason(reason))
+						LoggingService.Instance.Write(LogLevel.Warning, "VPP", "PeerDisconnectReasonUnexpected", "Application peer sent an unrecognized client disconnect reason.", details: $"From={from};Reason={reason}");
+					LoggingService.Instance.Write(LogLevel.Info, "VPP", "PeerDisconnecting", "Application peer announced graceful disconnection.", details: $"From={from};Reason={reason}");
+					if (string.Equals(from, this._peerSocketBox, StringComparison.Ordinal)) this._peerSocketBox = null;
+				}
 			}
 			if (expectsResponse) await this.SendResponseAsync(from, id, new { success = true }, cancellationToken).ConfigureAwait(false);
 		}
@@ -415,7 +505,11 @@ namespace SylphyHorn.Services
 					LoggingService.Instance.Write(LogLevel.Warning, "WEBSOCKET", "HeartbeatFailed", "VPP heartbeat failed; connection is unhealthy.", details: ex.ToString());
 					DesktopControlService.Instance.SetEnabled(false);
 					this.SetState(WebSocketConnectionState.Error, "Connection lost");
+					var client = this._client;
+					var serverReason = this.TakeServerDisconnectReason();
 					try { this._lifetimeCts?.Cancel(); } catch { }
+					this.CleanupClient(client);
+					this.HandleTransportEnded(serverReason, "heartbeat");
 				}
 			}
 		}
@@ -425,6 +519,131 @@ namespace SylphyHorn.Services
 			if (!TryGetResult(response, out var result) || !result.TryGetProperty("heartbeat", out var heartbeat) || heartbeat.ValueKind != JsonValueKind.Object) return;
 			var interval = TryReadInt(heartbeat, "intervalMs");
 			if (interval >= 5000 && interval <= 3600000) this._heartbeatIntervalMs = interval;
+		}
+
+		private void HandleTransportEnded(string serverReason, string trigger)
+		{
+			if (this._disposed || !Settings.General.WebSocketAutoConnect.Value) return;
+			var decision = string.IsNullOrWhiteSpace(serverReason)
+				? WebSocketReconnectPolicy.ForUnexpectedTransportLoss()
+				: WebSocketReconnectPolicy.ForServerDisconnectReason(serverReason);
+			if (decision == WebSocketReconnectDecision.Retry)
+			{
+				this.StartReconnectSeries(string.IsNullOrWhiteSpace(serverReason) ? trigger : $"server:{serverReason}");
+				return;
+			}
+			LoggingService.Instance.Write(LogLevel.Warning, "WEBSOCKET", "ReconnectSuspended", "Automatic reconnect was suspended for this run to avoid a connection loop.", details: $"Trigger={trigger};ServerReason={serverReason}");
+		}
+
+		private void StartReconnectSeries(string trigger)
+		{
+			if (this._disposed || !Settings.General.WebSocketAutoConnect.Value || !this.HasRememberedConnectionSettings()) return;
+			lock (this._reconnectSync)
+			{
+				if (this._reconnectTask != null && !this._reconnectTask.IsCompleted) return;
+				this._reconnectCts = new CancellationTokenSource();
+				var owner = this._reconnectCts;
+				this._reconnectTask = Task.Run(() => this.ReconnectLoopAsync(trigger, owner));
+			}
+		}
+
+		private async Task ReconnectLoopAsync(string trigger, CancellationTokenSource owner)
+		{
+			try
+			{
+				var delays = WebSocketReconnectPolicy.RetryDelays;
+				for (var index = 0; index < delays.Count; index++)
+				{
+					if (owner.IsCancellationRequested || !Settings.General.WebSocketAutoConnect.Value) return;
+					var delay = delays[index];
+					this.SetState(WebSocketConnectionState.Connecting, $"Reconnecting in {(int)delay.TotalSeconds} s...");
+					LoggingService.Instance.Write(LogLevel.Info, "WEBSOCKET", "ReconnectScheduled", "A bounded reconnect attempt was scheduled.", details: $"Trigger={trigger};Attempt={index + 1}/{delays.Count};DelaySeconds={(int)delay.TotalSeconds}");
+					await Task.Delay(delay, owner.Token).ConfigureAwait(false);
+					if (owner.IsCancellationRequested || !Settings.General.WebSocketAutoConnect.Value) return;
+					LoggingService.Instance.Write(LogLevel.Info, "WEBSOCKET", "ReconnectAttempt", "Trying to restore the SUB connection.", details: $"Attempt={index + 1}/{delays.Count}");
+					var result = await this.ConnectCoreAsync(this._lastAddress, this._lastPort, this._lastSocketBox, this._lastApiKey, owner.Token).ConfigureAwait(false);
+					if (result == ConnectionAttemptResult.Admitted)
+					{
+						LoggingService.Instance.Write(LogLevel.Info, "WEBSOCKET", "ReconnectSucceeded", "SUB connection restored.", details: $"Attempt={index + 1}/{delays.Count}");
+						return;
+					}
+					if (result == ConnectionAttemptResult.Negotiating)
+					{
+						LoggingService.Instance.Write(LogLevel.Warning, "WEBSOCKET", "ReconnectSuspended", "Reconnect reached VPP replacement negotiation and will not loop automatically.");
+						return;
+					}
+				}
+				if (!owner.IsCancellationRequested)
+				{
+					this.SetState(WebSocketConnectionState.Error, "Unable to reconnect");
+					LoggingService.Instance.Write(LogLevel.Warning, "WEBSOCKET", "ReconnectExhausted", "Automatic reconnect attempts were exhausted; SHPC will remain running without SUB until a manual retry or the next application start.");
+				}
+			}
+			catch (OperationCanceledException) { }
+			catch (Exception ex)
+			{
+				if (!owner.IsCancellationRequested)
+				{
+					this.SetState(WebSocketConnectionState.Error, "Unable to reconnect");
+					LoggingService.Instance.Write(LogLevel.Error, "WEBSOCKET", "ReconnectFailed", "Reconnect coordinator failed.", details: ex.ToString());
+				}
+			}
+			finally
+			{
+				lock (this._reconnectSync)
+				{
+					if (ReferenceEquals(this._reconnectCts, owner))
+					{
+						this._reconnectCts = null;
+						this._reconnectTask = null;
+					}
+				}
+				owner.Dispose();
+			}
+		}
+
+		private void CancelReconnectSeries()
+		{
+			CancellationTokenSource cts;
+			lock (this._reconnectSync)
+			{
+				cts = this._reconnectCts;
+				this._reconnectCts = null;
+				this._reconnectTask = null;
+			}
+			try { cts?.Cancel(); } catch { }
+		}
+
+		private void RememberConnectionSettings(string address, int port, string socketBox, string apiKey)
+		{
+			this._lastAddress = address?.Trim() ?? string.Empty;
+			this._lastPort = port;
+			this._lastSocketBox = socketBox?.Trim() ?? string.Empty;
+			this._lastApiKey = apiKey?.Trim() ?? string.Empty;
+		}
+
+		private bool HasRememberedConnectionSettings()
+			=> TryValidateConnectionSettings(this._lastAddress, this._lastPort, this._lastSocketBox, this._lastApiKey, out _);
+
+		private async Task PersistConnectionPreferenceAsync(bool desired, string address, int port, string socketBox, string apiKey)
+		{
+			if (desired)
+			{
+				Settings.General.WebSocketAddress.Value = address?.Trim();
+				Settings.General.WebSocketPort.Value = port;
+				Settings.General.WebSocketSocketBox.Value = socketBox?.Trim();
+				Settings.General.WebSocketApiKeyProtected.Value = ProtectApiKey(apiKey?.Trim());
+			}
+			Settings.General.WebSocketAutoConnect.Value = desired;
+			try { await LocalSettingsProvider.Instance.SaveAsync().ConfigureAwait(false); }
+			catch (Exception ex) { LoggingService.Instance.Write(LogLevel.Warning, "WEBSOCKET", "ConnectionPreferenceSaveFailed", "WebSocket desired connection state could not be persisted.", details: ex.ToString()); }
+		}
+
+		private string TakeServerDisconnectReason()
+		{
+			var reason = this._serverDisconnectReason;
+			this._serverDisconnectReason = null;
+			return reason;
 		}
 
 		private void OnDesktopStateChanged(object sender, DesktopSystemStateChangedEventArgs e)
@@ -590,6 +809,7 @@ namespace SylphyHorn.Services
 		public void Dispose()
 		{
 			if (this._disposed) return; this._disposed = true;
+			this.CancelReconnectSeries();
 			DesktopControlService.Instance.StateChanged -= this.OnDesktopStateChanged;
 			DesktopControlService.Instance.SetEnabled(false);
 			try { this._lifetimeCts?.Cancel(); } catch { }
