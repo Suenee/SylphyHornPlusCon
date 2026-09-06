@@ -34,8 +34,6 @@ namespace SylphyHorn.UI
 		{
 			var root = new Grid { Margin = new Thickness(18, 14, 18, 18) };
 			root.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
-			root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
-
 			this._desktopStrip = new WrapPanel { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Top };
 			var scroll = new ScrollViewer
 			{
@@ -43,43 +41,9 @@ namespace SylphyHorn.UI
 				VerticalScrollBarVisibility = ScrollBarVisibility.Auto, CanContentScroll = false, Padding = new Thickness(0, 0, 0, 8),
 			};
 			Grid.SetRow(scroll, 0); root.Children.Add(scroll);
-
-			var options = this.CreateGlobalOptions();
-			Grid.SetRow(options, 1); root.Children.Add(options);
-
 			this.Content = root;
 			this.DataContextChanged += this.OnDataContextChanged;
 			this.Loaded += this.OnLoaded;
-		}
-
-		private FrameworkElement CreateGlobalOptions()
-		{
-			var panel = new StackPanel { Margin = new Thickness(0, 10, 0, 0) };
-			panel.Children.Add(new Border { Height = 1, Background = new SolidColorBrush(Color.FromRgb(63, 69, 79)), Margin = new Thickness(0, 0, 0, 10) });
-			var row = new StackPanel { Orientation = Orientation.Horizontal };
-			var restore = new CheckBox
-			{
-				Content = "Restore saved desktop configuration on startup", Foreground = Brushes.White,
-				IsChecked = Settings.General.OverrideDesktopsOnStartup.Value, Margin = new Thickness(0, 0, 28, 0),
-				ToolTip = "Restore the saved SylphyHorn desktop configuration when SHPC starts.",
-			};
-			restore.Click += (_, _) => Settings.General.OverrideDesktopsOnStartup.Value = restore.IsChecked == true;
-			row.Children.Add(restore);
-
-			var wallpaper = new CheckBox
-			{
-				Content = "Manage individual desktop wallpapers", Foreground = Brushes.White,
-				IsChecked = Settings.General.ChangeBackgroundEachDesktop.Value,
-				ToolTip = "Let SHPC manage per-desktop wallpapers and preserve the original Windows wallpaper for restoration.",
-			};
-			wallpaper.Click += (_, _) =>
-			{
-				WallpaperService.Instance.SetManagementEnabled(wallpaper.IsChecked == true);
-				this.RebuildDesktopStrip();
-			};
-			row.Children.Add(wallpaper);
-			panel.Children.Add(row);
-			return panel;
 		}
 
 		public void Dispose()
@@ -133,8 +97,7 @@ namespace SylphyHorn.UI
 			{
 				Width = 204, Height = 115, Background = new SolidColorBrush(Color.FromRgb(18, 21, 25)), BorderBrush = new SolidColorBrush(Color.FromRgb(79, 85, 95)),
 				BorderThickness = new Thickness(1), CornerRadius = new CornerRadius(3), ClipToBounds = true,
-				Cursor = Cursors.SizeAll,
-				ToolTip = "Drag to move this desktop. Right-click for desktop actions.",
+				Cursor = Cursors.SizeAll, ToolTip = "Drag to move this desktop. Right-click for desktop actions.",
 			};
 			var grid = new Grid();
 			var image = new Image { Stretch = Stretch.UniformToFill, SnapsToDevicePixels = true };
@@ -147,14 +110,12 @@ namespace SylphyHorn.UI
 			};
 			var number = new TextBlock { Foreground = Brushes.White, FontWeight = FontWeights.SemiBold, FontSize = 13 };
 			number.SetBinding(TextBlock.TextProperty, new Binding(nameof(VirtualDesktopViewModel.NumberText)) { Source = desktop }); badge.Child = number; grid.Children.Add(badge);
-
 			var menu = this.CreateDesktopContextMenu(desktop);
 			var menuButton = new Button
 			{
 				Content = "⋮", Width = 28, Height = 30, FontSize = 22, FontWeight = FontWeights.Bold, Foreground = Brushes.White,
 				Background = new SolidColorBrush(Color.FromArgb(210, 18, 21, 25)), BorderThickness = new Thickness(0),
-				HorizontalAlignment = HorizontalAlignment.Right, VerticalAlignment = VerticalAlignment.Top, Padding = new Thickness(0), Cursor = Cursors.Hand,
-				ToolTip = "Desktop menu",
+				HorizontalAlignment = HorizontalAlignment.Right, VerticalAlignment = VerticalAlignment.Top, Padding = new Thickness(0), Cursor = Cursors.Hand, ToolTip = "Desktop menu",
 			};
 			menuButton.Click += (_, _) => { menu.PlacementTarget = menuButton; menu.IsOpen = true; };
 			grid.Children.Add(menuButton);
@@ -167,66 +128,36 @@ namespace SylphyHorn.UI
 			preview.PreviewMouseLeftButtonDown += (_, e) =>
 			{
 				if (FindAncestor<Button>(e.OriginalSource as DependencyObject) != null) return;
-				this.CancelDrag();
-				this._dragSource = desktop;
-				this._dragCard = card;
-				this._dragStart = e.GetPosition(this._desktopStrip);
-				this._dragTransform = new TranslateTransform();
-				this._dragCard.RenderTransform = this._dragTransform;
-				this._dragCard.Opacity = 0.92;
-				Panel.SetZIndex(this._dragCard, 1000);
-				preview.CaptureMouse();
-				e.Handled = true;
+				this.CancelDrag(); this._dragSource = desktop; this._dragCard = card; this._dragStart = e.GetPosition(this._desktopStrip);
+				this._dragTransform = new TranslateTransform(); this._dragCard.RenderTransform = this._dragTransform; this._dragCard.Opacity = 0.92;
+				Panel.SetZIndex(this._dragCard, 1000); preview.CaptureMouse(); e.Handled = true;
 			};
-
 			preview.PreviewMouseMove += (_, e) =>
 			{
 				if (this._dragSource == null || this._dragCard != card || e.LeftButton != MouseButtonState.Pressed) return;
-				var point = e.GetPosition(this._desktopStrip);
-				var dx = point.X - this._dragStart.X;
-				var dy = point.Y - this._dragStart.Y;
+				var point = e.GetPosition(this._desktopStrip); var dx = point.X - this._dragStart.X; var dy = point.Y - this._dragStart.Y;
 				if (!this._dragMoved && Math.Abs(dx) + Math.Abs(dy) <= 3) return;
-				this._dragMoved = true;
-				this._dragTransform.X = dx;
-				this._dragTransform.Y = dy;
-				this.UpdateDragTarget(point);
-				e.Handled = true;
+				this._dragMoved = true; this._dragTransform.X = dx; this._dragTransform.Y = dy; this.UpdateDragTarget(point); e.Handled = true;
 			};
-
 			preview.PreviewMouseLeftButtonUp += (_, e) =>
 			{
 				if (this._dragSource == null || this._dragCard != card) return;
-				var source = this._dragSource;
-				var target = this._dragTargetIndex;
-				var moved = this._dragMoved;
-				if (preview.IsMouseCaptured) preview.ReleaseMouseCapture();
-				this.CancelDrag();
-				if (moved && target >= 0 && target != source.Index) this.MoveDesktop(source, target);
-				e.Handled = true;
+				var source = this._dragSource; var target = this._dragTargetIndex; var moved = this._dragMoved;
+				if (preview.IsMouseCaptured) preview.ReleaseMouseCapture(); this.CancelDrag();
+				if (moved && target >= 0 && target != source.Index) this.MoveDesktop(source, target); e.Handled = true;
 			};
-
-			preview.LostMouseCapture += (_, _) =>
-			{
-				if (this._dragCard == card) this.CancelDrag();
-			};
+			preview.LostMouseCapture += (_, _) => { if (this._dragCard == card) this.CancelDrag(); };
 		}
 
 		private void UpdateDragTarget(Point pointer)
 		{
-			Border nearest = null;
-			var nearestDistance = double.MaxValue;
-			var targetIndex = -1;
+			Border nearest = null; var nearestDistance = double.MaxValue; var targetIndex = -1;
 			foreach (UIElement child in this._desktopStrip.Children)
 			{
 				if (!(child is Border candidate) || !(candidate.Tag is VirtualDesktopViewModel candidateDesktop) || candidateDesktop.Id == this._dragSource.Id) continue;
 				var center = candidate.TranslatePoint(new Point(candidate.ActualWidth / 2, candidate.ActualHeight / 2), this._desktopStrip);
-				var dx = pointer.X - center.X;
-				var dy = pointer.Y - center.Y;
-				var distance = dx * dx + dy * dy;
-				if (distance >= nearestDistance) continue;
-				nearestDistance = distance;
-				nearest = candidate;
-				targetIndex = candidateDesktop.Index;
+				var dx = pointer.X - center.X; var dy = pointer.Y - center.Y; var distance = dx * dx + dy * dy;
+				if (distance >= nearestDistance) continue; nearestDistance = distance; nearest = candidate; targetIndex = candidateDesktop.Index;
 			}
 			if (!ReferenceEquals(this._dragTargetCard, nearest))
 			{
@@ -240,27 +171,13 @@ namespace SylphyHorn.UI
 		private void CancelDrag()
 		{
 			if (this._dragTargetCard != null) this._dragTargetCard.BorderBrush = new SolidColorBrush(Color.FromRgb(63, 69, 79));
-			if (this._dragCard != null)
-			{
-				this._dragCard.RenderTransform = Transform.Identity;
-				this._dragCard.Opacity = 1;
-				Panel.SetZIndex(this._dragCard, 0);
-			}
-			this._dragTargetCard = null;
-			this._dragCard = null;
-			this._dragSource = null;
-			this._dragTransform = null;
-			this._dragTargetIndex = -1;
-			this._dragMoved = false;
+			if (this._dragCard != null) { this._dragCard.RenderTransform = Transform.Identity; this._dragCard.Opacity = 1; Panel.SetZIndex(this._dragCard, 0); }
+			this._dragTargetCard = null; this._dragCard = null; this._dragSource = null; this._dragTransform = null; this._dragTargetIndex = -1; this._dragMoved = false;
 		}
 
 		private static T FindAncestor<T>(DependencyObject source) where T : DependencyObject
 		{
-			while (source != null)
-			{
-				if (source is T match) return match;
-				source = VisualTreeHelper.GetParent(source);
-			}
+			while (source != null) { if (source is T match) return match; source = VisualTreeHelper.GetParent(source); }
 			return null;
 		}
 
@@ -271,14 +188,8 @@ namespace SylphyHorn.UI
 			{
 				menu.Items.Clear();
 				var change = new MenuItem { Header = "Change wallpaper..." }; change.Click += (_, _) => this.ChangeWallpaper(desktop); menu.Items.Add(change);
-				var restore = new MenuItem
-				{
-					Header = "Restore...",
-					IsEnabled = Settings.General.ChangeBackgroundEachDesktop.Value && desktop.HasWallpaper,
-					ToolTip = "Restore the preserved Windows wallpaper for this desktop."
-				};
+				var restore = new MenuItem { Header = "Restore...", IsEnabled = Settings.General.ChangeBackgroundEachDesktop.Value && desktop.HasWallpaper, ToolTip = "Restore the preserved Windows wallpaper for this desktop." };
 				restore.Click += (_, _) => this.RestoreWallpaper(desktop); menu.Items.Add(restore);
-
 				var fit = new MenuItem { Header = "Fit" };
 				foreach (var position in this._viewModel?.WallpaperPositions ?? Array.Empty<DisplayItem<WallpaperPosition>>())
 				{
@@ -286,18 +197,14 @@ namespace SylphyHorn.UI
 					item.Click += (_, _) => desktop.WallpaperPosition = value; fit.Items.Add(item);
 				}
 				menu.Items.Add(fit);
-
 				var order = new MenuItem { Header = "Order", IsEnabled = (this._viewModel?.Desktops?.Length ?? 0) > 1 };
 				var count = this._viewModel?.Desktops?.Length ?? 0;
 				for (var index = 0; index < count; index++)
 				{
-					var targetIndex = index;
-					var item = new MenuItem { Header = (index + 1).ToString(CultureInfo.InvariantCulture), IsCheckable = true, IsChecked = desktop.Index == index };
-					item.Click += (_, _) => this.MoveDesktop(desktop, targetIndex);
-					order.Items.Add(item);
+					var targetIndex = index; var item = new MenuItem { Header = (index + 1).ToString(CultureInfo.InvariantCulture), IsCheckable = true, IsChecked = desktop.Index == index };
+					item.Click += (_, _) => this.MoveDesktop(desktop, targetIndex); order.Items.Add(item);
 				}
-				menu.Items.Add(order);
-				menu.Items.Add(new Separator());
+				menu.Items.Add(order); menu.Items.Add(new Separator());
 				var remove = new MenuItem { Header = "Remove desktop...", IsEnabled = (this._viewModel?.Desktops?.Length ?? 0) > 1 };
 				remove.Click += (_, _) => this.RemoveDesktop(desktop); menu.Items.Add(remove);
 			};
@@ -330,17 +237,14 @@ namespace SylphyHorn.UI
 			return new Border
 			{
 				Width = 224, Height = 249, Background = new SolidColorBrush(Color.FromRgb(28, 32, 38)), BorderBrush = new SolidColorBrush(Color.FromRgb(63, 69, 79)),
-				BorderThickness = new Thickness(1), CornerRadius = new CornerRadius(7), Padding = new Thickness(9), Margin = new Thickness(0, 0, 12, 12),
-				VerticalAlignment = VerticalAlignment.Top, Child = button,
+				BorderThickness = new Thickness(1), CornerRadius = new CornerRadius(7), Padding = new Thickness(9), Margin = new Thickness(0, 0, 12, 12), VerticalAlignment = VerticalAlignment.Top, Child = button,
 			};
 		}
 
 		private bool ConfirmUnmanagedWallpaperChange()
 		{
 			if (Settings.General.ChangeBackgroundEachDesktop.Value) return true;
-			return this._dialogs.ShowOkCancelConfirmation(
-				"Individual desktop wallpaper management is disabled.\n\nSHPC is not currently preserving the wallpaper state. Changing the wallpaper may affect other desktops, and the previous wallpaper may not be recoverable.\n\nDo you want to continue?",
-				"Change wallpaper without SHPC management", MessageBoxImage.Warning);
+			return this._dialogs.ShowOkCancelConfirmation("Individual desktop wallpaper management is disabled.\n\nSHPC is not currently preserving the wallpaper state. Changing the wallpaper may affect other desktops, and the previous wallpaper may not be recoverable.\n\nDo you want to continue?", "Change wallpaper without SHPC management", MessageBoxImage.Warning);
 		}
 
 		private void ChangeWallpaper(VirtualDesktopViewModel desktop)
@@ -383,10 +287,7 @@ namespace SylphyHorn.UI
 		{
 			var desktops = this._viewModel?.Desktops;
 			if (desktop == null || desktops == null || desktop.Index == targetIndex) return;
-			try
-			{
-				LogicalDesktopOrderService.Instance.Move(desktops, desktop.Index, targetIndex, this._viewModel.IsReorderingSupport);
-			}
+			try { LogicalDesktopOrderService.Instance.Move(desktops, desktop.Index, targetIndex, this._viewModel.IsReorderingSupport); }
 			catch (Exception ex)
 			{
 				LoggingService.Instance.Write(LogLevel.Error, "DESKTOP", "DesktopMoveFailed", "Desktop move failed.", desktop.Id.ToString("D"), ex.ToString());
