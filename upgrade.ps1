@@ -1,7 +1,7 @@
 $ErrorActionPreference = 'Stop'
 
-$Version = '0.30'
-$Revision = '0.30-retired-maintenance-migration'
+$Version = '0.31'
+$Revision = '0.31-project-log-migration'
 $Repo = $env:SHPC_UPGRADE_REPO
 $TargetBranch = $env:SHPC_UPGRADE_BRANCH
 $ExpectedRemote = 'https://github.com/Suenee/SylphyHornPlusCon.git'
@@ -27,6 +27,7 @@ $AppWasRunning = $false
 $RuntimeRestored = $false
 $AppExe = Join-Path $Repo 'source\SylphyHorn\bin\x64\Release\net10.0-windows10.0.26100.0\SylphyHorn.exe'
 $AppProject = Join-Path $Repo 'source\SylphyHorn\SylphyHorn.csproj'
+$LegacyAppLog = if ([string]::IsNullOrWhiteSpace($env:LOCALAPPDATA)) { $null } else { Join-Path $env:LOCALAPPDATA 'hwtnb.net\SylphyHornPlus\Logs\app.log.jsonl' }
 
 function Write-Line([string]$Text, [ConsoleColor]$Color = [ConsoleColor]::Gray) {
     [IO.File]::AppendAllText($Log, $Text + [Environment]::NewLine, $Utf8)
@@ -135,6 +136,14 @@ function Restore-TrackedLockFiles {
         if ($tracked) { Run-Native -Phase 'VERIFY' -Exe 'git.exe' -ArgumentList @('restore','--source=HEAD','--staged','--worktree','--',$path) -SuppressOutput | Out-Null }
     }
 }
+function Remove-LegacyApplicationLog {
+    if ([string]::IsNullOrWhiteSpace($script:LegacyAppLog) -or -not (Test-Path -LiteralPath $script:LegacyAppLog)) { return }
+    try {
+        Remove-Item -LiteralPath $script:LegacyAppLog -Force
+        Phase 'MIGRATION' ("Removed retired application log: $($script:LegacyAppLog)")
+    }
+    catch { Warn ("Could not remove retired application log '$($script:LegacyAppLog)': $($_.Exception.Message)") }
+}
 function Read-RequiredSdkVersion {
     $globalJson = Join-Path $Repo 'global.json'
     if (-not (Test-Path -LiteralPath $globalJson)) { Fail 'DEPENDENCIES' 'global.json is missing.' }
@@ -238,6 +247,7 @@ try {
     $runnerHeadBlob = Get-GitText @('rev-parse','HEAD:upgrade.ps1') $FailPhase; $runnerRemoteBlob = Get-GitText @('rev-parse',"origin/$TargetBranch`:upgrade.ps1") $FailPhase
     if ($runnerHeadBlob -ne $runnerRemoteBlob) { Fail $FailPhase 'Repository upgrade.ps1 does not match the authoritative remote runner.' }
     Phase 'REPOSITORY' 'Authoritative temporary runner verified against the fetched branch.'; Phase 'REPOSITORY' ("Build commit: $head")
+    $FailPhase = 'MIGRATION'; Remove-LegacyApplicationLog
     $FailPhase = 'REPOSITORY'; Phase 'REPOSITORY' 'Synchronizing Git submodules.'
     Run-Native -Phase $FailPhase -Exe 'git.exe' -ArgumentList @('submodule','sync','--recursive') | Out-Null
     Run-Native -Phase $FailPhase -Exe 'git.exe' -ArgumentList @('submodule','update','--init','--recursive','--force') | Out-Null
@@ -246,7 +256,7 @@ try {
     Run-Native -Phase $FailPhase -Exe $dotnet -ArgumentList @('restore','source\SylphyHorn\SylphyHorn.csproj',"-p:TargetFramework=$TargetFramework",'--force-evaluate') | Out-Null
     Run-Native -Phase $FailPhase -Exe $dotnet -ArgumentList @('restore','source\SylphyHorn.Tests\SylphyHorn.Tests.csproj',"-p:TargetFramework=$TargetFramework",'--force-evaluate') | Out-Null
     $FailPhase = 'BUILD'; Phase 'BUILD' 'Building Release x64 for .NET 10.'
-    Run-Native -Phase $FailPhase -Exe $dotnet -ArgumentList @('build','source\SylphyHorn\SylphyHorn.csproj','-c','Release','-f',$TargetFramework,'-p:Platform=x64','-p:RunSylphyHornPostBuild=false','--no-restore') | Out-Null
+    Run-Native -Phase $FailPhase -Exe $dotnet -ArgumentList @('build','source\SylphyHorn\SylphyHorn.csproj','-c','Release','-f',$TargetFramework,'-p:Platform=x64','-p:RunSylphyHornPostBuild=false',("-p:SHPCBuildBranch=$TargetBranch"),'--no-restore') | Out-Null
     $FailPhase = 'TEST'; Phase 'TEST' 'Running .NET 10 unit tests.'; $solutionDir = (Join-Path $Repo 'source') + '\'
     Run-Native -Phase $FailPhase -Exe $dotnet -ArgumentList @('test','source\SylphyHorn.Tests\SylphyHorn.Tests.csproj','-c','Release','-f',$TargetFramework,'-p:Platform=x64','-p:RunSylphyHornPostBuild=false',("-p:SolutionDir=$solutionDir"),'--no-restore') | Out-Null
     $FailPhase = 'VERIFY'; Phase 'VERIFY' 'Verifying application version and tracked tree.'
