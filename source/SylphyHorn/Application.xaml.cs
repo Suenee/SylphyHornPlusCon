@@ -144,9 +144,9 @@ Time: {now:O}"));
 			this._startupTrace.Write(StartupPhase.SettingsLoaded, StartupTraceResult.Succeeded);
 
 			var loggingMode = ParseLoggingMode(Settings.General.LoggingMode.Value);
-			var loggingPath = Path.Combine(Directories.LocalAppData.FullName, "Logs", "app.log.jsonl");
+			var loggingPath = BuildProfile.GetProjectLogPath();
 			LoggingService.Instance.Configure(loggingMode, loggingPath);
-			LoggingService.Instance.Write(LogLevel.Info, "APP", "Started", $"{ProductInfo.Title} {ProductInfo.VersionString} started.", details: $"PID={Process.GetCurrentProcess().Id};OSBuild={ProductInfo.OSBuild}");
+			LoggingService.Instance.Write(LogLevel.Info, "APP", "Started", $"{ProductInfo.Title} {ProductInfo.VersionString} started.", details: $"PID={Process.GetCurrentProcess().Id};OSBuild={ProductInfo.OSBuild};LogPath={loggingPath};VppTraffic={BuildProfile.IsVppTrafficLoggingEnabled}");
 
 			Settings.General.Culture.Subscribe(x => ResourceService.Current.ChangeCulture(x)).AddTo(this);
 			ThemeService.Current.Register(this, Theme.Windows, Accent.Windows);
