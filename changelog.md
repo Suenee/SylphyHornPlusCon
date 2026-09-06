@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.46 - 06.09.2026
+
+- Added opt-in detailed VPP/WebSocket traffic observability to the App log without changing the existing routing model: raw incoming packets, envelope acceptance/rejection, handler outcomes, outgoing packets, request correlation, and full VPP JSON payloads are now available for diagnostics.
+- Added explicit heartbeat diagnostics for SHPC-to-SUB `ping` traffic, including `PingTx`, `PingRx`, the complete returned server result, and categorized timeout, disconnected-socket, invalid-response, and VPP-error failures.
+- Preserved runtime peer learning from valid admitted traffic only; `PeerLearned` now records the discovered peer Socket Box without introducing a hard-coded SUM destination.
+- Added a persistent `VPP traffic` App-log switch. Its unset default is enabled for builds produced from `devel` and disabled for builds produced from `main`; the build branch is embedded explicitly by the upgrade workflow.
+- Improved App-log packet inspection: selecting a row opens its details and valid JSON is pretty-printed for direct inspection while the existing search and correlation fields remain searchable.
+- Moved the persistent application log from LocalAppData to the repository-standard `logs/SylphyHornPlusCon.log`, preserving mapped-drive and UNC repository support.
+- Bumped the authoritative upgrade runner to `0.31-project-log-migration`; the upgrade workflow removes only the exact retired `%LocalAppData%\hwtnb.net\SylphyHornPlus\Logs\app.log.jsonl` file and leaves unrelated user data untouched.
+- Moved `Restore saved desktop configuration on startup` and `Manage individual desktop wallpapers` from the Desktops page to General under the shared `Desktop configuration` heading.
+
 ## 0.45 - 05.09.2026
 
 - Added persistent desired WebSocket connection state. A successful manual SUB connection enables automatic restoration on later SHPC starts, while an explicit manual Disconnect clears that intent.
@@ -311,7 +322,7 @@
 - `install.cmd` is now authoritative: an existing checkout is reset directly to `origin/devel`, including recursive submodule cleanup.
 - Removed install-time rejection of dirty tracked files and dirty submodules left by previous failed installation attempts.
 - Kept `upgrade.cmd` conservative: upgrades still stop when tracked local changes are present.
-- Temporarily disabled NuGet locked restore during installation while the repository lock files are being migrated after the .NET 10-only conversion.
+- Temporarily disabled NuGet locked restore during installation while the repository lock files are still being migrated after the .NET 10-only conversion.
 - Installation now performs a normal `--force-evaluate` restore, build, and test, then restores tracked lock files so the checkout remains clean.
 - Both maintenance scripts continue to start with `cls`.
 
