@@ -6,13 +6,13 @@
     <OutputType>WinExe</OutputType>
     <Title>SylphyHornPlus</Title>
     <Product>SylphyHornPlus</Product>
-    <Version>0.45.0</Version>
+    <Version>0.46.0</Version>
     <Authors>hwtnb</Authors>
     <Company>hwtnb.net</Company>
     <Copyright>Copyright © 2015 - 2018 Manato KAMEYA, 2021 - 2022 hwtnb</Copyright>
     <Description>Virtual Desktop Tools for Windows 11 and 10</Description>
     <AssemblyTitle>SylphyHornPlus</AssemblyTitle>
-    <AssemblyVersion>0.45.0.0</AssemblyVersion>
+    <AssemblyVersion>0.46.0.0</AssemblyVersion>
     <UseApplicationTrust>false</UseApplicationTrust>
     <UseWPF>true</UseWPF>
     <UseWindowsForms>true</UseWindowsForms>
@@ -22,12 +22,15 @@
     <Platforms>AnyCPU;x64;x86</Platforms>
     <RuntimeIdentifiers>win-x86;win-x64;win-arm64</RuntimeIdentifiers>
     <MetroBinaryTfm>net10.0-windows</MetroBinaryTfm>
+    <SHPCBuildBranch Condition="'$(SHPC_UPGRADE_BRANCH)' != ''">$(SHPC_UPGRADE_BRANCH)</SHPCBuildBranch>
+    <SHPCBuildBranch Condition="'$(SHPCBuildBranch)' == ''">main</SHPCBuildBranch>
   </PropertyGroup>
 
   <ItemGroup>
     <AssemblyMetadata Include="ExtraVersion" Value="" />
     <AssemblyMetadata Include="OriginalCompany" Value="grabacr.net" />
     <AssemblyMetadata Include="OriginalProduct" Value="SylphyHorn" />
+    <AssemblyMetadata Include="GitBranch" Value="$(SHPCBuildBranch)" />
   </ItemGroup>
 
   <ItemGroup>
