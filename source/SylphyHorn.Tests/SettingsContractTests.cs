@@ -33,6 +33,7 @@ namespace SylphyHorn.Tests
 				Scalar("FirstTime", true),
 				Scalar<string>("Culture", null),
 				Scalar("LoggingMode", "single"),
+				Scalar<string>("VppTrafficLogging", null),
 				Scalar<string>("WebSocketAddress", null),
 				Scalar("WebSocketPort", 0),
 				Scalar<string>("WebSocketSocketBox", null),
