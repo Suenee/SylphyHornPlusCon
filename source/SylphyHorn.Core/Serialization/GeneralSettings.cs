@@ -31,6 +31,7 @@ namespace SylphyHorn.Serialization
 		public SerializableProperty<bool> FirstTime => this.Cache(key => new SerializableProperty<bool>(key, this._provider, true));
 		public SerializableProperty<string> Culture => this.Cache(key => new SerializableProperty<string>(key, this._provider));
 		public SerializableProperty<string> LoggingMode => this.Cache(key => new SerializableProperty<string>(key, this._provider, LoggingModeDefaultValue));
+		public SerializableProperty<string> VppTrafficLogging => this.Cache(key => new SerializableProperty<string>(key, this._provider));
 		public SerializableProperty<string> WebSocketAddress => this.Cache(key => new SerializableProperty<string>(key, this._provider));
 		public SerializableProperty<int> WebSocketPort => this.Cache(key => new SerializableProperty<int>(key, this._provider));
 		public SerializableProperty<string> WebSocketSocketBox => this.Cache(key => new SerializableProperty<string>(key, this._provider));
