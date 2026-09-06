@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.IO;
 using System.Linq;
+using System.Text.Json;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Data;
@@ -21,6 +22,7 @@ namespace SylphyHorn.UI
 		private readonly DataGrid _grid;
 		private readonly TextBox _search;
 		private readonly ComboBox _mode;
+		private readonly CheckBox _traffic;
 		private readonly CheckBox _debug;
 		private readonly CheckBox _info;
 		private readonly CheckBox _warning;
@@ -83,6 +85,12 @@ namespace SylphyHorn.UI
 			filters.Children.Add(this._info);
 			filters.Children.Add(this._warning);
 			filters.Children.Add(this._error);
+			this._traffic = Filter("VPP traffic", BuildProfile.IsVppTrafficLoggingEnabled);
+			this._traffic.Margin = new Thickness(24, 0, 0, 0);
+			this._traffic.ToolTip = "Log full VPP/WebSocket RX/TX lifecycle and heartbeat packets. Authentication secrets are never logged.";
+			this._traffic.Checked += this.TrafficLoggingChanged;
+			this._traffic.Unchecked += this.TrafficLoggingChanged;
+			filters.Children.Add(this._traffic);
 			this._tail = Filter("Always at end", true);
 			this._tail.Margin = new Thickness(24, 0, 0, 0);
 			filters.Children.Add(this._tail);
@@ -103,20 +111,17 @@ namespace SylphyHorn.UI
 				Margin = new Thickness(8, 0, 8, 8),
 				FontFamily = new FontFamily("Consolas"),
 				FontSize = 12,
-				ToolTip = "Double-click a log entry to view details.",
+				ToolTip = "Click a log entry to view details.",
 			};
 			this._grid.Columns.Add(new DataGridTextColumn { Header = "Timecode", Binding = new Binding(nameof(LogRow.Time)), Width = 170 });
 			this._grid.Columns.Add(new DataGridTextColumn { Header = "Level", Binding = new Binding(nameof(LogRow.Level)), Width = 75 });
 			this._grid.Columns.Add(new DataGridTextColumn { Header = "Service", Binding = new Binding(nameof(LogRow.Service)), Width = 90 });
-			this._grid.Columns.Add(new DataGridTextColumn { Header = "Object", Binding = new Binding(nameof(LogRow.ObjectId)), Width = 110 });
+			this._grid.Columns.Add(new DataGridTextColumn { Header = "Object", Binding = new Binding(nameof(LogRow.ObjectId)), Width = 190 });
 			this._grid.Columns.Add(new DataGridTextColumn { Header = "Event", Binding = new Binding(nameof(LogRow.Event)), Width = 150 });
 			this._grid.Columns.Add(new DataGridTextColumn { Header = "Message", Binding = new Binding(nameof(LogRow.Message)), Width = new DataGridLength(1, DataGridLengthUnitType.Star) });
-			this._grid.MouseDoubleClick += (_, e) =>
+			this._grid.MouseLeftButtonUp += (_, e) =>
 			{
-				if (FindVisualParent<DataGridRow>(e.OriginalSource as DependencyObject) != null)
-				{
-					this.ShowSelectedDetailPopup();
-				}
+				if (FindVisualParent<DataGridRow>(e.OriginalSource as DependencyObject) != null) this.ShowSelectedDetailPopup();
 			};
 			this._grid.PreviewKeyDown += (_, e) =>
 			{
@@ -166,7 +171,7 @@ namespace SylphyHorn.UI
 		{
 			IsReadOnly = true,
 			AcceptsReturn = true,
-			TextWrapping = TextWrapping.Wrap,
+			TextWrapping = TextWrapping.NoWrap,
 			VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
 			HorizontalScrollBarVisibility = ScrollBarVisibility.Auto,
 			Margin = new Thickness(0, 4, 0, 12),
@@ -190,10 +195,7 @@ namespace SylphyHorn.UI
 			var filtered = this._entries.Where(this.MatchesLevelFilter).Where(entry => Matches(entry, query)).Select(LogRow.From).ToArray();
 			this._rows.Clear();
 			foreach (var row in filtered) this._rows.Add(row);
-			if (selectedSequence.HasValue)
-			{
-				this._grid.SelectedItem = this._rows.FirstOrDefault(x => x.Sequence == selectedSequence.Value);
-			}
+			if (selectedSequence.HasValue) this._grid.SelectedItem = this._rows.FirstOrDefault(x => x.Sequence == selectedSequence.Value);
 			if (this._tail?.IsChecked == true && this._rows.Count > 0)
 			{
 				var last = this._rows[this._rows.Count - 1];
@@ -224,77 +226,61 @@ namespace SylphyHorn.UI
 			}.Any(value => !string.IsNullOrEmpty(value) && value.IndexOf(query, StringComparison.OrdinalIgnoreCase) >= 0);
 		}
 
+		private static string PrettyDetails(string value)
+		{
+			if (string.IsNullOrWhiteSpace(value)) return "(no additional details)";
+			try
+			{
+				using var document = JsonDocument.Parse(value);
+				return JsonSerializer.Serialize(document.RootElement, new JsonSerializerOptions { WriteIndented = true });
+			}
+			catch { }
+
+			const string marker = "\nJSON:\n";
+			var index = value.IndexOf(marker, StringComparison.Ordinal);
+			if (index >= 0)
+			{
+				var prefix = value.Substring(0, index + marker.Length);
+				var json = value.Substring(index + marker.Length);
+				try
+				{
+					using var document = JsonDocument.Parse(json);
+					return prefix + JsonSerializer.Serialize(document.RootElement, new JsonSerializerOptions { WriteIndented = true });
+				}
+				catch { }
+			}
+			return value;
+		}
+
 		private void ShowSelectedDetailPopup()
 		{
 			if (this._grid.SelectedItem is not LogRow row) return;
-
 			var popup = new Window
 			{
-				Title = "Log detail",
-				Owner = Window.GetWindow(this),
-				WindowStartupLocation = WindowStartupLocation.CenterOwner,
-				Width = 760,
-				Height = 500,
-				MinWidth = 520,
-				MinHeight = 320,
-				ShowInTaskbar = false,
-				Background = new SolidColorBrush(Color.FromRgb(30, 34, 40)),
-				Foreground = Brushes.White,
-				FontFamily = new FontFamily("Segoe UI"),
+				Title = "Log detail", Owner = Window.GetWindow(this), WindowStartupLocation = WindowStartupLocation.CenterOwner,
+				Width = 900, Height = 650, MinWidth = 600, MinHeight = 400, ShowInTaskbar = false,
+				Background = new SolidColorBrush(Color.FromRgb(30, 34, 40)), Foreground = Brushes.White, FontFamily = new FontFamily("Segoe UI"),
 			};
-
 			var root = new Grid { Margin = new Thickness(20) };
 			root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
 			root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
-			root.RowDefinitions.Add(new RowDefinition { Height = new GridLength(110) });
+			root.RowDefinitions.Add(new RowDefinition { Height = new GridLength(90) });
 			root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
 			root.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
 			root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
-
 			var header = new TextBlock
 			{
 				Text = $"#{row.Sequence}  {row.Time}  {row.Level}  {row.Service}  {row.Event}" + (string.IsNullOrWhiteSpace(row.ObjectId) ? string.Empty : $"  [{row.ObjectId}]"),
-				Foreground = new SolidColorBrush(Color.FromRgb(220, 225, 232)),
-				FontWeight = FontWeights.SemiBold,
-				TextWrapping = TextWrapping.Wrap,
-				Margin = new Thickness(0, 0, 0, 14),
+				Foreground = new SolidColorBrush(Color.FromRgb(220, 225, 232)), FontWeight = FontWeights.SemiBold, TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 0, 0, 14),
 			};
-			Grid.SetRow(header, 0);
-			root.Children.Add(header);
-
-			var messageLabel = Label("Message");
-			Grid.SetRow(messageLabel, 1);
-			root.Children.Add(messageLabel);
-			var message = DetailBox();
-			message.Text = row.FullMessage ?? string.Empty;
-			Grid.SetRow(message, 2);
-			root.Children.Add(message);
-
-			var detailsLabel = Label("Details");
-			Grid.SetRow(detailsLabel, 3);
-			root.Children.Add(detailsLabel);
-			var details = DetailBox();
-			details.FontFamily = new FontFamily("Consolas");
-			details.Text = string.IsNullOrWhiteSpace(row.Details) ? "(no additional details)" : row.Details;
-			Grid.SetRow(details, 4);
-			root.Children.Add(details);
-
-			var close = new Button
-			{
-				Content = "Close",
-				MinWidth = 90,
-				Height = 30,
-				HorizontalAlignment = HorizontalAlignment.Right,
-				Margin = new Thickness(0, 8, 0, 0),
-				IsDefault = true,
-				IsCancel = true,
-			};
-			close.Click += (_, _) => popup.Close();
-			Grid.SetRow(close, 5);
-			root.Children.Add(close);
-
-			popup.Content = root;
-			popup.ShowDialog();
+			Grid.SetRow(header, 0); root.Children.Add(header);
+			var messageLabel = Label("Message"); Grid.SetRow(messageLabel, 1); root.Children.Add(messageLabel);
+			var message = DetailBox(); message.TextWrapping = TextWrapping.Wrap; message.Text = row.FullMessage ?? string.Empty; Grid.SetRow(message, 2); root.Children.Add(message);
+			var detailsLabel = Label("Details / JSON"); Grid.SetRow(detailsLabel, 3); root.Children.Add(detailsLabel);
+			var details = DetailBox(); details.FontFamily = new FontFamily("Consolas"); details.Text = PrettyDetails(row.Details); Grid.SetRow(details, 4); root.Children.Add(details);
+			var close = new Button { Content = "Close", MinWidth = 90, Height = 30, HorizontalAlignment = HorizontalAlignment.Right, Margin = new Thickness(0, 8, 0, 0), IsDefault = true, IsCancel = true };
+			close.Click += (_, _) => popup.Close(); Grid.SetRow(close, 5); root.Children.Add(close);
+			popup.Content = root; popup.ShowDialog();
 		}
 
 		private void ModeChanged(object sender, SelectionChangedEventArgs e)
@@ -308,39 +294,34 @@ namespace SylphyHorn.UI
 			LoggingService.Instance.Write(LogLevel.Info, "SETTINGS", "LoggingModeChanged", $"Logging mode changed to {selected}.");
 		}
 
+		private void TrafficLoggingChanged(object sender, RoutedEventArgs e)
+		{
+			if (this._traffic == null) return;
+			var enabled = this._traffic.IsChecked == true;
+			Settings.General.VppTrafficLogging.Value = enabled ? "on" : "off";
+			LocalSettingsProvider.Instance.SaveAsync().Forget();
+			LoggingService.Instance.Write(LogLevel.Info, "SETTINGS", "VppTrafficLoggingChanged", $"VPP traffic logging {(enabled ? "enabled" : "disabled")}.");
+		}
+
 		private void Export()
 		{
-			var dialog = new SaveFileDialog
-			{
-				Title = "Export application log",
-				Filter = "Text files (*.txt)|*.txt",
-				DefaultExt = ".txt",
-				FileName = $"sylphyhorn-log-{DateTime.Now:yyyyMMdd-HHmmss}.txt",
-			};
+			var dialog = new SaveFileDialog { Title = "Export application log", Filter = "Text files (*.txt)|*.txt", DefaultExt = ".txt", FileName = $"sylphyhorn-log-{DateTime.Now:yyyyMMdd-HHmmss}.txt" };
 			if (dialog.ShowDialog() != true) return;
 			try
 			{
 				var visible = this._rows.Select(row => this._entries.First(entry => entry.Sequence == row.Sequence)).ToArray();
 				LoggingService.Instance.ExportText(dialog.FileName, visible);
 			}
-			catch (Exception ex)
-			{
-				MessageBox.Show(ex.Message, "Export application log", MessageBoxButton.OK, MessageBoxImage.Error);
-			}
+			catch (Exception ex) { MessageBox.Show(ex.Message, "Export application log", MessageBoxButton.OK, MessageBoxImage.Error); }
 		}
 
 		private void Clear()
 		{
 			if (MessageBox.Show("Clear the application log?", "App log", MessageBoxButton.YesNo, MessageBoxImage.Question) != MessageBoxResult.Yes) return;
-			LoggingService.Instance.Clear();
-			this._entries.Clear();
-			this._rows.Clear();
+			LoggingService.Instance.Clear(); this._entries.Clear(); this._rows.Clear();
 		}
 
-		public void Dispose()
-		{
-			this._subscription?.Dispose();
-		}
+		public void Dispose() => this._subscription?.Dispose();
 
 		private sealed class LogRow
 		{
@@ -353,32 +334,21 @@ namespace SylphyHorn.UI
 			public string Message { get; init; }
 			public string FullMessage { get; init; }
 			public string Details { get; init; }
-
 			public static LogRow From(LogEntry entry)
 			{
 				var message = entry.Log.Content ?? string.Empty;
 				var firstLine = message.Replace("\r\n", "\n").Replace('\r', '\n').Split('\n').FirstOrDefault() ?? string.Empty;
 				return new LogRow
 				{
-					Sequence = entry.Sequence,
-					Time = entry.Log.DateTime.ToLocalTime().ToString("dd.MM.yyyy HH:mm:ss.fff"),
-					Level = entry.Level.ToString().ToUpperInvariant(),
-					Service = entry.Service,
-					ObjectId = entry.ObjectId ?? string.Empty,
-					Event = entry.Event,
-					Message = firstLine,
-					FullMessage = message,
-					Details = entry.Details,
+					Sequence = entry.Sequence, Time = entry.Log.DateTime.ToLocalTime().ToString("dd.MM.yyyy HH:mm:ss.fff"), Level = entry.Level.ToString().ToUpperInvariant(),
+					Service = entry.Service, ObjectId = entry.ObjectId ?? string.Empty, Event = entry.Event, Message = firstLine, FullMessage = message, Details = entry.Details,
 				};
 			}
 		}
 
 		private sealed class EmptyTextVisibilityConverter : System.Windows.Data.IValueConverter
 		{
-			public object Convert(object value, Type targetType, object parameter, System.Globalization.CultureInfo culture)
-			{
-				return value is int length && length == 0 ? Visibility.Visible : Visibility.Collapsed;
-			}
+			public object Convert(object value, Type targetType, object parameter, System.Globalization.CultureInfo culture) => value is int length && length == 0 ? Visibility.Visible : Visibility.Collapsed;
 			public object ConvertBack(object value, Type targetType, object parameter, System.Globalization.CultureInfo culture) => throw new NotSupportedException();
 		}
 	}
