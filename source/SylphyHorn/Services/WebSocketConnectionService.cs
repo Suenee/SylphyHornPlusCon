@@ -124,20 +124,17 @@ namespace SylphyHorn.Services
 		public async Task RestoreDesiredConnectionAsync()
 		{
 			if (this._disposed || !Settings.General.WebSocketAutoConnect.Value) return;
-
 			var address = Settings.General.WebSocketAddress.Value ?? string.Empty;
 			var port = Settings.General.WebSocketPort.Value;
 			var socketBox = Settings.General.WebSocketSocketBox.Value ?? string.Empty;
 			var apiKey = UnprotectApiKey(Settings.General.WebSocketApiKeyProtected.Value);
 			this.RememberConnectionSettings(address, port, socketBox, apiKey);
-
 			if (!TryValidateConnectionSettings(address, port, socketBox, apiKey, out var validationError))
 			{
 				this.SetState(WebSocketConnectionState.Error, "Unable to reconnect");
 				LoggingService.Instance.Write(LogLevel.Warning, "WEBSOCKET", "AutoConnectSkipped", "Saved WebSocket connection cannot be restored because its settings are invalid.", details: validationError);
 				return;
 			}
-
 			LoggingService.Instance.Write(LogLevel.Info, "WEBSOCKET", "AutoConnectStarted", "Restoring the previously desired SUB connection.", details: $"Endpoint={GetDisplayUri(BuildUri(address.Trim(), port, socketBox.Trim(), apiKey.Trim()))};SocketBox={socketBox.Trim()}");
 			var result = await this.ConnectCoreAsync(address, port, socketBox, apiKey, CancellationToken.None).ConfigureAwait(false);
 			if (result == ConnectionAttemptResult.Admitted)
@@ -242,7 +239,6 @@ namespace SylphyHorn.Services
 					LoggingService.Instance.Write(LogLevel.Error, "WEBSOCKET", "ConnectValidationFailed", "WebSocket connection validation failed.", details: validationError);
 					return ConnectionAttemptResult.Failed;
 				}
-
 				this.CleanupClient();
 				this._socketBox = socketBox.Trim();
 				this._peerSocketBox = null;
@@ -264,7 +260,6 @@ namespace SylphyHorn.Services
 						this.CleanupClient();
 						return ConnectionAttemptResult.Failed;
 					}
-
 					this._receiveTask = Task.Run(() => this.ReceiveLoopAsync(this._client, this._lifetimeCts.Token));
 					LoggingService.Instance.Write(LogLevel.Info, "WEBSOCKET", "TransportConnected", "Authenticated WebSocket transport connected; starting VPP admission.", details: $"Endpoint={GetDisplayUri(uri)};SocketBox={this._socketBox}");
 					var registration = await this.SendServerCallAsync("registerConnection", new { hostName = Environment.MachineName }, TimeSpan.FromSeconds(10), this._lifetimeCts.Token).ConfigureAwait(false);
@@ -329,12 +324,23 @@ namespace SylphyHorn.Services
 				using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
 				timeoutCts.CancelAfter(timeout);
 				using var registration = timeoutCts.Token.Register(() => tcs.TrySetCanceled(timeoutCts.Token));
-				var terminal = await tcs.Task.ConfigureAwait(false);
+				JsonElement terminal;
+				try { terminal = await tcs.Task.ConfigureAwait(false); }
+				catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
+				{
+					if (string.Equals(method, "ping", StringComparison.Ordinal) && TrafficEnabled)
+						LoggingService.Instance.Write(LogLevel.Warning, "VPP", "PingFailed", "SUB ping timed out.", objectId: id, details: $"Reason=timeout;TimeoutMs={(long)timeout.TotalMilliseconds};RequestId={id}");
+					throw;
+				}
+				if (string.Equals(method, "ping", StringComparison.Ordinal) && TrafficEnabled)
+					LoggingService.Instance.Write(LogLevel.Debug, "VPP", "PingRx", "Heartbeat response received from SUB/server.", objectId: id, details: terminal.GetRawText());
 				if (terminal.TryGetProperty("type", out var type) && type.GetString() == "error")
 				{
 					var error = terminal.TryGetProperty("error", out var errorElement) && errorElement.ValueKind == JsonValueKind.Object ? errorElement : default;
 					var code = error.ValueKind == JsonValueKind.Object ? TryReadString(error, "code") : string.Empty;
 					var messageText = error.ValueKind == JsonValueKind.Object ? TryReadString(error, "message") : "SUB returned a VPP error.";
+					if (string.Equals(method, "ping", StringComparison.Ordinal) && TrafficEnabled)
+						LoggingService.Instance.Write(LogLevel.Warning, "VPP", "PingFailed", "SUB returned a VPP error for heartbeat ping.", objectId: id, details: $"Reason=vpp-error;Code={code};Message={messageText}\nJSON:\n{terminal.GetRawText()}");
 					throw new InvalidOperationException(string.IsNullOrWhiteSpace(code) ? messageText : $"{code}: {messageText}");
 				}
 				return terminal;
@@ -358,7 +364,7 @@ namespace SylphyHorn.Services
 			{
 				if (!cancellationToken.IsCancellationRequested)
 				{
-					LoggingService.Instance.Write(LogLevel.Warning, "WEBSOCKET", "ReceiveStopped", "WebSocket receive loop stopped.", details: ex.ToString());
+					LoggingService.Instance.Write(LogLevel.Warning, "WEBSOCKET", "ReceiveStopped", "WebSocket receive loop stopped.", details: $"SocketState={client.State};Reason={ClassifyTransportException(ex)}{Environment.NewLine}{ex}");
 					this.SetState(WebSocketConnectionState.Error, "Connection lost");
 				}
 			}
@@ -381,23 +387,42 @@ namespace SylphyHorn.Services
 			try { document = JsonDocument.Parse(raw); }
 			catch (Exception ex)
 			{
-				LoggingService.Instance.Write(LogLevel.Warning, "VPP", "InvalidJson", "Invalid JSON received from SUB.", details: ex.Message);
+				if (TrafficEnabled) LoggingService.Instance.Write(LogLevel.Warning, "VPP", "RxRejected", "Incoming payload is not valid JSON.", details: $"Reason=invalid JSON: {ex.Message}\nJSON:\n{raw}");
+				else LoggingService.Instance.Write(LogLevel.Warning, "VPP", "InvalidJson", "Invalid JSON received from SUB.", details: ex.Message);
 				return;
 			}
 			using (document)
 			{
 				var message = document.RootElement;
+				var id = TryReadString(message, "id");
+				if (TrafficEnabled)
+				{
+					LoggingService.Instance.Write(LogLevel.Debug, "VPP", "RxRaw", DescribeEnvelope(message, "Incoming VPP message received before validation."), objectId: id, details: raw);
+				}
 				if (!TryValidateEnvelope(message, out var validationError))
 				{
-					LoggingService.Instance.Write(LogLevel.Warning, "VPP", "InvalidEnvelope", "Invalid VPP envelope received.", details: validationError);
+					LoggingService.Instance.Write(LogLevel.Warning, "VPP", TrafficEnabled ? "RxRejected" : "InvalidEnvelope", "Incoming VPP message rejected by envelope validation.", objectId: id, details: $"Reason={validationError}\nJSON:\n{raw}");
 					return;
 				}
+				if (TrafficEnabled)
+					LoggingService.Instance.Write(LogLevel.Debug, "VPP", "RxAccepted", DescribeEnvelope(message, "VPP envelope accepted."), objectId: id, details: DescribeEnvelopeFields(message));
 				this._lastActivity = DateTimeOffset.UtcNow;
 				var type = message.GetProperty("type").GetString();
-				if ((type == "response" || type == "error") && message.TryGetProperty("correlationId", out var correlationId) && correlationId.ValueKind == JsonValueKind.String)
+				if (type == "response" || type == "error")
 				{
-					var id = correlationId.GetString();
-					if (!string.IsNullOrWhiteSpace(id) && this._pendingRequests.TryGetValue(id, out var pending)) pending.TrySetResult(message.Clone());
+					if (!message.TryGetProperty("correlationId", out var correlationId) || correlationId.ValueKind != JsonValueKind.String || string.IsNullOrWhiteSpace(correlationId.GetString()))
+					{
+						if (TrafficEnabled) LoggingService.Instance.Write(LogLevel.Warning, "VPP", "RxRejected", "Terminal VPP message has no usable correlationId.", objectId: id, details: $"Reason=invalid correlation;Type={type}\nJSON:\n{raw}");
+						return;
+					}
+					var correlation = correlationId.GetString();
+					if (!this._pendingRequests.TryGetValue(correlation, out var pending))
+					{
+						if (TrafficEnabled) LoggingService.Instance.Write(LogLevel.Warning, "VPP", "RxRejected", "Terminal VPP message does not match a pending request.", objectId: id, details: $"Reason=unknown correlation;CorrelationId={correlation};Type={type}\nJSON:\n{raw}");
+						return;
+					}
+					if (TrafficEnabled) LoggingService.Instance.Write(LogLevel.Debug, "VPP", "Handled", "Correlated terminal message delivered to the pending request handler.", objectId: id, details: $"handler=PendingRequestCorrelation;result={type};correlationId={correlation}");
+					pending.TrySetResult(message.Clone());
 					return;
 				}
 
@@ -419,10 +444,12 @@ namespace SylphyHorn.Services
 
 				if (type == "event") await this.HandleEventAsync(message, cancellationToken).ConfigureAwait(false);
 				else if (type == "call") await this.HandleCallAsync(message, cancellationToken).ConfigureAwait(false);
+				else if (TrafficEnabled)
+					LoggingService.Instance.Write(LogLevel.Warning, "VPP", "RxRejected", "VPP envelope is valid but this message type has no SHPC application handler.", objectId: id, details: $"Reason=unsupported handler type;Type={type}");
 
 				if (learnedPeer)
 				{
-					LoggingService.Instance.Write(LogLevel.Info, "VPP", "PeerLearned", "Learned the runtime peer Socket Box from admitted VPP traffic.", details: $"Peer={this._peerSocketBox}");
+					LoggingService.Instance.Write(LogLevel.Info, "VPP", "PeerLearned", "Learned the runtime peer Socket Box from valid VPP traffic.", details: $"peerSocketBox={this._peerSocketBox}");
 					await this.SendDesktopStateEventSafeAsync(DesktopControlService.Instance.GetState(), cancellationToken).ConfigureAwait(false);
 				}
 			}
@@ -436,13 +463,16 @@ namespace SylphyHorn.Services
 			var expectsResponse = message.TryGetProperty("expectsResponse", out var expects) && expects.ValueKind == JsonValueKind.True;
 			if (!string.Equals(recipient, this._socketBox, StringComparison.Ordinal))
 			{
+				if (TrafficEnabled) LoggingService.Instance.Write(LogLevel.Warning, "VPP", "Handled", "VPP call rejected by routing check.", objectId: id, details: $"handler=HandleCallAsync;result=error;errorCode=INVALID_ROUTING;recipient={recipient};expected={this._socketBox}");
 				if (expectsResponse) await this.SendErrorAsync(from, id, "INVALID_ROUTING", "The VPP call is not addressed to this SHPC Socket Box.", null, cancellationToken).ConfigureAwait(false);
 				return;
 			}
 			var method = message.TryGetProperty("method", out var methodElement) && methodElement.ValueKind == JsonValueKind.String ? methodElement.GetString() : null;
 			var args = message.TryGetProperty("args", out var argsElement) ? argsElement : default;
 			var result = await this._desktopAdapter.DispatchAsync(method, args).ConfigureAwait(false);
-			LoggingService.Instance.Write(result.Success ? LogLevel.Info : LogLevel.Warning, "VPP", "CallProcessed", result.Success ? "VPP desktop call completed." : "VPP desktop call failed.", details: $"Method={method};Success={result.Success};ErrorCode={result.ErrorCode ?? string.Empty}");
+			LoggingService.Instance.Write(result.Success ? LogLevel.Info : LogLevel.Warning, "VPP", "CallProcessed", result.Success ? "VPP desktop call completed." : "VPP desktop call failed.", objectId: id, details: $"Method={method};Success={result.Success};ErrorCode={result.ErrorCode ?? string.Empty}");
+			if (TrafficEnabled)
+				LoggingService.Instance.Write(result.Success ? LogLevel.Debug : LogLevel.Warning, "VPP", "Handled", result.Success ? "VPP call handler completed successfully." : "VPP call handler returned an application error.", objectId: id, details: $"handler=VppDesktopAdapter.DispatchAsync;method={method};result={(result.Success ? "success" : "error")};errorCode={result.ErrorCode ?? string.Empty};errorMessage={result.ErrorMessage ?? string.Empty}");
 			if (!expectsResponse) return;
 			if (result.Success) await this.SendResponseAsync(from, id, result.Result, cancellationToken).ConfigureAwait(false);
 			else await this.SendErrorAsync(from, id, result.ErrorCode, result.ErrorMessage, result.ErrorDetails, cancellationToken).ConfigureAwait(false);
@@ -455,8 +485,10 @@ namespace SylphyHorn.Services
 			var recipient = message.GetProperty("recipient").GetString();
 			var id = message.GetProperty("id").GetString();
 			var expectsResponse = message.TryGetProperty("expectsResponse", out var expects) && expects.ValueKind == JsonValueKind.True;
+			var handled = false;
 			if (eventName == "disconnecting" && string.Equals(recipient, this._socketBox, StringComparison.Ordinal))
 			{
+				handled = true;
 				var reason = message.TryGetProperty("args", out var args) && args.ValueKind == JsonValueKind.Object ? TryReadString(args, "reason") : string.Empty;
 				if (string.Equals(from, ServerSocketBox, StringComparison.Ordinal))
 				{
@@ -475,6 +507,8 @@ namespace SylphyHorn.Services
 					if (string.Equals(from, this._peerSocketBox, StringComparison.Ordinal)) this._peerSocketBox = null;
 				}
 			}
+			if (TrafficEnabled)
+				LoggingService.Instance.Write(handled ? LogLevel.Debug : LogLevel.Warning, "VPP", "Handled", handled ? "VPP event handler completed." : "VPP event has no SHPC handler.", objectId: id, details: $"handler=HandleEventAsync;event={eventName};result={(handled ? "success" : "ignored")}");
 			if (expectsResponse) await this.SendResponseAsync(from, id, new { success = true }, cancellationToken).ConfigureAwait(false);
 		}
 
@@ -502,7 +536,8 @@ namespace SylphyHorn.Services
 			{
 				if (!cancellationToken.IsCancellationRequested)
 				{
-					LoggingService.Instance.Write(LogLevel.Warning, "WEBSOCKET", "HeartbeatFailed", "VPP heartbeat failed; connection is unhealthy.", details: ex.ToString());
+					var socketState = this._client?.State.ToString() ?? "null";
+					LoggingService.Instance.Write(LogLevel.Warning, "WEBSOCKET", "HeartbeatFailed", "VPP heartbeat failed; connection is unhealthy.", details: $"Reason={ClassifyTransportException(ex)};SocketState={socketState}{Environment.NewLine}{ex}");
 					DesktopControlService.Instance.SetEnabled(false);
 					this.SetState(WebSocketConnectionState.Error, "Connection lost");
 					var client = this._client;
@@ -516,7 +551,11 @@ namespace SylphyHorn.Services
 
 		private void ApplyHeartbeatPolicy(JsonElement response)
 		{
-			if (!TryGetResult(response, out var result) || !result.TryGetProperty("heartbeat", out var heartbeat) || heartbeat.ValueKind != JsonValueKind.Object) return;
+			if (!TryGetResult(response, out var result) || !result.TryGetProperty("heartbeat", out var heartbeat) || heartbeat.ValueKind != JsonValueKind.Object)
+			{
+				if (TrafficEnabled) LoggingService.Instance.Write(LogLevel.Warning, "VPP", "PingFailed", "Heartbeat response did not contain a valid heartbeat object.", details: $"Reason=invalid response\nJSON:\n{response.GetRawText()}");
+				return;
+			}
 			var interval = TryReadInt(heartbeat, "intervalMs");
 			if (interval >= 5000 && interval <= 3600000) this._heartbeatIntervalMs = interval;
 		}
@@ -524,9 +563,7 @@ namespace SylphyHorn.Services
 		private void HandleTransportEnded(string serverReason, string trigger)
 		{
 			if (this._disposed || !Settings.General.WebSocketAutoConnect.Value) return;
-			var decision = string.IsNullOrWhiteSpace(serverReason)
-				? WebSocketReconnectPolicy.ForUnexpectedTransportLoss()
-				: WebSocketReconnectPolicy.ForServerDisconnectReason(serverReason);
+			var decision = string.IsNullOrWhiteSpace(serverReason) ? WebSocketReconnectPolicy.ForUnexpectedTransportLoss() : WebSocketReconnectPolicy.ForServerDisconnectReason(serverReason);
 			if (decision == WebSocketReconnectDecision.Retry)
 			{
 				this.StartReconnectSeries(string.IsNullOrWhiteSpace(serverReason) ? trigger : $"server:{serverReason}");
@@ -622,8 +659,7 @@ namespace SylphyHorn.Services
 			this._lastApiKey = apiKey?.Trim() ?? string.Empty;
 		}
 
-		private bool HasRememberedConnectionSettings()
-			=> TryValidateConnectionSettings(this._lastAddress, this._lastPort, this._lastSocketBox, this._lastApiKey, out _);
+		private bool HasRememberedConnectionSettings() => TryValidateConnectionSettings(this._lastAddress, this._lastPort, this._lastSocketBox, this._lastApiKey, out _);
 
 		private async Task PersistConnectionPreferenceAsync(bool desired, string address, int port, string socketBox, string apiKey)
 		{
@@ -689,8 +725,26 @@ namespace SylphyHorn.Services
 		private async Task SendJsonAsync(object message, CancellationToken cancellationToken)
 		{
 			var client = this._client;
-			if (client == null || client.State != WebSocketState.Open) throw new InvalidOperationException("SUB WebSocket is not open.");
-			var bytes = Encoding.UTF8.GetBytes(JsonSerializer.Serialize(message));
+			if (client == null || client.State != WebSocketState.Open)
+			{
+				if (TrafficEnabled) LoggingService.Instance.Write(LogLevel.Warning, "VPP", "TxFailed", "VPP message could not be sent because the WebSocket is not open.", details: $"Reason=WebSocket disconnected;SocketState={client?.State.ToString() ?? "null"}");
+				throw new InvalidOperationException("SUB WebSocket is not open.");
+			}
+			var json = JsonSerializer.Serialize(message);
+			if (TrafficEnabled)
+			{
+				try
+				{
+					using var document = JsonDocument.Parse(json);
+					var root = document.RootElement;
+					var id = TryReadString(root, "id");
+					var method = TryReadString(root, "method");
+					var eventName = string.Equals(method, "ping", StringComparison.Ordinal) ? "PingTx" : "Tx";
+					LoggingService.Instance.Write(LogLevel.Debug, "VPP", eventName, DescribeEnvelope(root, eventName == "PingTx" ? "Heartbeat ping sent to SUB/server." : "Outgoing VPP message."), objectId: id, details: json);
+				}
+				catch (Exception ex) { LoggingService.Instance.Write(LogLevel.Warning, "VPP", "TrafficLogFailed", "Outgoing VPP packet could not be inspected for diagnostics.", details: ex.Message); }
+			}
+			var bytes = Encoding.UTF8.GetBytes(json);
 			await this._sendGate.WaitAsync(cancellationToken).ConfigureAwait(false);
 			try { await client.SendAsync(new ArraySegment<byte>(bytes), WebSocketMessageType.Text, true, cancellationToken).ConfigureAwait(false); }
 			finally { this._sendGate.Release(); }
@@ -714,13 +768,17 @@ namespace SylphyHorn.Services
 		private bool TryValidateEnvelope(JsonElement message, out string error)
 		{
 			error = null;
-			if (message.ValueKind != JsonValueKind.Object) { error = "VPP message must be an object."; return false; }
-			if (!message.TryGetProperty("protocolVersion", out var version) || version.ValueKind != JsonValueKind.Number || !version.TryGetInt32(out var parsedVersion) || parsedVersion != VppVersion) { error = "Unsupported or missing protocolVersion."; return false; }
+			if (message.ValueKind != JsonValueKind.Object) { error = "message root is not a JSON object"; return false; }
+			if (!message.TryGetProperty("protocolVersion", out var version)) { error = "missing field protocolVersion"; return false; }
+			if (version.ValueKind != JsonValueKind.Number || !version.TryGetInt32(out var parsedVersion)) { error = "invalid protocolVersion type/value"; return false; }
+			if (parsedVersion != VppVersion) { error = $"unsupported protocolVersion {parsedVersion}; expected {VppVersion}"; return false; }
 			foreach (var name in new[] { "id", "type", "from", "recipient", "timestamp" })
 			{
-				if (!message.TryGetProperty(name, out var value) || value.ValueKind != JsonValueKind.String || string.IsNullOrWhiteSpace(value.GetString())) { error = $"Missing or invalid {name}."; return false; }
+				if (!message.TryGetProperty(name, out var value)) { error = $"missing field {name}"; return false; }
+				if (value.ValueKind != JsonValueKind.String || string.IsNullOrWhiteSpace(value.GetString())) { error = $"invalid field {name}"; return false; }
 			}
-			if (!message.TryGetProperty("source", out var source) || source.ValueKind != JsonValueKind.Object) { error = "Missing source object."; return false; }
+			if (!message.TryGetProperty("source", out var source)) { error = "missing field source"; return false; }
+			if (source.ValueKind != JsonValueKind.Object) { error = "invalid source; expected object"; return false; }
 			return true;
 		}
 
@@ -747,6 +805,27 @@ namespace SylphyHorn.Services
 			return builder.Uri;
 		}
 
+		private static bool TrafficEnabled => BuildProfile.IsVppTrafficLoggingEnabled;
+		private static string DescribeEnvelope(JsonElement message, string prefix)
+		{
+			var from = TryReadString(message, "from");
+			var recipient = TryReadString(message, "recipient");
+			var type = TryReadString(message, "type");
+			var method = TryReadString(message, "method");
+			var eventName = TryReadString(message, "event");
+			var operation = !string.IsNullOrWhiteSpace(method) ? $" method={method}" : !string.IsNullOrWhiteSpace(eventName) ? $" event={eventName}" : string.Empty;
+			return $"{prefix} {from} → {recipient}; type={type}{operation}";
+		}
+		private static string DescribeEnvelopeFields(JsonElement message)
+			=> $"id={TryReadString(message, "id")};correlationId={TryReadString(message, "correlationId")};from={TryReadString(message, "from")};recipient={TryReadString(message, "recipient")};type={TryReadString(message, "type")};method={TryReadString(message, "method")};event={TryReadString(message, "event")}";
+		private static string ClassifyTransportException(Exception ex)
+		{
+			if (ex is OperationCanceledException) return "timeout/cancelled";
+			if (ex is WebSocketException) return "WebSocket transport error";
+			if (ex is InvalidOperationException && ex.Message.IndexOf("not open", StringComparison.OrdinalIgnoreCase) >= 0) return "WebSocket disconnected";
+			if (ex is InvalidOperationException && ex.Message.IndexOf("VPP", StringComparison.OrdinalIgnoreCase) >= 0) return "VPP error response";
+			return ex.GetType().Name;
+		}
 		private static string GetDisplayUri(Uri uri) => uri == null ? string.Empty : $"{uri.Scheme}://{uri.Host}:{uri.Port}{uri.AbsolutePath}";
 		private static string GetApplicationVersion()
 		{
