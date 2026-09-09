@@ -20,6 +20,7 @@ namespace SylphyHorn.Services
 		Disconnected,
 		Connecting,
 		Negotiating,
+		BridgeOnly,
 		Connected,
 		Error,
 	}
@@ -73,6 +74,7 @@ namespace SylphyHorn.Services
 		private const int MaxMessageBytes = 1024 * 1024;
 		private static readonly string AppVersion = GetApplicationVersion();
 		private static readonly Regex ApiKeyRegex = new Regex("^[0-9a-fA-F]{64}$", RegexOptions.Compiled | RegexOptions.CultureInvariant);
+		private static readonly Regex SocketBoxRegex = new Regex("^[a-z0-9_-]+$", RegexOptions.Compiled | RegexOptions.CultureInvariant | RegexOptions.IgnoreCase);
 
 		private readonly SemaphoreSlim _gate = new SemaphoreSlim(1, 1);
 		private readonly SemaphoreSlim _sendGate = new SemaphoreSlim(1, 1);
@@ -89,13 +91,14 @@ namespace SylphyHorn.Services
 		private string _statusMessage = "Disconnected";
 		private string _socketBox;
 		private string _peerSocketBox;
+		private bool _peerAvailable;
 		private string _serverDisconnectReason;
 		private string _lastAddress;
 		private int _lastPort;
 		private string _lastSocketBox;
 		private string _lastApiKey;
 		private int _heartbeatIntervalMs = DefaultHeartbeatMs;
-		private DateTimeOffset _lastActivity = DateTimeOffset.UtcNow;
+		private DateTimeOffset _lastPeerActivity = DateTimeOffset.UtcNow;
 		private bool _disposed;
 
 		public static WebSocketConnectionService Instance { get; } = new WebSocketConnectionService();
@@ -109,7 +112,8 @@ namespace SylphyHorn.Services
 		public event EventHandler<ReplacementNegotiationEventArgs> ReplacementNegotiationRequested;
 		public WebSocketConnectionState State => this._state;
 		public string StatusMessage => this._statusMessage;
-		public bool IsConnected => this._state == WebSocketConnectionState.Connected;
+		public bool IsConnected => this._state == WebSocketConnectionState.Connected || this._state == WebSocketConnectionState.BridgeOnly;
+		public bool IsPeerConnected => this._state == WebSocketConnectionState.Connected;
 		public bool IsNegotiating => this._state == WebSocketConnectionState.Negotiating;
 
 		public async Task ConnectAsync(string address, int port, string socketBox, string apiKey)
@@ -231,7 +235,7 @@ namespace SylphyHorn.Services
 			try
 			{
 				if (this._disposed) throw new ObjectDisposedException(nameof(WebSocketConnectionService));
-				if (this._state == WebSocketConnectionState.Connected) return ConnectionAttemptResult.Admitted;
+				if (this.IsConnected) return ConnectionAttemptResult.Admitted;
 				if ((this._state == WebSocketConnectionState.Connecting || this._state == WebSocketConnectionState.Negotiating) && this._client != null) return ConnectionAttemptResult.Failed;
 				if (!TryValidateConnectionSettings(address, port, socketBox, apiKey, out var validationError))
 				{
@@ -242,9 +246,10 @@ namespace SylphyHorn.Services
 				this.CleanupClient();
 				this._socketBox = socketBox.Trim();
 				this._peerSocketBox = null;
+				this._peerAvailable = false;
 				this._serverDisconnectReason = null;
 				this._heartbeatIntervalMs = DefaultHeartbeatMs;
-				this._lastActivity = DateTimeOffset.UtcNow;
+				this._lastPeerActivity = DateTimeOffset.UtcNow;
 				this.SetState(WebSocketConnectionState.Connecting, "Connecting...");
 				this._lifetimeCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
 				this._client = new ClientWebSocket();
@@ -292,10 +297,13 @@ namespace SylphyHorn.Services
 			if (string.Equals(status, "admitted", StringComparison.Ordinal))
 			{
 				this._serverDisconnectReason = null;
-				this.SetState(WebSocketConnectionState.Connected, "Connected");
+				this._peerAvailable = false;
+				this.SetState(WebSocketConnectionState.BridgeOnly, "SUB connected; waiting for peer");
 				DesktopControlService.Instance.SetEnabled(true);
+				LoggingService.Instance.Write(LogLevel.Info, "WEBSOCKET", "VppAdmitted", "VPP connection admitted by SUB; application peer has not yet been confirmed.", details: $"SocketBox={this._socketBox}");
+				var ping = await this.SendServerCallAsync("ping", new { }, TimeSpan.FromMilliseconds(HeartbeatGraceMs), this._lifetimeCts.Token).ConfigureAwait(false);
+				this.ApplyHeartbeatPolicy(ping);
 				this.StartHeartbeat();
-				LoggingService.Instance.Write(LogLevel.Info, "WEBSOCKET", "VppAdmitted", "VPP connection admitted by SUB.", details: $"SocketBox={this._socketBox}");
 				return ConnectionAttemptResult.Admitted;
 			}
 			if (string.Equals(status, "replacementNegotiation", StringComparison.Ordinal))
@@ -395,50 +403,48 @@ namespace SylphyHorn.Services
 			{
 				var message = document.RootElement;
 				var id = TryReadString(message, "id");
-				if (TrafficEnabled)
-				{
-					LoggingService.Instance.Write(LogLevel.Debug, "VPP", "RxRaw", DescribeEnvelope(message, "Incoming VPP message received before validation."), objectId: id, details: raw);
-				}
+				if (TrafficEnabled) LoggingService.Instance.Write(LogLevel.Debug, "VPP", "RxRaw", DescribeEnvelope(message, "Incoming VPP message received before validation."), objectId: id, details: raw);
 				if (!TryValidateEnvelope(message, out var validationError))
 				{
 					LoggingService.Instance.Write(LogLevel.Warning, "VPP", TrafficEnabled ? "RxRejected" : "InvalidEnvelope", "Incoming VPP message rejected by envelope validation.", objectId: id, details: $"Reason={validationError}\nJSON:\n{raw}");
 					return;
 				}
-				if (TrafficEnabled)
-					LoggingService.Instance.Write(LogLevel.Debug, "VPP", "RxAccepted", DescribeEnvelope(message, "VPP envelope accepted."), objectId: id, details: DescribeEnvelopeFields(message));
-				this._lastActivity = DateTimeOffset.UtcNow;
+				if (TrafficEnabled) LoggingService.Instance.Write(LogLevel.Debug, "VPP", "RxAccepted", DescribeEnvelope(message, "VPP envelope accepted."), objectId: id, details: DescribeEnvelopeFields(message));
 				var type = message.GetProperty("type").GetString();
-				if (type == "response" || type == "error")
+				if (type == "response" || type == "error" || type == "progress")
 				{
 					if (!message.TryGetProperty("correlationId", out var correlationId) || correlationId.ValueKind != JsonValueKind.String || string.IsNullOrWhiteSpace(correlationId.GetString()))
 					{
-						if (TrafficEnabled) LoggingService.Instance.Write(LogLevel.Warning, "VPP", "RxRejected", "Terminal VPP message has no usable correlationId.", objectId: id, details: $"Reason=invalid correlation;Type={type}\nJSON:\n{raw}");
+						if (TrafficEnabled) LoggingService.Instance.Write(LogLevel.Warning, "VPP", "RxRejected", "Correlated VPP message has no usable correlationId.", objectId: id, details: $"Reason=invalid correlation;Type={type}\nJSON:\n{raw}");
 						return;
 					}
 					var correlation = correlationId.GetString();
 					if (!this._pendingRequests.TryGetValue(correlation, out var pending))
 					{
-						if (TrafficEnabled) LoggingService.Instance.Write(LogLevel.Warning, "VPP", "RxRejected", "Terminal VPP message does not match a pending request.", objectId: id, details: $"Reason=unknown correlation;CorrelationId={correlation};Type={type}\nJSON:\n{raw}");
+						if (TrafficEnabled) LoggingService.Instance.Write(LogLevel.Warning, "VPP", "RxRejected", "Correlated VPP message does not match a pending request.", objectId: id, details: $"Reason=unknown correlation;CorrelationId={correlation};Type={type}\nJSON:\n{raw}");
 						return;
 					}
-					if (TrafficEnabled) LoggingService.Instance.Write(LogLevel.Debug, "VPP", "Handled", "Correlated terminal message delivered to the pending request handler.", objectId: id, details: $"handler=PendingRequestCorrelation;result={type};correlationId={correlation}");
-					pending.TrySetResult(message.Clone());
+					if (TrafficEnabled) LoggingService.Instance.Write(LogLevel.Debug, "VPP", "Handled", type == "progress" ? "Correlated progress message observed for the pending request." : "Correlated terminal message delivered to the pending request handler.", objectId: id, details: $"handler=PendingRequestCorrelation;result={type};correlationId={correlation}");
+					if (type != "progress") pending.TrySetResult(message.Clone());
 					return;
 				}
 
 				var recipient = message.GetProperty("recipient").GetString();
 				var from = message.GetProperty("from").GetString();
 				var learnedPeer = false;
-				if (this._state == WebSocketConnectionState.Connected && string.Equals(recipient, this._socketBox, StringComparison.Ordinal) && !string.Equals(from, ServerSocketBox, StringComparison.Ordinal))
+				if (this.IsConnected && string.Equals(recipient, this._socketBox, StringComparison.Ordinal) && !string.Equals(from, ServerSocketBox, StringComparison.Ordinal))
 				{
-					if (string.IsNullOrWhiteSpace(this._peerSocketBox))
+					this._lastPeerActivity = DateTimeOffset.UtcNow;
+					if (string.IsNullOrWhiteSpace(this._peerSocketBox) || !this._peerAvailable)
 					{
+						learnedPeer = !string.Equals(this._peerSocketBox, from, StringComparison.Ordinal);
 						this._peerSocketBox = from;
-						learnedPeer = true;
+						this._peerAvailable = true;
+						this.SetState(WebSocketConnectionState.Connected, $"Connected to {from}");
 					}
 					else if (!string.Equals(this._peerSocketBox, from, StringComparison.Ordinal))
 					{
-						LoggingService.Instance.Write(LogLevel.Warning, "VPP", "PeerBindingPreserved", "Ignored an alternate peer for unsolicited state routing because a peer is already bound.", details: $"BoundPeer={this._peerSocketBox};IncomingPeer={from}");
+						LoggingService.Instance.Write(LogLevel.Warning, "VPP", "PeerBindingPreserved", "Ignored an alternate peer for unsolicited state routing because the current learned peer is available.", details: $"BoundPeer={this._peerSocketBox};IncomingPeer={from}");
 					}
 				}
 
@@ -504,12 +510,18 @@ namespace SylphyHorn.Services
 					if (!WebSocketReconnectPolicy.IsClientDisconnectReason(reason))
 						LoggingService.Instance.Write(LogLevel.Warning, "VPP", "PeerDisconnectReasonUnexpected", "Application peer sent an unrecognized client disconnect reason.", details: $"From={from};Reason={reason}");
 					LoggingService.Instance.Write(LogLevel.Info, "VPP", "PeerDisconnecting", "Application peer announced graceful disconnection.", details: $"From={from};Reason={reason}");
-					if (string.Equals(from, this._peerSocketBox, StringComparison.Ordinal)) this._peerSocketBox = null;
+					if (string.Equals(from, this._peerSocketBox, StringComparison.Ordinal))
+					{
+						this._peerAvailable = false;
+						this.SetState(WebSocketConnectionState.BridgeOnly, $"SUB connected; {from} unavailable");
+					}
 				}
 			}
 			if (TrafficEnabled)
-				LoggingService.Instance.Write(handled ? LogLevel.Debug : LogLevel.Warning, "VPP", "Handled", handled ? "VPP event handler completed." : "VPP event has no SHPC handler.", objectId: id, details: $"handler=HandleEventAsync;event={eventName};result={(handled ? "success" : "ignored")}");
-			if (expectsResponse) await this.SendResponseAsync(from, id, new { success = true }, cancellationToken).ConfigureAwait(false);
+				LoggingService.Instance.Write(handled ? LogLevel.Debug : LogLevel.Warning, "VPP", "Handled", handled ? "VPP event handler completed." : "VPP event has no SHPC handler.", objectId: id, details: $"handler=HandleEventAsync;event={eventName};result={(handled ? "success" : "unknown-event")}");
+			if (!expectsResponse) return;
+			if (handled) await this.SendResponseAsync(from, id, new { success = true }, cancellationToken).ConfigureAwait(false);
+			else await this.SendErrorAsync(from, id, "UNKNOWN_METHOD", $"Unknown VPP event '{eventName ?? string.Empty}'.", null, cancellationToken).ConfigureAwait(false);
 		}
 
 		private void StartHeartbeat()
@@ -525,10 +537,9 @@ namespace SylphyHorn.Services
 				while (!cancellationToken.IsCancellationRequested)
 				{
 					await Task.Delay(Math.Max(5000, this._heartbeatIntervalMs), cancellationToken).ConfigureAwait(false);
-					if (DateTimeOffset.UtcNow - this._lastActivity < TimeSpan.FromMilliseconds(this._heartbeatIntervalMs)) continue;
+					if (this._peerAvailable && DateTimeOffset.UtcNow - this._lastPeerActivity < TimeSpan.FromMilliseconds(this._heartbeatIntervalMs)) continue;
 					var ping = await this.SendServerCallAsync("ping", new { }, TimeSpan.FromMilliseconds(HeartbeatGraceMs), cancellationToken).ConfigureAwait(false);
 					this.ApplyHeartbeatPolicy(ping);
-					this._lastActivity = DateTimeOffset.UtcNow;
 				}
 			}
 			catch (OperationCanceledException) { }
@@ -551,13 +562,25 @@ namespace SylphyHorn.Services
 
 		private void ApplyHeartbeatPolicy(JsonElement response)
 		{
-			if (!TryGetResult(response, out var result) || !result.TryGetProperty("heartbeat", out var heartbeat) || heartbeat.ValueKind != JsonValueKind.Object)
+			if (!VppHeartbeatParser.TryParse(response, this._peerSocketBox, out var snapshot, out var error))
 			{
-				if (TrafficEnabled) LoggingService.Instance.Write(LogLevel.Warning, "VPP", "PingFailed", "Heartbeat response did not contain a valid heartbeat object.", details: $"Reason=invalid response\nJSON:\n{response.GetRawText()}");
-				return;
+				LoggingService.Instance.Write(LogLevel.Warning, "VPP", "PingFailed", "Heartbeat response is not valid for the current VPP contract.", details: $"Reason=invalid response: {error}\nJSON:\n{response.GetRawText()}");
+				throw new InvalidOperationException($"Invalid VPP ping response: {error}");
 			}
-			var interval = TryReadInt(heartbeat, "intervalMs");
-			if (interval >= 5000 && interval <= 3600000) this._heartbeatIntervalMs = interval;
+			this._heartbeatIntervalMs = snapshot.IntervalMs;
+			if (snapshot.PeerConnected.HasValue)
+			{
+				this._peerAvailable = snapshot.PeerConnected.Value;
+				this.SetState(snapshot.PeerConnected.Value ? WebSocketConnectionState.Connected : WebSocketConnectionState.BridgeOnly,
+					snapshot.PeerConnected.Value ? $"Connected to {this._peerSocketBox}" : $"SUB connected; {this._peerSocketBox} unavailable");
+			}
+			else
+			{
+				this._peerAvailable = false;
+				this.SetState(WebSocketConnectionState.BridgeOnly, "SUB connected; waiting for peer");
+			}
+			if (TrafficEnabled)
+				LoggingService.Instance.Write(LogLevel.Debug, "VPP", "HeartbeatState", "Applied SUB ping state.", details: $"intervalMs={snapshot.IntervalMs};peerSocketBox={this._peerSocketBox ?? string.Empty};peerConnected={(snapshot.PeerConnected.HasValue ? snapshot.PeerConnected.Value.ToString() : "unknown")}");
 		}
 
 		private void HandleTransportEnded(string serverReason, string trigger)
@@ -684,7 +707,7 @@ namespace SylphyHorn.Services
 
 		private void OnDesktopStateChanged(object sender, DesktopSystemStateChangedEventArgs e)
 		{
-			if (this._state != WebSocketConnectionState.Connected || this._lifetimeCts == null || string.IsNullOrWhiteSpace(this._peerSocketBox)) return;
+			if (!this.IsConnected || this._lifetimeCts == null || string.IsNullOrWhiteSpace(this._peerSocketBox)) return;
 			_ = this.SendDesktopStateEventSafeAsync(e.State, this._lifetimeCts.Token);
 		}
 
@@ -698,7 +721,7 @@ namespace SylphyHorn.Services
 		private Task SendDesktopStateEventAsync(DesktopSystemState state, CancellationToken cancellationToken)
 		{
 			var peer = this._peerSocketBox;
-			return string.IsNullOrWhiteSpace(peer) ? Task.CompletedTask : this.SendEventAsync("desktopStateChanged", this._desktopAdapter.CreateStateEventArgs(state), peer, false, cancellationToken);
+			return string.IsNullOrWhiteSpace(peer) || !this._peerAvailable ? Task.CompletedTask : this.SendEventAsync("desktopStateChanged", this._desktopAdapter.CreateStateEventArgs(state), peer, false, cancellationToken);
 		}
 
 		private Task SendResponseAsync(string recipient, string correlationId, object result, CancellationToken cancellationToken)
@@ -777,6 +800,8 @@ namespace SylphyHorn.Services
 				if (!message.TryGetProperty(name, out var value)) { error = $"missing field {name}"; return false; }
 				if (value.ValueKind != JsonValueKind.String || string.IsNullOrWhiteSpace(value.GetString())) { error = $"invalid field {name}"; return false; }
 			}
+			var type = message.GetProperty("type").GetString();
+			if (!new[] { "call", "event", "progress", "response", "error" }.Contains(type, StringComparer.Ordinal)) { error = $"unsupported message type {type}"; return false; }
 			if (!message.TryGetProperty("source", out var source)) { error = "missing field source"; return false; }
 			if (source.ValueKind != JsonValueKind.Object) { error = "invalid source; expected object"; return false; }
 			return true;
@@ -787,7 +812,7 @@ namespace SylphyHorn.Services
 			if (string.IsNullOrWhiteSpace(address)) { error = "IP is required."; return false; }
 			if (port < 1 || port > 65535) { error = "Socket port must be between 1 and 65535."; return false; }
 			if (string.IsNullOrWhiteSpace(socketBox)) { error = "Socket box is required."; return false; }
-			if (socketBox.Trim().Contains("/") || socketBox.Trim().Contains("?") || string.Equals(socketBox.Trim(), ServerSocketBox, StringComparison.OrdinalIgnoreCase)) { error = "Socket box contains an invalid reserved/path character or name."; return false; }
+			if (!SocketBoxRegex.IsMatch(socketBox.Trim()) || string.Equals(socketBox.Trim(), ServerSocketBox, StringComparison.OrdinalIgnoreCase)) { error = "Socket box must contain only letters, digits, underscore or hyphen and must not be the reserved name 'server'."; return false; }
 			if (string.IsNullOrWhiteSpace(apiKey) || !ApiKeyRegex.IsMatch(apiKey.Trim())) { error = "API KEY must contain exactly 64 hexadecimal characters."; return false; }
 			error = null; return true;
 		}
@@ -880,6 +905,7 @@ namespace SylphyHorn.Services
 			this._heartbeatTask = null;
 			this._socketBox = null;
 			this._peerSocketBox = null;
+			this._peerAvailable = false;
 		}
 
 		public static string ProtectApiKey(string value) { if (string.IsNullOrEmpty(value)) return null; return Dpapi.Protect(value); }
