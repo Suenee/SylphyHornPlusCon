@@ -301,6 +301,7 @@ namespace SylphyHorn.Services
 				this.SetState(WebSocketConnectionState.BridgeOnly, "SUB connected; waiting for peer");
 				DesktopControlService.Instance.SetEnabled(true);
 				LoggingService.Instance.Write(LogLevel.Info, "WEBSOCKET", "VppAdmitted", "VPP connection admitted by SUB; application peer has not yet been confirmed.", details: $"SocketBox={this._socketBox}");
+				await this.SendStartupStateSyncAsync(this._lifetimeCts.Token).ConfigureAwait(false);
 				var ping = await this.SendServerCallAsync("ping", new { }, TimeSpan.FromMilliseconds(HeartbeatGraceMs), this._lifetimeCts.Token).ConfigureAwait(false);
 				this.ApplyHeartbeatPolicy(ping);
 				this.StartHeartbeat();
@@ -718,6 +719,32 @@ namespace SylphyHorn.Services
 			catch (Exception ex) { LoggingService.Instance.Write(LogLevel.Warning, "VPP", "StateEventFailed", "Desktop state event could not be sent.", details: ex.ToString()); }
 		}
 
+		private async Task SendStartupStateSyncAsync(CancellationToken cancellationToken)
+		{
+			var id = Guid.CreateVersion7().ToString("D");
+			try
+			{
+				var state = DesktopControlService.Instance.GetState();
+				var args = this._desktopAdapter.CreateStateEventArgs(state);
+				var message = CreateEnvelope("event", null, id, new Dictionary<string, object>
+				{
+					["event"] = "desktopStateChanged",
+					["args"] = args,
+					["expectsResponse"] = false,
+				});
+				LoggingService.Instance.Write(LogLevel.Info, "VPP", "StartupStateSync", "Sending authoritative SHPC desktop state after VPP admission.", objectId: id, details: "Reason=VppAdmitted;Recipient=<omitted>;Routing=SUB");
+				await this.SendJsonAsync(message, cancellationToken).ConfigureAwait(false);
+			}
+			catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+			{
+				LoggingService.Instance.Write(LogLevel.Warning, "VPP", "StartupStateSyncFailed", "Startup desktop-state synchronization was cancelled.", objectId: id, details: "Reason=cancelled");
+			}
+			catch (Exception ex)
+			{
+				LoggingService.Instance.Write(LogLevel.Error, "VPP", "StartupStateSyncFailed", "Startup desktop-state synchronization failed.", objectId: id, details: $"Reason={ClassifyTransportException(ex)}{Environment.NewLine}{ex}");
+			}
+		}
+
 		private Task SendDesktopStateEventAsync(DesktopSystemState state, CancellationToken cancellationToken)
 		{
 			var peer = this._peerSocketBox;
@@ -731,14 +758,12 @@ namespace SylphyHorn.Services
 			=> this.SendJsonAsync(CreateEnvelope("error", recipient, Guid.CreateVersion7().ToString("D"), new Dictionary<string, object> { ["correlationId"] = correlationId, ["error"] = new { code = code ?? "COMMAND_FAILED", message = message ?? "The command failed.", details } }), cancellationToken);
 
 		private Task SendEventAsync(string eventName, object args, string recipient, bool expectsResponse, CancellationToken cancellationToken)
-		{
-			if (string.IsNullOrWhiteSpace(recipient)) return Task.CompletedTask;
-			return this.SendJsonAsync(CreateEnvelope("event", recipient, Guid.CreateVersion7().ToString("D"), new Dictionary<string, object> { ["event"] = eventName, ["args"] = args, ["expectsResponse"] = expectsResponse }), cancellationToken);
-		}
+			=> this.SendJsonAsync(CreateEnvelope("event", recipient, Guid.CreateVersion7().ToString("D"), new Dictionary<string, object> { ["event"] = eventName, ["args"] = args, ["expectsResponse"] = expectsResponse }), cancellationToken);
 
 		private Dictionary<string, object> CreateEnvelope(string type, string recipient, string id, IDictionary<string, object> extra)
 		{
-			var message = new Dictionary<string, object> { ["protocolVersion"] = VppVersion, ["id"] = id, ["type"] = type, ["from"] = this._socketBox, ["recipient"] = recipient };
+			var message = new Dictionary<string, object> { ["protocolVersion"] = VppVersion, ["id"] = id, ["type"] = type, ["from"] = this._socketBox };
+			if (!string.IsNullOrWhiteSpace(recipient)) message["recipient"] = recipient;
 			if (extra != null) foreach (var pair in extra) message[pair.Key] = pair.Value;
 			message["source"] = new { app = "SylphyHornPlusCon", version = AppVersion };
 			message["timestamp"] = DateTimeOffset.Now.ToString("O");
@@ -835,6 +860,7 @@ namespace SylphyHorn.Services
 		{
 			var from = TryReadString(message, "from");
 			var recipient = TryReadString(message, "recipient");
+			if (string.IsNullOrWhiteSpace(recipient)) recipient = "<omitted>";
 			var type = TryReadString(message, "type");
 			var method = TryReadString(message, "method");
 			var eventName = TryReadString(message, "event");
@@ -842,7 +868,7 @@ namespace SylphyHorn.Services
 			return $"{prefix} {from} → {recipient}; type={type}{operation}";
 		}
 		private static string DescribeEnvelopeFields(JsonElement message)
-			=> $"id={TryReadString(message, "id")};correlationId={TryReadString(message, "correlationId")};from={TryReadString(message, "from")};recipient={TryReadString(message, "recipient")};type={TryReadString(message, "type")};method={TryReadString(message, "method")};event={TryReadString(message, "event")}";
+			=> $"id={TryReadString(message, "id")};correlationId={TryReadString(message, "correlationId")};from={TryReadString(message, "from")};recipient={(string.IsNullOrWhiteSpace(TryReadString(message, "recipient")) ? "<omitted>" : TryReadString(message, "recipient"))};type={TryReadString(message, "type")};method={TryReadString(message, "method")};event={TryReadString(message, "event")}";
 		private static string ClassifyTransportException(Exception ex)
 		{
 			if (ex is OperationCanceledException) return "timeout/cancelled";
