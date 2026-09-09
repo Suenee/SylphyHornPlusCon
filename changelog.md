@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.47 - 09.09.2026
+
+- Aligned SHPC heartbeat handling with the current VPP v1 contract and current SUB implementation: an admitted WebSocket now immediately performs a server `ping`, validates `heartbeat.intervalMs` and Socket Box connection state, and keeps server health distinct from application-peer availability.
+- Added an explicit `BridgeOnly` state for the valid condition where SUB is healthy but the learned SUM/application peer is not currently available; WebSocket Settings shows this state in yellow while keeping Disconnect available.
+- Changed peer liveness tracking so only valid traffic from the learned opposite application Socket Box refreshes peer activity. Server responses no longer masquerade as application-peer proof of life.
+- Preserved dynamic peer discovery: SHPC still learns the peer Socket Box only from valid admitted application traffic and does not add a hard-coded SUM destination. The learned peer identity is retained while temporarily unavailable so subsequent SUB ping state can confirm when it returns.
+- Added VPP heartbeat parsing with regression tests for the current SUB `result.mailboxes` plus `result.heartbeat.intervalMs` response contract.
+- Added correlated `progress` handling without prematurely completing a pending VPP request, and changed response-requesting unknown events to return a correlated `UNKNOWN_METHOD` error instead of an unconditional success acknowledgement.
+- Tightened local Socket Box validation to the character set accepted by current SUB (`a-z`, `0-9`, `_`, `-`, case-insensitive) while continuing to reject the reserved `server` name.
+- Kept and extended the 0.46 VPP observability path used to diagnose the still-unresolved SHPC ↔ SUB ↔ SUM communication issue: `RxRaw`, `RxAccepted`, `RxRejected`, `Handled`, `Tx`, `PingTx`, `PingRx`, `HeartbeatState`, IDs/correlation IDs, and full JSON remain available through the App log when `VPP traffic` is enabled.
+- Continued to exclude API keys and authentication query parameters from application traffic diagnostics.
+
 ## 0.46 - 06.09.2026
 
 - Added opt-in detailed VPP/WebSocket traffic observability to the App log without changing the existing routing model: raw incoming packets, envelope acceptance/rejection, handler outcomes, outgoing packets, request correlation, and full VPP JSON payloads are now available for diagnostics.
