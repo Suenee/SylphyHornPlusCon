@@ -139,13 +139,14 @@ namespace SylphyHorn.UI
 		private void ApplyState(WebSocketConnectionState state, string message)
 		{
 			this._statusText.Text = string.IsNullOrWhiteSpace(message) ? state.ToString() : message;
-			this._connectButton.Content = state == WebSocketConnectionState.Connected ? "Disconnect" : state == WebSocketConnectionState.Negotiating ? "Cancel" : "Connect";
+			this._connectButton.Content = state == WebSocketConnectionState.Connected || state == WebSocketConnectionState.BridgeOnly ? "Disconnect" : state == WebSocketConnectionState.Negotiating ? "Cancel" : "Connect";
 			this._connectButton.IsEnabled = state != WebSocketConnectionState.Connecting;
 			switch (state)
 			{
 				case WebSocketConnectionState.Connected:
 					this._statusLight.Fill = new SolidColorBrush(Color.FromRgb(61, 190, 105));
 					break;
+				case WebSocketConnectionState.BridgeOnly:
 				case WebSocketConnectionState.Connecting:
 				case WebSocketConnectionState.Negotiating:
 					this._statusLight.Fill = new SolidColorBrush(Color.FromRgb(235, 184, 54));
