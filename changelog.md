@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.48 - 09.09.2026
+
+- Added authoritative startup state synchronization from SHPC to SUM after every successful VPP admission, including reconnect admissions.
+- SHPC now emits the existing `desktopStateChanged` snapshot immediately after `VppAdmitted`, using the same state payload as normal runtime desktop-state events.
+- The startup synchronization intentionally omits `recipient` so SUB resolves the destination from its Socket Box routing table; no SUM Socket Box name is hard-coded in SHPC or the manifest.
+- Added `StartupStateSync` and `StartupStateSyncFailed` diagnostics with the generated VPP message ID and concrete failure reason, while normal VPP traffic logging records the full outgoing JSON as `Tx`.
+- Updated VPP envelope creation so application messages may omit `recipient` when routing is delegated to SUB, while server calls continue to address `recipient: "server"` explicitly.
+- Preserved runtime peer learning from valid incoming application traffic; the startup synchronization establishes the first application-layer message without inventing a peer identity locally.
+
 ## 0.47 - 09.09.2026
 
 - Aligned SHPC heartbeat handling with the current VPP v1 contract and current SUB implementation: an admitted WebSocket now immediately performs a server `ping`, validates `heartbeat.intervalMs` and Socket Box connection state, and keeps server health distinct from application-peer availability.
