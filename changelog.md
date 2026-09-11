@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.49 - 11.09.2026
+
+- Established `manifest/sylphyhornpluscon.json` in the SylphyHornPlusCon repository as the authoritative SHPC manifest source.
+- Seeded the authoritative manifest from the current SUM copy so actions, variables, events, queue policies, and VPP metadata remain unchanged during the ownership move.
+- Defined SUM-side manifest synchronization as an external SUM responsibility; SHPC does not contain hard-coded paths, repository dependencies, or synchronization logic for `companion-module-voiceprompter`.
+
 ## 0.48 - 09.09.2026
 
 - Added authoritative startup state synchronization from SHPC to SUM after every successful VPP admission, including reconnect admissions.
@@ -352,7 +358,7 @@
 - Added `cls` at startup for both `install.cmd` and `upgrade.cmd`.
 - Added a transitional .NET 10 lock-file migration step using `dotnet restore --force-evaluate` after the removal of the legacy `net48` target.
 - Immediately verifies the regenerated dependency graph with a second `--locked-mode` restore.
-- Restores tracked `packages.lock.json` files after validation so install/upgrade do not leave the working tree dirty while the repository lock files are being migrated permanently.
+- Restores tracked `packages.lock.json` files after validation so install/upgrade do not leave the working tree dirty while the repository lock files are still being migrated permanently.
 
 ## 0.10 - 01.09.2026
 
