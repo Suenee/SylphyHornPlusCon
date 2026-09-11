@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.51 - 11.09.2026
+
+- Restored the SUM-compatible `desktopStateChanged` event payload after the 0.50 native `desktops` array caused current desktop variables to stop updating in the deployed SUM version.
+- Removed the unsupported `desktops` array argument, `dynamicCollections` declaration, and `Desktop: Activate by Select` action from the canonical SHPC manifest until SUM has implemented the generic dynamic-collection manifest feature.
+- Bumped the canonical SHPC manifest to 1.1.1 while preserving all previously working desktop variables, startup state synchronization, VPP v1 behavior, and `desktopsJson` diagnostics.
+- Kept the 0.50 active-desktop blue border and glow in the Desktops settings UI unchanged.
+
 ## 0.50 - 11.09.2026
 
 - Added a native authoritative `desktops` collection to every `desktopStateChanged` snapshot, including startup synchronization after VPP admission, so SUM can build runtime desktop choices without polling or decoding `desktopsJson`.
