@@ -2,7 +2,7 @@
   "manifestVersion": 1,
   "id": "sylphyhornpluscon",
   "name": "SylphyHornPlusCon",
-  "version": "1.1.0",
+  "version": "1.1.1",
   "description": "SylphyHornPlusCon virtual desktop control and state profile for Socket Universe Module.",
   "vppVersion": 1,
   "namespace": "shpc",
@@ -52,16 +52,6 @@
   "dynamicVariables": [],
   "settings": {},
   "memory": {},
-  "dynamicCollections": {
-    "desktops": {
-      "event": "desktopStateChanged",
-      "path": "desktops",
-      "item": {
-        "value": "cname",
-        "label": "title"
-      }
-    }
-  },
   "events": {
     "desktopStateChanged": {
       "operation": "mapArgsToVariables",
@@ -74,7 +64,6 @@
         "currentTitle": { "type": "string" },
         "currentPosition": { "type": "integer" },
         "desktopCount": { "type": "integer" },
-        "desktops": { "type": "array" },
         "desktopsJson": { "type": "string" }
       },
       "map": {
@@ -99,16 +88,6 @@
       "queue": { "policy": "replace", "key": "desktop.activate" },
       "options": [
         { "type": "textinput", "id": "cname", "label": "Desktop Name", "default": "", "useVariables": true, "multiline": false, "arg": "cname", "parse": "string" }
-      ]
-    },
-    "activate_desktop_select": {
-      "name": "Desktop: Activate by Select",
-      "operation": "call",
-      "method": "activateDesktop",
-      "expectsResponse": true,
-      "queue": { "policy": "replace", "key": "desktop.activate" },
-      "options": [
-        { "type": "dropdown", "id": "cname", "label": "Desktop", "default": "", "arg": "cname", "parse": "string", "choicesFrom": "desktops", "value": "cname", "labelFrom": "title" }
       ]
     },
     "activate_desktop_position": {
