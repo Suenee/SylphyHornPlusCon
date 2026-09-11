@@ -7,6 +7,7 @@ using System.Windows.Controls;
 using System.Windows.Data;
 using System.Windows.Input;
 using System.Windows.Media;
+using System.Windows.Media.Effects;
 using System.Windows.Media.Imaging;
 using SylphyHorn.Properties;
 using SylphyHorn.Serialization;
@@ -17,6 +18,9 @@ namespace SylphyHorn.UI
 {
 	internal sealed class DesktopSettingsView : UserControl, IDisposable
 	{
+		private static readonly Color NormalCardBorderColor = Color.FromRgb(63, 69, 79);
+		private static readonly Color ActiveCardBorderColor = Color.FromRgb(52, 150, 255);
+		private static readonly Color DragTargetBorderColor = Color.FromRgb(92, 169, 255);
 		private readonly WrapPanel _desktopStrip;
 		private readonly ISettingsDialogService _dialogs = new SettingsDialogService();
 		private readonly WallpaperPathToImageSourceConverter _wallpaperConverter = new WallpaperPathToImageSourceConverter();
@@ -62,7 +66,10 @@ namespace SylphyHorn.UI
 		}
 		private void DetachViewModel() { if (this._viewModel != null) this._viewModel.PropertyChanged -= this.OnViewModelPropertyChanged; this._viewModel = null; }
 		private void OnViewModelPropertyChanged(object sender, PropertyChangedEventArgs e)
-		{ if (string.IsNullOrEmpty(e.PropertyName) || e.PropertyName == nameof(SettingsWindowViewModel.Desktops)) this.RebuildDesktopStrip(); }
+		{
+			if (string.IsNullOrEmpty(e.PropertyName) || e.PropertyName == nameof(SettingsWindowViewModel.Desktops)) this.RebuildDesktopStrip();
+			else if (e.PropertyName == nameof(SettingsWindowViewModel.CurrentDesktop)) this.RefreshActiveDesktopStyles();
+		}
 
 		private void RebuildDesktopStrip()
 		{
@@ -76,7 +83,7 @@ namespace SylphyHorn.UI
 		{
 			var card = new Border
 			{
-				Width = 224, Background = new SolidColorBrush(Color.FromRgb(28, 32, 38)), BorderBrush = new SolidColorBrush(Color.FromRgb(63, 69, 79)),
+				Width = 224, Background = new SolidColorBrush(Color.FromRgb(28, 32, 38)), BorderBrush = new SolidColorBrush(NormalCardBorderColor),
 				BorderThickness = new Thickness(1), CornerRadius = new CornerRadius(7), Padding = new Thickness(9), Margin = new Thickness(0, 0, 12, 12),
 				VerticalAlignment = VerticalAlignment.Top, DataContext = desktop, Tag = desktop,
 			};
@@ -88,7 +95,34 @@ namespace SylphyHorn.UI
 			stack.Children.Add(this.CreateFieldLabel("Name", new Thickness(1, 8, 0, 3)));
 			stack.Children.Add(this.CreateTextBox(nameof(VirtualDesktopViewModel.CanonicalName), "Unique canonical name. Allowed: a-z, 0-9, hyphen and underscore. Comparison is case-insensitive."));
 			this.WireDesktopDrag(card, preview, desktop);
+			this.ApplyDesktopCardStyle(card, desktop);
 			return card;
+		}
+
+		private void RefreshActiveDesktopStyles()
+		{
+			foreach (UIElement child in this._desktopStrip.Children)
+			{
+				if (child is Border card && card.Tag is VirtualDesktopViewModel desktop && !ReferenceEquals(card, this._dragTargetCard)) this.ApplyDesktopCardStyle(card, desktop);
+			}
+		}
+
+		private void ApplyDesktopCardStyle(Border card, VirtualDesktopViewModel desktop)
+		{
+			if (card == null || desktop == null) return;
+			var active = this._viewModel?.CurrentDesktop?.Id == desktop.Id;
+			card.BorderBrush = new SolidColorBrush(active ? ActiveCardBorderColor : NormalCardBorderColor);
+			card.BorderThickness = active ? new Thickness(2) : new Thickness(1);
+			card.Effect = active
+				? new DropShadowEffect
+				{
+					Color = ActiveCardBorderColor,
+					BlurRadius = 14,
+					ShadowDepth = 0,
+					Opacity = 0.6,
+					RenderingBias = RenderingBias.Performance,
+				}
+				: null;
 		}
 
 		private FrameworkElement CreatePreview(VirtualDesktopViewModel desktop)
@@ -161,17 +195,25 @@ namespace SylphyHorn.UI
 			}
 			if (!ReferenceEquals(this._dragTargetCard, nearest))
 			{
-				if (this._dragTargetCard != null) this._dragTargetCard.BorderBrush = new SolidColorBrush(Color.FromRgb(63, 69, 79));
+				if (this._dragTargetCard?.Tag is VirtualDesktopViewModel previousDesktop) this.ApplyDesktopCardStyle(this._dragTargetCard, previousDesktop);
 				this._dragTargetCard = nearest;
-				if (this._dragTargetCard != null) this._dragTargetCard.BorderBrush = new SolidColorBrush(Color.FromRgb(92, 169, 255));
+				if (this._dragTargetCard != null)
+				{
+					this._dragTargetCard.BorderBrush = new SolidColorBrush(DragTargetBorderColor);
+					this._dragTargetCard.BorderThickness = new Thickness(2);
+				}
 			}
 			this._dragTargetIndex = targetIndex;
 		}
 
 		private void CancelDrag()
 		{
-			if (this._dragTargetCard != null) this._dragTargetCard.BorderBrush = new SolidColorBrush(Color.FromRgb(63, 69, 79));
-			if (this._dragCard != null) { this._dragCard.RenderTransform = Transform.Identity; this._dragCard.Opacity = 1; Panel.SetZIndex(this._dragCard, 0); }
+			if (this._dragTargetCard?.Tag is VirtualDesktopViewModel targetDesktop) this.ApplyDesktopCardStyle(this._dragTargetCard, targetDesktop);
+			if (this._dragCard != null)
+			{
+				this._dragCard.RenderTransform = Transform.Identity; this._dragCard.Opacity = 1; Panel.SetZIndex(this._dragCard, 0);
+				if (this._dragCard.Tag is VirtualDesktopViewModel dragDesktop) this.ApplyDesktopCardStyle(this._dragCard, dragDesktop);
+			}
 			this._dragTargetCard = null; this._dragCard = null; this._dragSource = null; this._dragTransform = null; this._dragTargetIndex = -1; this._dragMoved = false;
 		}
 
@@ -236,7 +278,7 @@ namespace SylphyHorn.UI
 			button.Click += (_, _) => this._viewModel?.CreateDesktop();
 			return new Border
 			{
-				Width = 224, Height = 249, Background = new SolidColorBrush(Color.FromRgb(28, 32, 38)), BorderBrush = new SolidColorBrush(Color.FromRgb(63, 69, 79)),
+				Width = 224, Height = 249, Background = new SolidColorBrush(Color.FromRgb(28, 32, 38)), BorderBrush = new SolidColorBrush(NormalCardBorderColor),
 				BorderThickness = new Thickness(1), CornerRadius = new CornerRadius(7), Padding = new Thickness(9), Margin = new Thickness(0, 0, 12, 12), VerticalAlignment = VerticalAlignment.Top, Child = button,
 			};
 		}
