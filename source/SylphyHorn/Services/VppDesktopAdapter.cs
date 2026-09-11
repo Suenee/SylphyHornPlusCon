@@ -72,7 +72,6 @@ namespace SylphyHorn.Services
 				currentTitle = current?.Title ?? string.Empty,
 				currentPosition = state.CurrentPosition,
 				desktopCount = state.Desktops.Count,
-				desktops = state.Desktops.Select(ToDesktopCollectionDto).ToArray(),
 				desktopsJson = JsonSerializer.Serialize(state.Desktops.Select(ToDesktopDto).ToArray()),
 			};
 		}
@@ -228,15 +227,6 @@ namespace SylphyHorn.Services
 				currentCName = state.CurrentCName ?? string.Empty,
 				currentPosition = state.CurrentPosition,
 				desktops = state.Desktops.Select(ToDesktopDto).ToArray(),
-			};
-
-		private static object ToDesktopCollectionDto(DesktopState state)
-			=> state == null ? null : new
-			{
-				id = state.Id.ToString("D"),
-				cname = state.CName ?? string.Empty,
-				title = state.Title ?? string.Empty,
-				position = state.Position,
 			};
 
 		private static object ToDesktopDto(DesktopState state)
