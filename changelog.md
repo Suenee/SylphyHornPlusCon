@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.50 - 11.09.2026
+
+- Added a native authoritative `desktops` collection to every `desktopStateChanged` snapshot, including startup synchronization after VPP admission, so SUM can build runtime desktop choices without polling or decoding `desktopsJson`.
+- Updated the canonical SHPC manifest to version 1.1.0 with a `desktops` dynamic collection and a new `Desktop: Activate by Select` Companion action that displays current desktop titles while sending stable canonical names.
+- Kept `desktopsJson` as the raw diagnostic/state variable while making the native collection the machine-readable source for dynamic UI choices.
+- Added a subtle blue border and glow around the currently active desktop card in Settings; the highlight follows `CurrentDesktop` changes and coexists with the existing drag-and-drop target highlight.
+
 ## 0.49 - 11.09.2026
 
 - Established `manifest/sylphyhornpluscon.json` in the SylphyHornPlusCon repository as the authoritative SHPC manifest source.
