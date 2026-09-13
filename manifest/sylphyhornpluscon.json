@@ -2,7 +2,7 @@
   "manifestVersion": 1,
   "id": "sylphyhornpluscon",
   "name": "SylphyHornPlusCon",
-  "version": "1.1.1",
+  "version": "1.1.2",
   "description": "SylphyHornPlusCon virtual desktop control and state profile for Socket Universe Module.",
   "vppVersion": 1,
   "namespace": "shpc",
@@ -52,6 +52,12 @@
   "dynamicVariables": [],
   "settings": {},
   "memory": {},
+  "startupCall": {
+    "method": "getDesktopState",
+    "args": {},
+    "expectsResponse": true,
+    "queue": { "policy": "replace", "key": "desktop.startupState" }
+  },
   "events": {
     "desktopStateChanged": {
       "operation": "mapArgsToVariables",
