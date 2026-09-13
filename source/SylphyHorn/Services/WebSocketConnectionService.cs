@@ -207,7 +207,7 @@ namespace SylphyHorn.Services
 				this._serverDisconnectReason = null;
 				var client = this._client;
 				var cts = this._lifetimeCts;
-				if (client != null && client.State == WebSocketState.Open && !string.IsNullOrWhiteSpace(this._peerSocketBox))
+				if (client != null && client.State == WebSocketState.Open && this._peerAvailable && !string.IsNullOrWhiteSpace(this._peerSocketBox))
 				{
 					try { await this.SendEventAsync("disconnecting", new { reason = "user" }, this._peerSocketBox, false, cts?.Token ?? CancellationToken.None).ConfigureAwait(false); }
 					catch (Exception ex) { LoggingService.Instance.Write(LogLevel.Warning, "VPP", "DisconnectingSendFailed", "Graceful VPP disconnect notification could not be sent.", details: ex.Message); }
@@ -300,10 +300,9 @@ namespace SylphyHorn.Services
 				this._peerAvailable = false;
 				this.SetState(WebSocketConnectionState.BridgeOnly, "SUB connected; waiting for peer");
 				DesktopControlService.Instance.SetEnabled(true);
-				LoggingService.Instance.Write(LogLevel.Info, "WEBSOCKET", "VppAdmitted", "VPP connection admitted by SUB; application peer has not yet been confirmed.", details: $"SocketBox={this._socketBox}");
-				await this.SendStartupStateSyncAsync(this._lifetimeCts.Token).ConfigureAwait(false);
+				LoggingService.Instance.Write(LogLevel.Info, "WEBSOCKET", "VppAdmitted", "VPP connection admitted by SUB; checking routing-scoped peer availability.", details: $"SocketBox={this._socketBox}");
 				var ping = await this.SendServerCallAsync("ping", new { }, TimeSpan.FromMilliseconds(HeartbeatGraceMs), this._lifetimeCts.Token).ConfigureAwait(false);
-				this.ApplyHeartbeatPolicy(ping);
+				await this.ApplyHeartbeatPolicyAsync(ping, this._lifetimeCts.Token).ConfigureAwait(false);
 				this.StartHeartbeat();
 				return ConnectionAttemptResult.Admitted;
 			}
@@ -432,18 +431,18 @@ namespace SylphyHorn.Services
 
 				var recipient = message.GetProperty("recipient").GetString();
 				var from = message.GetProperty("from").GetString();
-				var learnedPeer = false;
+				var peerBecameAvailable = false;
 				if (this.IsConnected && string.Equals(recipient, this._socketBox, StringComparison.Ordinal) && !string.Equals(from, ServerSocketBox, StringComparison.Ordinal))
 				{
 					this._lastPeerActivity = DateTimeOffset.UtcNow;
 					if (string.IsNullOrWhiteSpace(this._peerSocketBox) || !this._peerAvailable)
 					{
-						learnedPeer = !string.Equals(this._peerSocketBox, from, StringComparison.Ordinal);
+						peerBecameAvailable = !this._peerAvailable || !string.Equals(this._peerSocketBox, from, StringComparison.OrdinalIgnoreCase);
 						this._peerSocketBox = from;
 						this._peerAvailable = true;
 						this.SetState(WebSocketConnectionState.Connected, $"Connected to {from}");
 					}
-					else if (!string.Equals(this._peerSocketBox, from, StringComparison.Ordinal))
+					else if (!string.Equals(this._peerSocketBox, from, StringComparison.OrdinalIgnoreCase))
 					{
 						LoggingService.Instance.Write(LogLevel.Warning, "VPP", "PeerBindingPreserved", "Ignored an alternate peer for unsolicited state routing because the current learned peer is available.", details: $"BoundPeer={this._peerSocketBox};IncomingPeer={from}");
 					}
@@ -454,9 +453,9 @@ namespace SylphyHorn.Services
 				else if (TrafficEnabled)
 					LoggingService.Instance.Write(LogLevel.Warning, "VPP", "RxRejected", "VPP envelope is valid but this message type has no SHPC application handler.", objectId: id, details: $"Reason=unsupported handler type;Type={type}");
 
-				if (learnedPeer)
+				if (peerBecameAvailable)
 				{
-					LoggingService.Instance.Write(LogLevel.Info, "VPP", "PeerLearned", "Learned the runtime peer Socket Box from valid VPP traffic.", details: $"peerSocketBox={this._peerSocketBox}");
+					LoggingService.Instance.Write(LogLevel.Info, "VPP", "PeerAvailable", "Application peer became available through valid VPP traffic; publishing authoritative SHPC desktop state.", details: $"PeerSocketBox={this._peerSocketBox};Trigger=application-traffic");
 					await this.SendDesktopStateEventSafeAsync(DesktopControlService.Instance.GetState(), cancellationToken).ConfigureAwait(false);
 				}
 			}
@@ -511,7 +510,7 @@ namespace SylphyHorn.Services
 					if (!WebSocketReconnectPolicy.IsClientDisconnectReason(reason))
 						LoggingService.Instance.Write(LogLevel.Warning, "VPP", "PeerDisconnectReasonUnexpected", "Application peer sent an unrecognized client disconnect reason.", details: $"From={from};Reason={reason}");
 					LoggingService.Instance.Write(LogLevel.Info, "VPP", "PeerDisconnecting", "Application peer announced graceful disconnection.", details: $"From={from};Reason={reason}");
-					if (string.Equals(from, this._peerSocketBox, StringComparison.Ordinal))
+					if (string.Equals(from, this._peerSocketBox, StringComparison.OrdinalIgnoreCase))
 					{
 						this._peerAvailable = false;
 						this.SetState(WebSocketConnectionState.BridgeOnly, $"SUB connected; {from} unavailable");
@@ -540,7 +539,7 @@ namespace SylphyHorn.Services
 					await Task.Delay(Math.Max(5000, this._heartbeatIntervalMs), cancellationToken).ConfigureAwait(false);
 					if (this._peerAvailable && DateTimeOffset.UtcNow - this._lastPeerActivity < TimeSpan.FromMilliseconds(this._heartbeatIntervalMs)) continue;
 					var ping = await this.SendServerCallAsync("ping", new { }, TimeSpan.FromMilliseconds(HeartbeatGraceMs), cancellationToken).ConfigureAwait(false);
-					this.ApplyHeartbeatPolicy(ping);
+					await this.ApplyHeartbeatPolicyAsync(ping, cancellationToken).ConfigureAwait(false);
 				}
 			}
 			catch (OperationCanceledException) { }
@@ -561,27 +560,45 @@ namespace SylphyHorn.Services
 			}
 		}
 
-		private void ApplyHeartbeatPolicy(JsonElement response)
+		private async Task ApplyHeartbeatPolicyAsync(JsonElement response, CancellationToken cancellationToken)
 		{
 			if (!VppHeartbeatParser.TryParse(response, this._peerSocketBox, out var snapshot, out var error))
 			{
 				LoggingService.Instance.Write(LogLevel.Warning, "VPP", "PingFailed", "Heartbeat response is not valid for the current VPP contract.", details: $"Reason=invalid response: {error}\nJSON:\n{response.GetRawText()}");
 				throw new InvalidOperationException($"Invalid VPP ping response: {error}");
 			}
+
 			this._heartbeatIntervalMs = snapshot.IntervalMs;
-			if (snapshot.PeerConnected.HasValue)
+			var previousPeer = this._peerSocketBox;
+			var wasAvailable = this._peerAvailable;
+			if (!string.IsNullOrWhiteSpace(snapshot.PeerSocketBox)) this._peerSocketBox = snapshot.PeerSocketBox;
+			var peerChanged = !string.Equals(previousPeer, this._peerSocketBox, StringComparison.OrdinalIgnoreCase);
+
+			if (snapshot.PeerConnected.HasValue && !string.IsNullOrWhiteSpace(this._peerSocketBox))
 			{
 				this._peerAvailable = snapshot.PeerConnected.Value;
-				this.SetState(snapshot.PeerConnected.Value ? WebSocketConnectionState.Connected : WebSocketConnectionState.BridgeOnly,
-					snapshot.PeerConnected.Value ? $"Connected to {this._peerSocketBox}" : $"SUB connected; {this._peerSocketBox} unavailable");
+				this.SetState(this._peerAvailable ? WebSocketConnectionState.Connected : WebSocketConnectionState.BridgeOnly,
+					this._peerAvailable ? $"Connected to {this._peerSocketBox}" : $"SUB connected; {this._peerSocketBox} unavailable");
 			}
 			else
 			{
 				this._peerAvailable = false;
-				this.SetState(WebSocketConnectionState.BridgeOnly, "SUB connected; waiting for peer");
+				if (snapshot.RoutablePeerCount > 1)
+					this.SetState(WebSocketConnectionState.BridgeOnly, "SUB connected; multiple routable peers");
+				else if (snapshot.RoutablePeerCount == 0)
+					this.SetState(WebSocketConnectionState.BridgeOnly, "SUB connected; no routable peer");
+				else
+					this.SetState(WebSocketConnectionState.BridgeOnly, "SUB connected; waiting for peer");
 			}
+
 			if (TrafficEnabled)
-				LoggingService.Instance.Write(LogLevel.Debug, "VPP", "HeartbeatState", "Applied SUB ping state.", details: $"intervalMs={snapshot.IntervalMs};peerSocketBox={this._peerSocketBox ?? string.Empty};peerConnected={(snapshot.PeerConnected.HasValue ? snapshot.PeerConnected.Value.ToString() : "unknown")}");
+				LoggingService.Instance.Write(LogLevel.Debug, "VPP", "HeartbeatState", "Applied routing-scoped SUB ping state.", details: $"intervalMs={snapshot.IntervalMs};routablePeerCount={snapshot.RoutablePeerCount};peerSocketBox={this._peerSocketBox ?? string.Empty};peerConnected={(snapshot.PeerConnected.HasValue ? snapshot.PeerConnected.Value.ToString() : "unknown")}");
+
+			if (this._peerAvailable && (!wasAvailable || peerChanged))
+			{
+				LoggingService.Instance.Write(LogLevel.Info, "VPP", "PeerAvailable", "Routing-scoped SUB ping confirmed an available application peer; publishing authoritative SHPC desktop state.", details: $"PeerSocketBox={this._peerSocketBox};Trigger=heartbeat;PreviousPeer={previousPeer ?? string.Empty}");
+				await this.SendDesktopStateEventSafeAsync(DesktopControlService.Instance.GetState(), cancellationToken).ConfigureAwait(false);
+			}
 		}
 
 		private void HandleTransportEnded(string serverReason, string trigger)
@@ -717,32 +734,6 @@ namespace SylphyHorn.Services
 			try { await this.SendDesktopStateEventAsync(state, cancellationToken).ConfigureAwait(false); }
 			catch (OperationCanceledException) { }
 			catch (Exception ex) { LoggingService.Instance.Write(LogLevel.Warning, "VPP", "StateEventFailed", "Desktop state event could not be sent.", details: ex.ToString()); }
-		}
-
-		private async Task SendStartupStateSyncAsync(CancellationToken cancellationToken)
-		{
-			var id = Guid.CreateVersion7().ToString("D");
-			try
-			{
-				var state = DesktopControlService.Instance.GetState();
-				var args = this._desktopAdapter.CreateStateEventArgs(state);
-				var message = CreateEnvelope("event", null, id, new Dictionary<string, object>
-				{
-					["event"] = "desktopStateChanged",
-					["args"] = args,
-					["expectsResponse"] = false,
-				});
-				LoggingService.Instance.Write(LogLevel.Info, "VPP", "StartupStateSync", "Sending authoritative SHPC desktop state after VPP admission.", objectId: id, details: "Reason=VppAdmitted;Recipient=<omitted>;Routing=SUB");
-				await this.SendJsonAsync(message, cancellationToken).ConfigureAwait(false);
-			}
-			catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
-			{
-				LoggingService.Instance.Write(LogLevel.Warning, "VPP", "StartupStateSyncFailed", "Startup desktop-state synchronization was cancelled.", objectId: id, details: "Reason=cancelled");
-			}
-			catch (Exception ex)
-			{
-				LoggingService.Instance.Write(LogLevel.Error, "VPP", "StartupStateSyncFailed", "Startup desktop-state synchronization failed.", objectId: id, details: $"Reason={ClassifyTransportException(ex)}{Environment.NewLine}{ex}");
-			}
 		}
 
 		private Task SendDesktopStateEventAsync(DesktopSystemState state, CancellationToken cancellationToken)
