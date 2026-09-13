@@ -6,13 +6,13 @@
     <OutputType>WinExe</OutputType>
     <Title>SylphyHornPlus</Title>
     <Product>SylphyHornPlus</Product>
-    <Version>0.51.0</Version>
+    <Version>0.52.0</Version>
     <Authors>hwtnb</Authors>
     <Company>hwtnb.net</Company>
     <Copyright>Copyright © 2015 - 2018 Manato KAMEYA, 2021 - 2022 hwtnb</Copyright>
     <Description>Virtual Desktop Tools for Windows 11 and 10</Description>
     <AssemblyTitle>SylphyHornPlus</AssemblyTitle>
-    <AssemblyVersion>0.51.0.0</AssemblyVersion>
+    <AssemblyVersion>0.52.0.0</AssemblyVersion>
     <UseApplicationTrust>false</UseApplicationTrust>
     <UseWPF>true</UseWPF>
     <UseWindowsForms>true</UseWindowsForms>
@@ -190,13 +190,13 @@
       <DependentUpon>Application.xaml</DependentUpon>
     </Compile>
     <Compile Update="Properties\Resources.Designer.cs">
-      <AutoGen>True</AutoGen>
-      <DesignTime>True</DesignTime>
+      <AutoGen>true</AutoGen>
+      <DesignTime>true</DesignTime>
       <DependentUpon>Resources.resx</DependentUpon>
     </Compile>
     <Compile Update="Properties\Settings.Designer.cs">
       <DesignTimeSharedInput>true</DesignTimeSharedInput>
-      <AutoGen>True</AutoGen>
+      <AutoGen>true</AutoGen>
       <DependentUpon>Settings.settings</DependentUpon>
     </Compile>
     <Compile Remove="UI\TaskTrayTestWindow.xaml.cs" />
