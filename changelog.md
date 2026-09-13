@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.52 - 13.09.2026
+
+- Aligned SHPC peer availability with the current VPP v1 routing-scoped `ping` contract so SHPC can discover a single permitted Socket Box from SUB without hard-coding SUM or waiting for the first user command.
+- Changed VPP admission order so SHPC performs the immediate server `ping` before publishing authoritative desktop state; `desktopStateChanged` is now sent only after the routable peer is confirmed available.
+- Added automatic authoritative desktop-state re-publication whenever a known routable peer transitions from unavailable to available, including heartbeat-based recovery after SUM reconnect and valid application traffic received before or between heartbeats.
+- Kept `BridgeOnly` as the healthy-SUB / unavailable-peer state and preserved immediate graceful `disconnecting` handling; peer shutdown moves SHPC out of green immediately while hard failures continue to fall back to heartbeat and reconnect logic.
+- Prevented graceful SHPC shutdown from sending a stale `disconnecting` event to a peer already known to be offline.
+- Added routing-scoped heartbeat regression coverage for online and offline single peers, no permitted peer, multiple permitted peers, retained learned-peer selection, and malformed peer availability data.
+- Preserved SHPC as the sole authority for desktop runtime state and kept the SUM-compatible 0.51 `desktopStateChanged` payload unchanged; no dynamic desktop collection or SUM-initiated state discovery was reintroduced.
+
 ## 0.51 - 11.09.2026
 
 - Restored the SUM-compatible `desktopStateChanged` event payload after the 0.50 native `desktops` array caused current desktop variables to stop updating in the deployed SUM version.
