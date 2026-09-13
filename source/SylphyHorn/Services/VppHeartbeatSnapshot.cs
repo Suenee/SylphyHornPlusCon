@@ -5,14 +5,18 @@ namespace SylphyHorn.Services
 {
 	internal readonly struct VppHeartbeatSnapshot
 	{
-		internal VppHeartbeatSnapshot(int intervalMs, bool? peerConnected)
+		internal VppHeartbeatSnapshot(int intervalMs, string peerSocketBox, bool? peerConnected, int routablePeerCount)
 		{
 			this.IntervalMs = intervalMs;
+			this.PeerSocketBox = peerSocketBox;
 			this.PeerConnected = peerConnected;
+			this.RoutablePeerCount = routablePeerCount;
 		}
 
 		internal int IntervalMs { get; }
+		internal string PeerSocketBox { get; }
 		internal bool? PeerConnected { get; }
+		internal int RoutablePeerCount { get; }
 	}
 
 	internal static class VppHeartbeatParser
@@ -39,28 +43,43 @@ namespace SylphyHorn.Services
 				return false;
 			}
 
-			bool? peerConnected = null;
-			if (!string.IsNullOrWhiteSpace(peerSocketBox))
+			string selectedPeer = null;
+			bool? selectedConnected = null;
+			var routablePeerCount = 0;
+			string solePeer = null;
+			bool soleConnected = false;
+
+			foreach (var property in mailboxes.EnumerateObject())
 			{
-				JsonElement peer = default;
-				var found = false;
-				foreach (var property in mailboxes.EnumerateObject())
-				{
-					if (!string.Equals(property.Name, peerSocketBox, StringComparison.OrdinalIgnoreCase)) continue;
-					peer = property.Value;
-					found = true;
-					break;
-				}
-				if (!found || peer.ValueKind != JsonValueKind.Object || !peer.TryGetProperty("connected", out var connected) ||
+				routablePeerCount++;
+				if (property.Value.ValueKind != JsonValueKind.Object || !property.Value.TryGetProperty("connected", out var connected) ||
 					(connected.ValueKind != JsonValueKind.True && connected.ValueKind != JsonValueKind.False))
 				{
-					error = $"missing or invalid mailbox state for peer '{peerSocketBox}'";
+					error = $"missing or invalid mailbox state for routable peer '{property.Name}'";
 					return false;
 				}
-				peerConnected = connected.GetBoolean();
+
+				var isConnected = connected.GetBoolean();
+				if (routablePeerCount == 1)
+				{
+					solePeer = property.Name;
+					soleConnected = isConnected;
+				}
+
+				if (!string.IsNullOrWhiteSpace(peerSocketBox) && string.Equals(property.Name, peerSocketBox, StringComparison.OrdinalIgnoreCase))
+				{
+					selectedPeer = property.Name;
+					selectedConnected = isConnected;
+				}
 			}
 
-			snapshot = new VppHeartbeatSnapshot(intervalMs, peerConnected);
+			if (selectedPeer == null && routablePeerCount == 1)
+			{
+				selectedPeer = solePeer;
+				selectedConnected = soleConnected;
+			}
+
+			snapshot = new VppHeartbeatSnapshot(intervalMs, selectedPeer, selectedConnected, routablePeerCount);
 			return true;
 		}
 	}
