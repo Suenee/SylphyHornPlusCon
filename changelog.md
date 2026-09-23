@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.53 - 23.09.2026
+
+- Restored the native authoritative `desktops` array in every `desktopStateChanged` snapshot while preserving `desktopsJson` as the existing diagnostic Companion variable.
+- Updated the canonical SHPC manifest to 1.2.0 with the generic `desktops` dynamic collection, using stable `cname` values and user-visible `title` labels.
+- Changed `Desktop: Activate by Name` into `Desktop: Activate by Select`, backed by `choicesFrom: desktops`, so Companion can build its desktop dropdown from the authoritative runtime snapshot.
+- Kept startup/reconnect state publication on the existing SHPC 0.52 usable-peer lifecycle; the same complete snapshot is also emitted through normal desktop state-change events.
+- The native collection and `desktopsJson` are now generated from the same DTO snapshot to keep both representations consistent.
+
 ## 0.52 - 13.09.2026
 
 - Aligned SHPC peer availability with the current VPP v1 routing-scoped `ping` contract so SHPC can discover a single permitted Socket Box from SUB without hard-coding SUM or waiting for the first user command.
