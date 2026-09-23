@@ -2,7 +2,7 @@
   "manifestVersion": 1,
   "id": "sylphyhornpluscon",
   "name": "SylphyHornPlusCon",
-  "version": "1.1.1",
+  "version": "1.2.0",
   "description": "SylphyHornPlusCon virtual desktop control and state profile for Socket Universe Module.",
   "vppVersion": 1,
   "namespace": "shpc",
@@ -10,44 +10,188 @@
   "peerLabel": "SylphyHornPlusCon",
   "configFields": [],
   "variables": [
-    { "id": "connected", "name": "SUB connected (1/0)", "role": "serverConnected" },
-    { "id": "shpc_connected", "name": "SylphyHornPlusCon mailbox connected (1/0)", "role": "peerConnected" },
-    { "id": "connection_state", "name": "Connection state", "role": "connectionState" },
-    { "id": "diagnostic_level", "name": "Diagnostic level (green/yellow/red/gray)", "role": "diagnosticLevel" },
-    { "id": "diagnostic_status", "name": "Diagnostic overall status", "role": "diagnosticStatus" },
-    { "id": "diagnostic_sub", "name": "Diagnostic SUB status", "role": "diagnosticServer" },
-    { "id": "diagnostic_shpc", "name": "Diagnostic SylphyHornPlusCon status", "role": "diagnosticPeer" },
-    { "id": "diagnostic_reason", "name": "Diagnostic reason", "role": "diagnosticReason" },
-    { "id": "heartbeat_interval_ms", "name": "Heartbeat interval ms", "role": "heartbeatInterval" },
-    { "id": "protocol_version", "name": "Protocol version", "role": "protocolVersion" },
-    { "id": "id", "name": "Message ID", "role": "messageId" },
-    { "id": "correlation_id", "name": "Correlation ID", "role": "correlationId" },
-    { "id": "type", "name": "Message type", "role": "messageType" },
-    { "id": "from", "name": "From mailbox", "role": "from" },
-    { "id": "recipient", "name": "Recipient mailbox", "role": "recipient" },
-    { "id": "method", "name": "Call method", "role": "method" },
-    { "id": "event", "name": "Event name", "role": "event" },
-    { "id": "data", "name": "Data JSON", "role": "data" },
-    { "id": "result", "name": "Result JSON", "role": "result" },
-    { "id": "error_code", "name": "Error code", "role": "errorCode" },
-    { "id": "error_message", "name": "Error message", "role": "errorMessage" },
-    { "id": "error_details", "name": "Error details JSON", "role": "errorDetails" },
-    { "id": "source_app", "name": "Source application", "role": "sourceApp" },
-    { "id": "source_version", "name": "Source application version", "role": "sourceVersion" },
-    { "id": "source_instance", "name": "Source instance", "role": "sourceInstance" },
-    { "id": "timestamp", "name": "Protocol timestamp", "role": "timestamp" },
-    { "id": "payload", "name": "Complete JSON payload", "role": "payload" },
-    { "id": "last_received", "name": "Local receive timestamp", "role": "lastReceived" },
-    { "id": "last_sent", "name": "Local send timestamp", "role": "lastSent" },
-    { "id": "protocol_error", "name": "Last VPP validation error", "role": "protocolError" },
-    { "id": "control_enabled", "name": "SHPC remote control enabled" },
-    { "id": "individual_wallpapers", "name": "Individual wallpapers enabled" },
-    { "id": "current_desktop_id", "name": "Current desktop GUID" },
-    { "id": "current_cname", "name": "Current desktop canonical name" },
-    { "id": "current_title", "name": "Current desktop title" },
-    { "id": "current_position", "name": "Current desktop position" },
-    { "id": "desktop_count", "name": "Desktop count" },
-    { "id": "desktops_json", "name": "Desktop state list JSON" }
+    {
+      "id": "connected",
+      "name": "SUB connected (1/0)",
+      "role": "serverConnected"
+    },
+    {
+      "id": "shpc_connected",
+      "name": "SylphyHornPlusCon mailbox connected (1/0)",
+      "role": "peerConnected"
+    },
+    {
+      "id": "connection_state",
+      "name": "Connection state",
+      "role": "connectionState"
+    },
+    {
+      "id": "diagnostic_level",
+      "name": "Diagnostic level (green/yellow/red/gray)",
+      "role": "diagnosticLevel"
+    },
+    {
+      "id": "diagnostic_status",
+      "name": "Diagnostic overall status",
+      "role": "diagnosticStatus"
+    },
+    {
+      "id": "diagnostic_sub",
+      "name": "Diagnostic SUB status",
+      "role": "diagnosticServer"
+    },
+    {
+      "id": "diagnostic_shpc",
+      "name": "Diagnostic SylphyHornPlusCon status",
+      "role": "diagnosticPeer"
+    },
+    {
+      "id": "diagnostic_reason",
+      "name": "Diagnostic reason",
+      "role": "diagnosticReason"
+    },
+    {
+      "id": "heartbeat_interval_ms",
+      "name": "Heartbeat interval ms",
+      "role": "heartbeatInterval"
+    },
+    {
+      "id": "protocol_version",
+      "name": "Protocol version",
+      "role": "protocolVersion"
+    },
+    {
+      "id": "id",
+      "name": "Message ID",
+      "role": "messageId"
+    },
+    {
+      "id": "correlation_id",
+      "name": "Correlation ID",
+      "role": "correlationId"
+    },
+    {
+      "id": "type",
+      "name": "Message type",
+      "role": "messageType"
+    },
+    {
+      "id": "from",
+      "name": "From mailbox",
+      "role": "from"
+    },
+    {
+      "id": "recipient",
+      "name": "Recipient mailbox",
+      "role": "recipient"
+    },
+    {
+      "id": "method",
+      "name": "Call method",
+      "role": "method"
+    },
+    {
+      "id": "event",
+      "name": "Event name",
+      "role": "event"
+    },
+    {
+      "id": "data",
+      "name": "Data JSON",
+      "role": "data"
+    },
+    {
+      "id": "result",
+      "name": "Result JSON",
+      "role": "result"
+    },
+    {
+      "id": "error_code",
+      "name": "Error code",
+      "role": "errorCode"
+    },
+    {
+      "id": "error_message",
+      "name": "Error message",
+      "role": "errorMessage"
+    },
+    {
+      "id": "error_details",
+      "name": "Error details JSON",
+      "role": "errorDetails"
+    },
+    {
+      "id": "source_app",
+      "name": "Source application",
+      "role": "sourceApp"
+    },
+    {
+      "id": "source_version",
+      "name": "Source application version",
+      "role": "sourceVersion"
+    },
+    {
+      "id": "source_instance",
+      "name": "Source instance",
+      "role": "sourceInstance"
+    },
+    {
+      "id": "timestamp",
+      "name": "Protocol timestamp",
+      "role": "timestamp"
+    },
+    {
+      "id": "payload",
+      "name": "Complete JSON payload",
+      "role": "payload"
+    },
+    {
+      "id": "last_received",
+      "name": "Local receive timestamp",
+      "role": "lastReceived"
+    },
+    {
+      "id": "last_sent",
+      "name": "Local send timestamp",
+      "role": "lastSent"
+    },
+    {
+      "id": "protocol_error",
+      "name": "Last VPP validation error",
+      "role": "protocolError"
+    },
+    {
+      "id": "control_enabled",
+      "name": "SHPC remote control enabled"
+    },
+    {
+      "id": "individual_wallpapers",
+      "name": "Individual wallpapers enabled"
+    },
+    {
+      "id": "current_desktop_id",
+      "name": "Current desktop GUID"
+    },
+    {
+      "id": "current_cname",
+      "name": "Current desktop canonical name"
+    },
+    {
+      "id": "current_title",
+      "name": "Current desktop title"
+    },
+    {
+      "id": "current_position",
+      "name": "Current desktop position"
+    },
+    {
+      "id": "desktop_count",
+      "name": "Desktop count"
+    },
+    {
+      "id": "desktops_json",
+      "name": "Desktop state list JSON"
+    }
   ],
   "dynamicVariables": [],
   "settings": {},
@@ -57,14 +201,33 @@
       "operation": "mapArgsToVariables",
       "expectsResponse": false,
       "args": {
-        "enabled": { "type": "boolean" },
-        "individualWallpapersEnabled": { "type": "boolean" },
-        "currentDesktopId": { "type": "string" },
-        "currentCName": { "type": "string" },
-        "currentTitle": { "type": "string" },
-        "currentPosition": { "type": "integer" },
-        "desktopCount": { "type": "integer" },
-        "desktopsJson": { "type": "string" }
+        "enabled": {
+          "type": "boolean"
+        },
+        "individualWallpapersEnabled": {
+          "type": "boolean"
+        },
+        "currentDesktopId": {
+          "type": "string"
+        },
+        "currentCName": {
+          "type": "string"
+        },
+        "currentTitle": {
+          "type": "string"
+        },
+        "currentPosition": {
+          "type": "integer"
+        },
+        "desktopCount": {
+          "type": "integer"
+        },
+        "desktopsJson": {
+          "type": "string"
+        },
+        "desktops": {
+          "type": "array"
+        }
       },
       "map": {
         "enabled": "control_enabled",
@@ -81,13 +244,24 @@
   "replays": {},
   "actions": {
     "activate_desktop_cname": {
-      "name": "Desktop: Activate by Name",
+      "name": "Desktop: Activate by Select",
       "operation": "call",
       "method": "activateDesktop",
       "expectsResponse": true,
-      "queue": { "policy": "replace", "key": "desktop.activate" },
+      "queue": {
+        "policy": "replace",
+        "key": "desktop.activate"
+      },
       "options": [
-        { "type": "textinput", "id": "cname", "label": "Desktop Name", "default": "", "useVariables": true, "multiline": false, "arg": "cname", "parse": "string" }
+        {
+          "type": "dropdown",
+          "id": "cname",
+          "label": "Desktop",
+          "default": "",
+          "arg": "cname",
+          "parse": "string",
+          "choicesFrom": "desktops"
+        }
       ]
     },
     "activate_desktop_position": {
@@ -95,9 +269,21 @@
       "operation": "call",
       "method": "activateDesktop",
       "expectsResponse": true,
-      "queue": { "policy": "replace", "key": "desktop.activate" },
+      "queue": {
+        "policy": "replace",
+        "key": "desktop.activate"
+      },
       "options": [
-        { "type": "textinput", "id": "position", "label": "Position", "default": "1", "useVariables": true, "multiline": false, "arg": "position", "parse": "integer" }
+        {
+          "type": "textinput",
+          "id": "position",
+          "label": "Position",
+          "default": "1",
+          "useVariables": true,
+          "multiline": false,
+          "arg": "position",
+          "parse": "integer"
+        }
       ]
     },
     "add_desktop": {
@@ -105,9 +291,20 @@
       "operation": "call",
       "method": "addDesktop",
       "expectsResponse": true,
-      "queue": { "policy": "fifo" },
+      "queue": {
+        "policy": "fifo"
+      },
       "options": [
-        { "type": "textinput", "id": "position", "label": "Position (0 = end)", "default": "0", "useVariables": true, "multiline": false, "arg": "position", "parse": "integer" }
+        {
+          "type": "textinput",
+          "id": "position",
+          "label": "Position (0 = end)",
+          "default": "0",
+          "useVariables": true,
+          "multiline": false,
+          "arg": "position",
+          "parse": "integer"
+        }
       ]
     },
     "individual_wallpapers": {
@@ -115,9 +312,41 @@
       "operation": "call",
       "method": "setIndividualWallpapers",
       "expectsResponse": true,
-      "queueByOption": { "option": "state", "fifoValues": ["toggle"], "replaceKey": "desktop.individualWallpapers" },
+      "queueByOption": {
+        "option": "state",
+        "fifoValues": [
+          "toggle"
+        ],
+        "replaceKey": "desktop.individualWallpapers"
+      },
       "options": [
-        { "type": "dropdown", "id": "state", "label": "State", "default": "toggle", "arg": "state", "parse": "enum", "values": ["on", "off", "toggle"], "choices": [{ "id": "on", "label": "On" }, { "id": "off", "label": "Off" }, { "id": "toggle", "label": "Toggle" }] }
+        {
+          "type": "dropdown",
+          "id": "state",
+          "label": "State",
+          "default": "toggle",
+          "arg": "state",
+          "parse": "enum",
+          "values": [
+            "on",
+            "off",
+            "toggle"
+          ],
+          "choices": [
+            {
+              "id": "on",
+              "label": "On"
+            },
+            {
+              "id": "off",
+              "label": "Off"
+            },
+            {
+              "id": "toggle",
+              "label": "Toggle"
+            }
+          ]
+        }
       ]
     },
     "desktop_wallpaper_cname": {
@@ -125,10 +354,47 @@
       "operation": "call",
       "method": "setDesktopWallpaper",
       "expectsResponse": true,
-      "queue": { "policy": "fifo" },
+      "queue": {
+        "policy": "fifo"
+      },
       "options": [
-        { "type": "textinput", "id": "cname", "label": "Desktop Name", "default": "", "useVariables": true, "multiline": false, "arg": "cname", "parse": "string" },
-        { "type": "dropdown", "id": "state", "label": "State", "default": "toggle", "arg": "state", "parse": "enum", "values": ["on", "off", "toggle"], "choices": [{ "id": "on", "label": "On" }, { "id": "off", "label": "Off" }, { "id": "toggle", "label": "Toggle" }] }
+        {
+          "type": "textinput",
+          "id": "cname",
+          "label": "Desktop Name",
+          "default": "",
+          "useVariables": true,
+          "multiline": false,
+          "arg": "cname",
+          "parse": "string"
+        },
+        {
+          "type": "dropdown",
+          "id": "state",
+          "label": "State",
+          "default": "toggle",
+          "arg": "state",
+          "parse": "enum",
+          "values": [
+            "on",
+            "off",
+            "toggle"
+          ],
+          "choices": [
+            {
+              "id": "on",
+              "label": "On"
+            },
+            {
+              "id": "off",
+              "label": "Off"
+            },
+            {
+              "id": "toggle",
+              "label": "Toggle"
+            }
+          ]
+        }
       ]
     },
     "desktop_wallpaper_position": {
@@ -136,10 +402,47 @@
       "operation": "call",
       "method": "setDesktopWallpaper",
       "expectsResponse": true,
-      "queue": { "policy": "fifo" },
+      "queue": {
+        "policy": "fifo"
+      },
       "options": [
-        { "type": "textinput", "id": "position", "label": "Position", "default": "1", "useVariables": true, "multiline": false, "arg": "position", "parse": "integer" },
-        { "type": "dropdown", "id": "state", "label": "State", "default": "toggle", "arg": "state", "parse": "enum", "values": ["on", "off", "toggle"], "choices": [{ "id": "on", "label": "On" }, { "id": "off", "label": "Off" }, { "id": "toggle", "label": "Toggle" }] }
+        {
+          "type": "textinput",
+          "id": "position",
+          "label": "Position",
+          "default": "1",
+          "useVariables": true,
+          "multiline": false,
+          "arg": "position",
+          "parse": "integer"
+        },
+        {
+          "type": "dropdown",
+          "id": "state",
+          "label": "State",
+          "default": "toggle",
+          "arg": "state",
+          "parse": "enum",
+          "values": [
+            "on",
+            "off",
+            "toggle"
+          ],
+          "choices": [
+            {
+              "id": "on",
+              "label": "On"
+            },
+            {
+              "id": "off",
+              "label": "Off"
+            },
+            {
+              "id": "toggle",
+              "label": "Toggle"
+            }
+          ]
+        }
       ]
     },
     "get_desktop_state": {
@@ -147,7 +450,10 @@
       "operation": "call",
       "method": "getDesktopState",
       "expectsResponse": true,
-      "queue": { "policy": "replace", "key": "desktop.getState" },
+      "queue": {
+        "policy": "replace",
+        "key": "desktop.getState"
+      },
       "options": []
     },
     "get_desktop_cname": {
@@ -155,11 +461,33 @@
       "operation": "call",
       "method": "getDesktop",
       "expectsResponse": true,
-      "queue": { "policy": "replace", "keyTemplate": "desktop.get.{cname}" },
+      "queue": {
+        "policy": "replace",
+        "keyTemplate": "desktop.get.{cname}"
+      },
       "options": [
-        { "type": "textinput", "id": "cname", "label": "Desktop Name", "default": "", "useVariables": true, "multiline": false, "arg": "cname", "parse": "string" }
+        {
+          "type": "textinput",
+          "id": "cname",
+          "label": "Desktop Name",
+          "default": "",
+          "useVariables": true,
+          "multiline": false,
+          "arg": "cname",
+          "parse": "string"
+        }
       ]
     }
   },
-  "presets": []
+  "presets": [],
+  "dynamicCollections": {
+    "desktops": {
+      "event": "desktopStateChanged",
+      "path": "desktops",
+      "item": {
+        "value": "cname",
+        "label": "title"
+      }
+    }
+  }
 }
