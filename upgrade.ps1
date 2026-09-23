@@ -1,7 +1,7 @@
 $ErrorActionPreference = 'Stop'
 
-$Version = '0.32'
-$Revision = '0.32-network-submodule-safety'
+$Version = '0.33'
+$Revision = '0.33-network-submodule-safety-parser-fix'
 $Repo = $env:SHPC_UPGRADE_REPO
 $TargetBranch = $env:SHPC_UPGRADE_BRANCH
 $ExpectedRemote = 'https://github.com/Suenee/SylphyHornPlusCon.git'
@@ -350,35 +350,6 @@ catch {
     Write-Line ("STATUS: FAILED - phase=$FailPhase") Red
     Write-Line ("Log: $Log") Red
     exit 1
-}) 'REPOSITORY'
-    foreach ($line in ($lines -split '[\r\n]+' | Where-Object { $_ })) {
-        $parts = $line -split '\s+',2
-        if ($parts.Count -ne 2) { continue }
-        $relativePath = $parts[1].Trim()
-        $workTree = Join-Path $Repo $relativePath
-        if (-not (Test-Path -LiteralPath $workTree)) { continue }
-        Phase 'REPOSITORY' ("Validating network-safe submodule worktree: $relativePath")
-        $top = ''
-        $savedPreference = $ErrorActionPreference
-        $oldCount = $env:GIT_CONFIG_COUNT; $oldKey = $env:GIT_CONFIG_KEY_0; $oldValue = $env:GIT_CONFIG_VALUE_0
-        try {
-            $env:GIT_CONFIG_COUNT='1'; $env:GIT_CONFIG_KEY_0='safe.directory'; $env:GIT_CONFIG_VALUE_0=[IO.Path]::GetFullPath($workTree).TrimEnd('\\')
-            $ErrorActionPreference='Continue'
-            $top = (& git.exe -C $workTree rev-parse --show-toplevel 2>&1 | ForEach-Object { [string]$_ }) -join [Environment]::NewLine
-            $rc=$LASTEXITCODE
-        } finally {
-            $ErrorActionPreference=$savedPreference
-            if ($null -eq $oldCount) { Remove-Item Env:GIT_CONFIG_COUNT -ErrorAction SilentlyContinue } else { $env:GIT_CONFIG_COUNT=$oldCount }
-            if ($null -eq $oldKey) { Remove-Item Env:GIT_CONFIG_KEY_0 -ErrorAction SilentlyContinue } else { $env:GIT_CONFIG_KEY_0=$oldKey }
-            if ($null -eq $oldValue) { Remove-Item Env:GIT_CONFIG_VALUE_0 -ErrorAction SilentlyContinue } else { $env:GIT_CONFIG_VALUE_0=$oldValue }
-        }
-        $expected=[IO.Path]::GetFullPath($workTree).TrimEnd('\\')
-        if ($rc -eq 0 -and $top.Trim().TrimEnd('\\') -ieq $expected) { continue }
-        Warn ("Submodule '$relativePath' has invalid Git worktree metadata; rebuilding only its Git administrative link.")
-        Run-Native -Phase 'REPOSITORY' -Exe 'git.exe' -ArgumentList @('submodule','deinit','-f','--',$relativePath) -SuppressOutput | Out-Null
-        Run-Native -Phase 'REPOSITORY' -Exe 'git.exe' -ArgumentList @('submodule','update','--init','--force','--',$relativePath) | Out-Null
-    }
-}
 function Test-ProtectedTrackedDirty {
     $pathspec = @('.',':(exclude)upgrade.cmd',':(exclude)upgrade.ps1',':(exclude)run.cmd',':(exclude)source/SylphyHorn/packages.lock.json',':(exclude)source/SylphyHorn.Tests/packages.lock.json')
     $savedPreference = $ErrorActionPreference
