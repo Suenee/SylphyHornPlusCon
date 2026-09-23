@@ -63,6 +63,7 @@ namespace SylphyHorn.Services
 		{
 			state ??= this._desktopControl.GetState();
 			var current = state.Desktops.FirstOrDefault(item => item.IsCurrent);
+			var desktops = state.Desktops.Select(ToDesktopDto).ToArray();
 			return new
 			{
 				enabled = state.Enabled,
@@ -72,7 +73,8 @@ namespace SylphyHorn.Services
 				currentTitle = current?.Title ?? string.Empty,
 				currentPosition = state.CurrentPosition,
 				desktopCount = state.Desktops.Count,
-				desktopsJson = JsonSerializer.Serialize(state.Desktops.Select(ToDesktopDto).ToArray()),
+				desktops,
+				desktopsJson = JsonSerializer.Serialize(desktops),
 			};
 		}
 
