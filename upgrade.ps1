@@ -1,7 +1,7 @@
 $ErrorActionPreference = 'Stop'
 
 $Version = '0.32'
-$Revision = '0.32-submodule-aware-dirty-check'
+$Revision = '0.32-ignore-submodule-dirty-state'
 $Repo = $env:SHPC_UPGRADE_REPO
 $TargetBranch = $env:SHPC_UPGRADE_BRANCH
 $ExpectedRemote = 'https://github.com/Suenee/SylphyHornPlusCon.git'
@@ -90,8 +90,8 @@ function Test-TrackedPathDirty([string]$Path) {
     $savedPreference = $ErrorActionPreference
     try {
         $ErrorActionPreference = 'Continue'
-        & git.exe diff --quiet --ignore-submodules=untracked -- $Path; $worktreeDirty = ($LASTEXITCODE -ne 0)
-        & git.exe diff --cached --quiet --ignore-submodules=untracked -- $Path; $indexDirty = ($LASTEXITCODE -ne 0)
+        & git.exe diff --quiet --ignore-submodules -- $Path; $worktreeDirty = ($LASTEXITCODE -ne 0)
+        & git.exe diff --cached --quiet --ignore-submodules -- $Path; $indexDirty = ($LASTEXITCODE -ne 0)
     }
     finally { $ErrorActionPreference = $savedPreference }
     return ($worktreeDirty -or $indexDirty)
@@ -106,38 +106,13 @@ function Normalize-RetiredMaintenanceFiles {
         }
     }
 }
-function Test-VirtualDesktopSubmoduleDirty {
-    $path = 'source/VirtualDesktop'
-    $expected = Get-GitText @('rev-parse',('HEAD:' + $path)) 'SELF-UPDATE'
-    $workTree = Join-Path $Repo $path
-    if (-not (Test-Path -LiteralPath $workTree)) { return $false }
-    $savedPreference = $ErrorActionPreference
-    $oldCount = $env:GIT_CONFIG_COUNT; $oldKey = $env:GIT_CONFIG_KEY_0; $oldValue = $env:GIT_CONFIG_VALUE_0
-    try {
-        $env:GIT_CONFIG_COUNT = '1'; $env:GIT_CONFIG_KEY_0 = 'safe.directory'; $env:GIT_CONFIG_VALUE_0 = [IO.Path]::GetFullPath($workTree).TrimEnd('\')
-        $ErrorActionPreference = 'Continue'
-        $actual = (& git.exe -C $workTree rev-parse HEAD 2>$null | Select-Object -First 1); $headRc = $LASTEXITCODE
-        & git.exe -C $workTree diff --quiet --ignore-submodules=untracked; $worktreeRc = $LASTEXITCODE
-        & git.exe -C $workTree diff --cached --quiet --ignore-submodules=untracked; $indexRc = $LASTEXITCODE
-    } finally {
-        $ErrorActionPreference = $savedPreference
-        if ($null -eq $oldCount) { Remove-Item Env:GIT_CONFIG_COUNT -ErrorAction SilentlyContinue } else { $env:GIT_CONFIG_COUNT = $oldCount }
-        if ($null -eq $oldKey) { Remove-Item Env:GIT_CONFIG_KEY_0 -ErrorAction SilentlyContinue } else { $env:GIT_CONFIG_KEY_0 = $oldKey }
-        if ($null -eq $oldValue) { Remove-Item Env:GIT_CONFIG_VALUE_0 -ErrorAction SilentlyContinue } else { $env:GIT_CONFIG_VALUE_0 = $oldValue }
-    }
-    if ($headRc -ne 0) { Phase 'SELF-UPDATE' 'VirtualDesktop Git metadata is unusable; submodule synchronization will repair it.'; return $false }
-    if (([string]$actual).Trim() -ne $expected) { Warn 'VirtualDesktop is checked out at a different commit than the parent expects.'; return $true }
-    if ($worktreeRc -ne 0 -or $indexRc -ne 0) { Warn 'VirtualDesktop contains real tracked local changes.'; return $true }
-    Phase 'SELF-UPDATE' 'VirtualDesktop matches the parent gitlink and has no tracked local changes; parent submodule status is non-blocking.'
-    return $false
-}
 function Test-ProtectedTrackedDirty {
-    $pathspec = @('.',':(exclude)source/VirtualDesktop',':(exclude)upgrade.cmd',':(exclude)upgrade.ps1',':(exclude)run.cmd',':(exclude)source/SylphyHorn/packages.lock.json',':(exclude)source/SylphyHorn.Tests/packages.lock.json')
+    $pathspec = @('.',':(exclude)upgrade.cmd',':(exclude)upgrade.ps1',':(exclude)run.cmd',':(exclude)source/SylphyHorn/packages.lock.json',':(exclude)source/SylphyHorn.Tests/packages.lock.json')
     $savedPreference = $ErrorActionPreference
     try {
         $ErrorActionPreference = 'Continue'
-        & git.exe diff --quiet --ignore-submodules=untracked -- @pathspec; $worktreeDirty = ($LASTEXITCODE -ne 0)
-        & git.exe diff --cached --quiet --ignore-submodules=untracked -- @pathspec; $indexDirty = ($LASTEXITCODE -ne 0)
+        & git.exe diff --quiet --ignore-submodules -- @pathspec; $worktreeDirty = ($LASTEXITCODE -ne 0)
+        & git.exe diff --cached --quiet --ignore-submodules -- @pathspec; $indexDirty = ($LASTEXITCODE -ne 0)
     }
     finally { $ErrorActionPreference = $savedPreference }
     return ($worktreeDirty -or $indexDirty)
@@ -145,327 +120,12 @@ function Test-ProtectedTrackedDirty {
 function Show-ProtectedTrackedChanges {
     Info 'Tracked changes that block upgrade:'
     $savedPreference = $ErrorActionPreference
-    try { $ErrorActionPreference = 'Continue'; $lines = & git.exe status --short --untracked-files=no --ignore-submodules=untracked 2>&1; $rc = $LASTEXITCODE }
+    try { $ErrorActionPreference = 'Continue'; $lines = & git.exe status --short --untracked-files=no --ignore-submodules 2>&1; $rc = $LASTEXITCODE }
     finally { $ErrorActionPreference = $savedPreference }
     if ($rc -ne 0) { return }
     foreach ($line in $lines) {
         $text = [string]$line
-        if ($text -notmatch '^.. source/VirtualDesktop $text -notmatch '^.. upgrade\.ps1$' -and $text -notmatch '^.. run\.cmd$' -and $text -notmatch '^.. source/SylphyHorn/packages\.lock\.json$' -and $text -notmatch '^.. source/SylphyHorn\.Tests/packages\.lock\.json$') { Write-Line $text Yellow }
-    }
-}
-function Restore-TrackedLockFiles {
-    foreach ($path in @('source/SylphyHorn/packages.lock.json','source/SylphyHorn.Tests/packages.lock.json')) {
-        $savedPreference = $ErrorActionPreference
-        try { $ErrorActionPreference = 'Continue'; & git.exe ls-files --error-unmatch $path *> $null; $tracked = ($LASTEXITCODE -eq 0) }
-        finally { $ErrorActionPreference = $savedPreference }
-        if ($tracked) { Run-Native -Phase 'VERIFY' -Exe 'git.exe' -ArgumentList @('restore','--source=HEAD','--staged','--worktree','--',$path) -SuppressOutput | Out-Null }
-    }
-}
-function Remove-LegacyApplicationLog {
-    if ([string]::IsNullOrWhiteSpace($script:LegacyAppLog) -or -not (Test-Path -LiteralPath $script:LegacyAppLog)) { return }
-    try {
-        Remove-Item -LiteralPath $script:LegacyAppLog -Force
-        Phase 'MIGRATION' ("Removed retired application log: $($script:LegacyAppLog)")
-    }
-    catch { Warn ("Could not remove retired application log '$($script:LegacyAppLog)': $($_.Exception.Message)") }
-}
-function Read-RequiredSdkVersion {
-    $globalJson = Join-Path $Repo 'global.json'
-    if (-not (Test-Path -LiteralPath $globalJson)) { Fail 'DEPENDENCIES' 'global.json is missing.' }
-    try { $json = Get-Content -LiteralPath $globalJson -Raw | ConvertFrom-Json } catch { Fail 'DEPENDENCIES' ("Cannot parse global.json: $($_.Exception.Message)") }
-    $version = [string]$json.sdk.version
-    if ([string]::IsNullOrWhiteSpace($version)) { Fail 'DEPENDENCIES' 'global.json does not define sdk.version.' }
-    return $version.Trim()
-}
-function Read-ExpectedApplicationVersion {
-    if (-not (Test-Path -LiteralPath $AppProject)) { Fail 'VERIFY' 'SylphyHorn.csproj is missing.' }
-    try { [xml]$project = Get-Content -LiteralPath $AppProject -Raw } catch { Fail 'VERIFY' ("Cannot parse SylphyHorn.csproj: $($_.Exception.Message)") }
-    $raw = [string](($project.Project.PropertyGroup | ForEach-Object { $_.Version } | Where-Object { $_ } | Select-Object -First 1))
-    if ([string]::IsNullOrWhiteSpace($raw)) { Fail 'VERIFY' 'SylphyHorn.csproj does not define Version.' }
-    $parsed = $null
-    if (-not [Version]::TryParse($raw.Trim(), [ref]$parsed)) { Fail 'VERIFY' ("Invalid application Version in SylphyHorn.csproj: $raw") }
-    return ('{0}.{1}' -f $parsed.Major, $parsed.Minor)
-}
-function Read-BuiltApplicationVersion {
-    if (-not (Test-Path -LiteralPath $AppExe)) { Fail 'VERIFY' ("Built SylphyHorn executable is missing: $AppExe") }
-    try { $raw = [Diagnostics.FileVersionInfo]::GetVersionInfo($AppExe).ProductVersion } catch { Fail 'VERIFY' ("Cannot read built application version: $($_.Exception.Message)") }
-    if ([string]::IsNullOrWhiteSpace($raw)) { Fail 'VERIFY' 'Built SylphyHorn executable does not expose ProductVersion.' }
-    $match = [regex]::Match($raw, '^(\d+)\.(\d+)')
-    if (-not $match.Success) { Fail 'VERIFY' ("Cannot normalize built application ProductVersion: $raw") }
-    return ($match.Groups[1].Value + '.' + $match.Groups[2].Value)
-}
-function Ensure-DotNetSdk([string]$RequiredVersion) {
-    $dotnet = Get-Command dotnet.exe -ErrorAction SilentlyContinue
-    if ($dotnet) {
-        $savedPreference = $ErrorActionPreference
-        try { $ErrorActionPreference = 'Continue'; $sdks = & $dotnet.Source --list-sdks 2>&1; $rc = $LASTEXITCODE } finally { $ErrorActionPreference = $savedPreference }
-        if ($rc -eq 0 -and ($sdks | Where-Object { ([string]$_) -match ('^' + [regex]::Escape($RequiredVersion) + '\s+\[') })) { return $dotnet.Source }
-    }
-    $winget = Get-Command winget.exe -ErrorAction SilentlyContinue
-    if (-not $winget) { Fail 'DEPENDENCIES' (".NET SDK $RequiredVersion is missing and WinGet was not found.") }
-    Phase 'DEPENDENCIES' ("Installing Microsoft.DotNet.SDK.10 $RequiredVersion with WinGet...")
-    Run-Native -Phase 'DEPENDENCIES' -Exe $winget.Source -ArgumentList @('install','--id','Microsoft.DotNet.SDK.10','--exact','--version',$RequiredVersion,'--accept-package-agreements','--accept-source-agreements','--silent') | Out-Null
-    $candidate = Join-Path $env:ProgramFiles 'dotnet\dotnet.exe'
-    if (Test-Path -LiteralPath $candidate) { $dotnetPath = $candidate } else { $dotnet = Get-Command dotnet.exe -ErrorAction SilentlyContinue; if (-not $dotnet) { Fail 'DEPENDENCIES' 'dotnet.exe is still unavailable after WinGet installation.' }; $dotnetPath = $dotnet.Source }
-    $savedPreference = $ErrorActionPreference
-    try { $ErrorActionPreference = 'Continue'; $sdks = & $dotnetPath --list-sdks 2>&1; $rc = $LASTEXITCODE } finally { $ErrorActionPreference = $savedPreference }
-    if ($rc -ne 0 -or -not ($sdks | Where-Object { ([string]$_) -match ('^' + [regex]::Escape($RequiredVersion) + '\s+\[') })) { Fail 'DEPENDENCIES' ("Required .NET SDK $RequiredVersion is still unavailable after installation.") }
-    return $dotnetPath
-}
-function Get-SylphyHornProcesses {
-    if (-not (Test-Path -LiteralPath $script:AppExe)) { return @() }
-    $target = [IO.Path]::GetFullPath($script:AppExe)
-    return @(Get-Process -ErrorAction SilentlyContinue | Where-Object { try { $_.Path -and ([IO.Path]::GetFullPath($_.Path) -ieq $target) } catch { $false } })
-}
-function Test-SylphyHornRunning { return ((Get-SylphyHornProcesses).Count -gt 0) }
-function Stop-SylphyHorn {
-    $running = @(Get-SylphyHornProcesses); if ($running.Count -eq 0) { return }
-    Phase 'STOP-RUNTIME' ("Requesting graceful shutdown of SylphyHorn PID(s): " + (($running | ForEach-Object { $_.Id }) -join ', '))
-    foreach ($proc in $running) { try { [void]$proc.CloseMainWindow() } catch { } }
-    $deadline = [DateTime]::UtcNow.AddSeconds(15)
-    while ((Test-SylphyHornRunning) -and [DateTime]::UtcNow -lt $deadline) { Start-Sleep -Milliseconds 250 }
-    if (Test-SylphyHornRunning) {
-        Warn 'SylphyHorn did not exit within 15 seconds; forcing project-owned process termination before upgrade.'
-        Get-SylphyHornProcesses | Stop-Process -Force -ErrorAction SilentlyContinue
-        $deadline = [DateTime]::UtcNow.AddSeconds(5); while ((Test-SylphyHornRunning) -and [DateTime]::UtcNow -lt $deadline) { Start-Sleep -Milliseconds 250 }
-        if (Test-SylphyHornRunning) { Fail 'STOP-RUNTIME' 'SylphyHorn is still running and could keep build artifacts locked.' }
-    }
-}
-function Restore-SylphyHornRuntime([switch]$FailurePath) {
-    if (-not $script:AppWasRunning -or $script:RuntimeRestored) { return }
-    if (-not (Test-Path -LiteralPath $script:AppExe)) { if ($FailurePath) { Warn ("Previous SylphyHorn runtime cannot be restored because executable is missing: $($script:AppExe)") } else { Fail 'RESTART' ("Built SylphyHorn executable is missing: $($script:AppExe)") }; return }
-    try {
-        Phase 'RESTART' 'Restoring SylphyHorn because it was running before upgrade...'
-        Start-Process -FilePath $script:AppExe -WorkingDirectory (Split-Path -Parent $script:AppExe) | Out-Null
-        Start-Sleep -Seconds 1
-        if (-not (Test-SylphyHornRunning)) { if ($FailurePath) { Warn 'SylphyHorn could not be restarted after the failed upgrade.' } else { Fail 'RESTART' 'SylphyHorn did not remain running after restart.' }; return }
-        $script:RuntimeRestored = $true; Phase 'RESTART' 'SylphyHorn restarted successfully.'
-    } catch { if ($FailurePath) { Warn ("SylphyHorn restart failed after upgrade failure: $($_.Exception.Message)") } else { Fail 'RESTART' ("SylphyHorn restart failed: $($_.Exception.Message)") } }
-}
-
-try {
-    Set-Location -LiteralPath $Repo
-    Info '============================================================'
-    Info 'SylphyHornPlusCon upgrade diagnostic log'
-    Info ("Version:    $Revision")
-    Info ('Started:    ' + [DateTime]::Now.ToString('dd.MM.yyyy HH:mm:ss.fff'))
-    Info ("Repository: $Repo")
-    Info ("Branch:     $TargetBranch")
-    $startingCommit = Get-GitText @('rev-parse','HEAD') 'SELF-UPDATE'; Info ("Commit:     $startingCommit")
-    Info 'Runner:     temporary origin/<branch> upgrade.ps1; upgrade.cmd is bootstrap launcher only'
-    Info '============================================================'
-    $FailPhase = 'STOP-RUNTIME'; $AppWasRunning = Test-SylphyHornRunning
-    if ($AppWasRunning) { Phase 'STOP-RUNTIME' 'SylphyHorn was running before upgrade.'; Stop-SylphyHorn } else { Phase 'STOP-RUNTIME' 'SylphyHorn was not running before upgrade.' }
-    $FailPhase = 'SELF-UPDATE'
-    if (-not (Get-Command git.exe -ErrorAction SilentlyContinue)) { Fail $FailPhase 'Git was not found in PATH.' }
-    Phase 'SELF-UPDATE' 'Fetching the authoritative target branch and verifying the current runner.'
-    Run-Native -Phase $FailPhase -Exe 'git.exe' -ArgumentList @('remote','set-url','origin',$ExpectedRemote) -SuppressOutput | Out-Null
-    Run-Native -Phase $FailPhase -Exe 'git.exe' -ArgumentList @('fetch','--prune','origin',$TargetBranch) | Out-Null
-    $currentBranch = Get-GitText @('branch','--show-current') $FailPhase
-    if ($currentBranch -ne $TargetBranch) { Fail $FailPhase ("Current branch '$currentBranch' does not match target branch '$TargetBranch'.") }
-    Normalize-RetiredMaintenanceFiles
-    if (Test-VirtualDesktopSubmoduleDirty) { Fail $FailPhase 'VirtualDesktop contains local tracked changes or a different checked-out commit. Preserve or revert those changes before upgrade.' }
-    if (Test-ProtectedTrackedDirty) { Show-ProtectedTrackedChanges; Fail $FailPhase 'Tracked local changes outside maintenance-owned launchers exist. Commit or revert them before upgrade.' }
-    $FailPhase = 'REPOSITORY'; Phase 'REPOSITORY' ("Synchronizing tracked tree to origin/$TargetBranch.")
-    Run-Native -Phase $FailPhase -Exe 'git.exe' -ArgumentList @('reset','--hard',"origin/$TargetBranch") | Out-Null
-    $head = Get-GitText @('rev-parse','HEAD') $FailPhase; $remoteHead = Get-GitText @('rev-parse',"origin/$TargetBranch") $FailPhase
-    if (-not $head -or -not $remoteHead -or $head -ne $remoteHead) { Fail $FailPhase ("Local HEAD does not match origin/$TargetBranch after synchronization.") }
-    $runnerHeadBlob = Get-GitText @('rev-parse','HEAD:upgrade.ps1') $FailPhase; $runnerRemoteBlob = Get-GitText @('rev-parse',"origin/$TargetBranch`:upgrade.ps1") $FailPhase
-    if ($runnerHeadBlob -ne $runnerRemoteBlob) { Fail $FailPhase 'Repository upgrade.ps1 does not match the authoritative remote runner.' }
-    Phase 'REPOSITORY' 'Authoritative temporary runner verified against the fetched branch.'; Phase 'REPOSITORY' ("Build commit: $head")
-    $FailPhase = 'MIGRATION'; Remove-LegacyApplicationLog
-    $FailPhase = 'REPOSITORY'; Phase 'REPOSITORY' 'Synchronizing Git submodules.'
-    Run-Native -Phase $FailPhase -Exe 'git.exe' -ArgumentList @('submodule','sync','--recursive') | Out-Null
-    Run-Native -Phase $FailPhase -Exe 'git.exe' -ArgumentList @('submodule','update','--init','--recursive','--force') | Out-Null
-    $FailPhase = 'DEPENDENCIES'; Phase 'DEPENDENCIES' 'Checking required .NET SDK.'; $requiredSdk = Read-RequiredSdkVersion; $dotnet = Ensure-DotNetSdk $requiredSdk; Phase 'DEPENDENCIES' (".NET SDK: $requiredSdk")
-    $FailPhase = 'RESTORE'; Phase 'RESTORE' 'Restoring .NET 10 projects.'
-    Run-Native -Phase $FailPhase -Exe $dotnet -ArgumentList @('restore','source\SylphyHorn\SylphyHorn.csproj',"-p:TargetFramework=$TargetFramework",'--force-evaluate') | Out-Null
-    Run-Native -Phase $FailPhase -Exe $dotnet -ArgumentList @('restore','source\SylphyHorn.Tests\SylphyHorn.Tests.csproj',"-p:TargetFramework=$TargetFramework",'--force-evaluate') | Out-Null
-    $FailPhase = 'BUILD'; Phase 'BUILD' 'Building Release x64 for .NET 10.'
-    Run-Native -Phase $FailPhase -Exe $dotnet -ArgumentList @('build','source\SylphyHorn\SylphyHorn.csproj','-c','Release','-f',$TargetFramework,'-p:Platform=x64','-p:RunSylphyHornPostBuild=false',("-p:SHPCBuildBranch=$TargetBranch"),'--no-restore') | Out-Null
-    $FailPhase = 'TEST'; Phase 'TEST' 'Running .NET 10 unit tests.'; $solutionDir = (Join-Path $Repo 'source') + '\'
-    Run-Native -Phase $FailPhase -Exe $dotnet -ArgumentList @('test','source\SylphyHorn.Tests\SylphyHorn.Tests.csproj','-c','Release','-f',$TargetFramework,'-p:Platform=x64','-p:RunSylphyHornPostBuild=false',("-p:SolutionDir=$solutionDir"),'--no-restore') | Out-Null
-    $FailPhase = 'VERIFY'; Phase 'VERIFY' 'Verifying application version and tracked tree.'
-    $expectedAppVersion = Read-ExpectedApplicationVersion; $builtAppVersion = Read-BuiltApplicationVersion
-    if ($builtAppVersion -ne $expectedAppVersion) { Fail $FailPhase ("Built application version $builtAppVersion does not match project version $expectedAppVersion.") }
-    Phase 'VERIFY' ("Application version verified: $builtAppVersion")
-    Restore-TrackedLockFiles
-    if (Test-ProtectedTrackedDirty) { Show-ProtectedTrackedChanges; Fail $FailPhase 'Upgrade validation generated unexpected tracked changes.' }
-    $FailPhase = 'RESTART'; Restore-SylphyHornRuntime
-    Info '============================================================'
-    if ($HadWarning) { Write-Line 'UPGRADE OK WITH WARNINGS' Yellow; Write-Line 'STATUS: WARNING - phase=COMPLETE' Yellow } else { Write-Line 'UPGRADE OK' Green; Write-Line 'STATUS: SUCCESS - phase=COMPLETE' Green }
-    Info ("Application version: $builtAppVersion")
-    Info (".NET SDK: $requiredSdk")
-    Info ("Target:   $TargetFramework")
-    Info ("Commit:   $head")
-    Info ("Log:      $Log")
-    exit 0
-}
-catch {
-    $message = $_.Exception.Message
-    if ($message -and -not ($message -match '^Tracked local changes outside maintenance-owned launchers exist\.' )) { if (-not ($message -match '^git\.exe failed|^dotnet\.exe failed|^winget\.exe failed')) { Write-Line ('ERROR DETAIL: ' + $message) Red } }
-    Restore-SylphyHornRuntime -FailurePath
-    Write-Line ("STATUS: FAILED - phase=$FailPhase") Red
-    Write-Line ("Log: $Log") Red
-    exit 1
-} -and $text -notmatch '^.. upgrade\.cmd $text -notmatch '^.. upgrade\.ps1$' -and $text -notmatch '^.. run\.cmd$' -and $text -notmatch '^.. source/SylphyHorn/packages\.lock\.json$' -and $text -notmatch '^.. source/SylphyHorn\.Tests/packages\.lock\.json$') { Write-Line $text Yellow }
-    }
-}
-function Restore-TrackedLockFiles {
-    foreach ($path in @('source/SylphyHorn/packages.lock.json','source/SylphyHorn.Tests/packages.lock.json')) {
-        $savedPreference = $ErrorActionPreference
-        try { $ErrorActionPreference = 'Continue'; & git.exe ls-files --error-unmatch $path *> $null; $tracked = ($LASTEXITCODE -eq 0) }
-        finally { $ErrorActionPreference = $savedPreference }
-        if ($tracked) { Run-Native -Phase 'VERIFY' -Exe 'git.exe' -ArgumentList @('restore','--source=HEAD','--staged','--worktree','--',$path) -SuppressOutput | Out-Null }
-    }
-}
-function Remove-LegacyApplicationLog {
-    if ([string]::IsNullOrWhiteSpace($script:LegacyAppLog) -or -not (Test-Path -LiteralPath $script:LegacyAppLog)) { return }
-    try {
-        Remove-Item -LiteralPath $script:LegacyAppLog -Force
-        Phase 'MIGRATION' ("Removed retired application log: $($script:LegacyAppLog)")
-    }
-    catch { Warn ("Could not remove retired application log '$($script:LegacyAppLog)': $($_.Exception.Message)") }
-}
-function Read-RequiredSdkVersion {
-    $globalJson = Join-Path $Repo 'global.json'
-    if (-not (Test-Path -LiteralPath $globalJson)) { Fail 'DEPENDENCIES' 'global.json is missing.' }
-    try { $json = Get-Content -LiteralPath $globalJson -Raw | ConvertFrom-Json } catch { Fail 'DEPENDENCIES' ("Cannot parse global.json: $($_.Exception.Message)") }
-    $version = [string]$json.sdk.version
-    if ([string]::IsNullOrWhiteSpace($version)) { Fail 'DEPENDENCIES' 'global.json does not define sdk.version.' }
-    return $version.Trim()
-}
-function Read-ExpectedApplicationVersion {
-    if (-not (Test-Path -LiteralPath $AppProject)) { Fail 'VERIFY' 'SylphyHorn.csproj is missing.' }
-    try { [xml]$project = Get-Content -LiteralPath $AppProject -Raw } catch { Fail 'VERIFY' ("Cannot parse SylphyHorn.csproj: $($_.Exception.Message)") }
-    $raw = [string](($project.Project.PropertyGroup | ForEach-Object { $_.Version } | Where-Object { $_ } | Select-Object -First 1))
-    if ([string]::IsNullOrWhiteSpace($raw)) { Fail 'VERIFY' 'SylphyHorn.csproj does not define Version.' }
-    $parsed = $null
-    if (-not [Version]::TryParse($raw.Trim(), [ref]$parsed)) { Fail 'VERIFY' ("Invalid application Version in SylphyHorn.csproj: $raw") }
-    return ('{0}.{1}' -f $parsed.Major, $parsed.Minor)
-}
-function Read-BuiltApplicationVersion {
-    if (-not (Test-Path -LiteralPath $AppExe)) { Fail 'VERIFY' ("Built SylphyHorn executable is missing: $AppExe") }
-    try { $raw = [Diagnostics.FileVersionInfo]::GetVersionInfo($AppExe).ProductVersion } catch { Fail 'VERIFY' ("Cannot read built application version: $($_.Exception.Message)") }
-    if ([string]::IsNullOrWhiteSpace($raw)) { Fail 'VERIFY' 'Built SylphyHorn executable does not expose ProductVersion.' }
-    $match = [regex]::Match($raw, '^(\d+)\.(\d+)')
-    if (-not $match.Success) { Fail 'VERIFY' ("Cannot normalize built application ProductVersion: $raw") }
-    return ($match.Groups[1].Value + '.' + $match.Groups[2].Value)
-}
-function Ensure-DotNetSdk([string]$RequiredVersion) {
-    $dotnet = Get-Command dotnet.exe -ErrorAction SilentlyContinue
-    if ($dotnet) {
-        $savedPreference = $ErrorActionPreference
-        try { $ErrorActionPreference = 'Continue'; $sdks = & $dotnet.Source --list-sdks 2>&1; $rc = $LASTEXITCODE } finally { $ErrorActionPreference = $savedPreference }
-        if ($rc -eq 0 -and ($sdks | Where-Object { ([string]$_) -match ('^' + [regex]::Escape($RequiredVersion) + '\s+\[') })) { return $dotnet.Source }
-    }
-    $winget = Get-Command winget.exe -ErrorAction SilentlyContinue
-    if (-not $winget) { Fail 'DEPENDENCIES' (".NET SDK $RequiredVersion is missing and WinGet was not found.") }
-    Phase 'DEPENDENCIES' ("Installing Microsoft.DotNet.SDK.10 $RequiredVersion with WinGet...")
-    Run-Native -Phase 'DEPENDENCIES' -Exe $winget.Source -ArgumentList @('install','--id','Microsoft.DotNet.SDK.10','--exact','--version',$RequiredVersion,'--accept-package-agreements','--accept-source-agreements','--silent') | Out-Null
-    $candidate = Join-Path $env:ProgramFiles 'dotnet\dotnet.exe'
-    if (Test-Path -LiteralPath $candidate) { $dotnetPath = $candidate } else { $dotnet = Get-Command dotnet.exe -ErrorAction SilentlyContinue; if (-not $dotnet) { Fail 'DEPENDENCIES' 'dotnet.exe is still unavailable after WinGet installation.' }; $dotnetPath = $dotnet.Source }
-    $savedPreference = $ErrorActionPreference
-    try { $ErrorActionPreference = 'Continue'; $sdks = & $dotnetPath --list-sdks 2>&1; $rc = $LASTEXITCODE } finally { $ErrorActionPreference = $savedPreference }
-    if ($rc -ne 0 -or -not ($sdks | Where-Object { ([string]$_) -match ('^' + [regex]::Escape($RequiredVersion) + '\s+\[') })) { Fail 'DEPENDENCIES' ("Required .NET SDK $RequiredVersion is still unavailable after installation.") }
-    return $dotnetPath
-}
-function Get-SylphyHornProcesses {
-    if (-not (Test-Path -LiteralPath $script:AppExe)) { return @() }
-    $target = [IO.Path]::GetFullPath($script:AppExe)
-    return @(Get-Process -ErrorAction SilentlyContinue | Where-Object { try { $_.Path -and ([IO.Path]::GetFullPath($_.Path) -ieq $target) } catch { $false } })
-}
-function Test-SylphyHornRunning { return ((Get-SylphyHornProcesses).Count -gt 0) }
-function Stop-SylphyHorn {
-    $running = @(Get-SylphyHornProcesses); if ($running.Count -eq 0) { return }
-    Phase 'STOP-RUNTIME' ("Requesting graceful shutdown of SylphyHorn PID(s): " + (($running | ForEach-Object { $_.Id }) -join ', '))
-    foreach ($proc in $running) { try { [void]$proc.CloseMainWindow() } catch { } }
-    $deadline = [DateTime]::UtcNow.AddSeconds(15)
-    while ((Test-SylphyHornRunning) -and [DateTime]::UtcNow -lt $deadline) { Start-Sleep -Milliseconds 250 }
-    if (Test-SylphyHornRunning) {
-        Warn 'SylphyHorn did not exit within 15 seconds; forcing project-owned process termination before upgrade.'
-        Get-SylphyHornProcesses | Stop-Process -Force -ErrorAction SilentlyContinue
-        $deadline = [DateTime]::UtcNow.AddSeconds(5); while ((Test-SylphyHornRunning) -and [DateTime]::UtcNow -lt $deadline) { Start-Sleep -Milliseconds 250 }
-        if (Test-SylphyHornRunning) { Fail 'STOP-RUNTIME' 'SylphyHorn is still running and could keep build artifacts locked.' }
-    }
-}
-function Restore-SylphyHornRuntime([switch]$FailurePath) {
-    if (-not $script:AppWasRunning -or $script:RuntimeRestored) { return }
-    if (-not (Test-Path -LiteralPath $script:AppExe)) { if ($FailurePath) { Warn ("Previous SylphyHorn runtime cannot be restored because executable is missing: $($script:AppExe)") } else { Fail 'RESTART' ("Built SylphyHorn executable is missing: $($script:AppExe)") }; return }
-    try {
-        Phase 'RESTART' 'Restoring SylphyHorn because it was running before upgrade...'
-        Start-Process -FilePath $script:AppExe -WorkingDirectory (Split-Path -Parent $script:AppExe) | Out-Null
-        Start-Sleep -Seconds 1
-        if (-not (Test-SylphyHornRunning)) { if ($FailurePath) { Warn 'SylphyHorn could not be restarted after the failed upgrade.' } else { Fail 'RESTART' 'SylphyHorn did not remain running after restart.' }; return }
-        $script:RuntimeRestored = $true; Phase 'RESTART' 'SylphyHorn restarted successfully.'
-    } catch { if ($FailurePath) { Warn ("SylphyHorn restart failed after upgrade failure: $($_.Exception.Message)") } else { Fail 'RESTART' ("SylphyHorn restart failed: $($_.Exception.Message)") } }
-}
-
-try {
-    Set-Location -LiteralPath $Repo
-    Info '============================================================'
-    Info 'SylphyHornPlusCon upgrade diagnostic log'
-    Info ("Version:    $Revision")
-    Info ('Started:    ' + [DateTime]::Now.ToString('dd.MM.yyyy HH:mm:ss.fff'))
-    Info ("Repository: $Repo")
-    Info ("Branch:     $TargetBranch")
-    $startingCommit = Get-GitText @('rev-parse','HEAD') 'SELF-UPDATE'; Info ("Commit:     $startingCommit")
-    Info 'Runner:     temporary origin/<branch> upgrade.ps1; upgrade.cmd is bootstrap launcher only'
-    Info '============================================================'
-    $FailPhase = 'STOP-RUNTIME'; $AppWasRunning = Test-SylphyHornRunning
-    if ($AppWasRunning) { Phase 'STOP-RUNTIME' 'SylphyHorn was running before upgrade.'; Stop-SylphyHorn } else { Phase 'STOP-RUNTIME' 'SylphyHorn was not running before upgrade.' }
-    $FailPhase = 'SELF-UPDATE'
-    if (-not (Get-Command git.exe -ErrorAction SilentlyContinue)) { Fail $FailPhase 'Git was not found in PATH.' }
-    Phase 'SELF-UPDATE' 'Fetching the authoritative target branch and verifying the current runner.'
-    Run-Native -Phase $FailPhase -Exe 'git.exe' -ArgumentList @('remote','set-url','origin',$ExpectedRemote) -SuppressOutput | Out-Null
-    Run-Native -Phase $FailPhase -Exe 'git.exe' -ArgumentList @('fetch','--prune','origin',$TargetBranch) | Out-Null
-    $currentBranch = Get-GitText @('branch','--show-current') $FailPhase
-    if ($currentBranch -ne $TargetBranch) { Fail $FailPhase ("Current branch '$currentBranch' does not match target branch '$TargetBranch'.") }
-    Normalize-RetiredMaintenanceFiles
-    if (Test-ProtectedTrackedDirty) { Show-ProtectedTrackedChanges; Fail $FailPhase 'Tracked local changes outside maintenance-owned launchers exist. Commit or revert them before upgrade.' }
-    $FailPhase = 'REPOSITORY'; Phase 'REPOSITORY' ("Synchronizing tracked tree to origin/$TargetBranch.")
-    Run-Native -Phase $FailPhase -Exe 'git.exe' -ArgumentList @('reset','--hard',"origin/$TargetBranch") | Out-Null
-    $head = Get-GitText @('rev-parse','HEAD') $FailPhase; $remoteHead = Get-GitText @('rev-parse',"origin/$TargetBranch") $FailPhase
-    if (-not $head -or -not $remoteHead -or $head -ne $remoteHead) { Fail $FailPhase ("Local HEAD does not match origin/$TargetBranch after synchronization.") }
-    $runnerHeadBlob = Get-GitText @('rev-parse','HEAD:upgrade.ps1') $FailPhase; $runnerRemoteBlob = Get-GitText @('rev-parse',"origin/$TargetBranch`:upgrade.ps1") $FailPhase
-    if ($runnerHeadBlob -ne $runnerRemoteBlob) { Fail $FailPhase 'Repository upgrade.ps1 does not match the authoritative remote runner.' }
-    Phase 'REPOSITORY' 'Authoritative temporary runner verified against the fetched branch.'; Phase 'REPOSITORY' ("Build commit: $head")
-    $FailPhase = 'MIGRATION'; Remove-LegacyApplicationLog
-    $FailPhase = 'REPOSITORY'; Phase 'REPOSITORY' 'Synchronizing Git submodules.'
-    Run-Native -Phase $FailPhase -Exe 'git.exe' -ArgumentList @('submodule','sync','--recursive') | Out-Null
-    Run-Native -Phase $FailPhase -Exe 'git.exe' -ArgumentList @('submodule','update','--init','--recursive','--force') | Out-Null
-    $FailPhase = 'DEPENDENCIES'; Phase 'DEPENDENCIES' 'Checking required .NET SDK.'; $requiredSdk = Read-RequiredSdkVersion; $dotnet = Ensure-DotNetSdk $requiredSdk; Phase 'DEPENDENCIES' (".NET SDK: $requiredSdk")
-    $FailPhase = 'RESTORE'; Phase 'RESTORE' 'Restoring .NET 10 projects.'
-    Run-Native -Phase $FailPhase -Exe $dotnet -ArgumentList @('restore','source\SylphyHorn\SylphyHorn.csproj',"-p:TargetFramework=$TargetFramework",'--force-evaluate') | Out-Null
-    Run-Native -Phase $FailPhase -Exe $dotnet -ArgumentList @('restore','source\SylphyHorn.Tests\SylphyHorn.Tests.csproj',"-p:TargetFramework=$TargetFramework",'--force-evaluate') | Out-Null
-    $FailPhase = 'BUILD'; Phase 'BUILD' 'Building Release x64 for .NET 10.'
-    Run-Native -Phase $FailPhase -Exe $dotnet -ArgumentList @('build','source\SylphyHorn\SylphyHorn.csproj','-c','Release','-f',$TargetFramework,'-p:Platform=x64','-p:RunSylphyHornPostBuild=false',("-p:SHPCBuildBranch=$TargetBranch"),'--no-restore') | Out-Null
-    $FailPhase = 'TEST'; Phase 'TEST' 'Running .NET 10 unit tests.'; $solutionDir = (Join-Path $Repo 'source') + '\'
-    Run-Native -Phase $FailPhase -Exe $dotnet -ArgumentList @('test','source\SylphyHorn.Tests\SylphyHorn.Tests.csproj','-c','Release','-f',$TargetFramework,'-p:Platform=x64','-p:RunSylphyHornPostBuild=false',("-p:SolutionDir=$solutionDir"),'--no-restore') | Out-Null
-    $FailPhase = 'VERIFY'; Phase 'VERIFY' 'Verifying application version and tracked tree.'
-    $expectedAppVersion = Read-ExpectedApplicationVersion; $builtAppVersion = Read-BuiltApplicationVersion
-    if ($builtAppVersion -ne $expectedAppVersion) { Fail $FailPhase ("Built application version $builtAppVersion does not match project version $expectedAppVersion.") }
-    Phase 'VERIFY' ("Application version verified: $builtAppVersion")
-    Restore-TrackedLockFiles
-    if (Test-ProtectedTrackedDirty) { Show-ProtectedTrackedChanges; Fail $FailPhase 'Upgrade validation generated unexpected tracked changes.' }
-    $FailPhase = 'RESTART'; Restore-SylphyHornRuntime
-    Info '============================================================'
-    if ($HadWarning) { Write-Line 'UPGRADE OK WITH WARNINGS' Yellow; Write-Line 'STATUS: WARNING - phase=COMPLETE' Yellow } else { Write-Line 'UPGRADE OK' Green; Write-Line 'STATUS: SUCCESS - phase=COMPLETE' Green }
-    Info ("Application version: $builtAppVersion")
-    Info (".NET SDK: $requiredSdk")
-    Info ("Target:   $TargetFramework")
-    Info ("Commit:   $head")
-    Info ("Log:      $Log")
-    exit 0
-}
-catch {
-    $message = $_.Exception.Message
-    if ($message -and -not ($message -match '^Tracked local changes outside maintenance-owned launchers exist\.' )) { if (-not ($message -match '^git\.exe failed|^dotnet\.exe failed|^winget\.exe failed')) { Write-Line ('ERROR DETAIL: ' + $message) Red } }
-    Restore-SylphyHornRuntime -FailurePath
-    Write-Line ("STATUS: FAILED - phase=$FailPhase") Red
-    Write-Line ("Log: $Log") Red
-    exit 1
-} -and $text -notmatch '^.. upgrade\.ps1$' -and $text -notmatch '^.. run\.cmd$' -and $text -notmatch '^.. source/SylphyHorn/packages\.lock\.json$' -and $text -notmatch '^.. source/SylphyHorn\.Tests/packages\.lock\.json$') { Write-Line $text Yellow }
+        if ($text -notmatch '^.. upgrade\.cmd$' -and $text -notmatch '^.. upgrade\.ps1$' -and $text -notmatch '^.. run\.cmd$' -and $text -notmatch '^.. source/SylphyHorn/packages\.lock\.json$' -and $text -notmatch '^.. source/SylphyHorn\.Tests/packages\.lock\.json$') { Write-Line $text Yellow }
     }
 }
 function Restore-TrackedLockFiles {
