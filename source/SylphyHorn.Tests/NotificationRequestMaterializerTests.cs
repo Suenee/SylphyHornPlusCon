@@ -19,7 +19,7 @@ namespace SylphyHorn.Tests
 
 			var request = NotificationRequestMaterializer.CreateSwitched(3, "Work", settings);
 
-			Assert.Equal("SylphyHornPlus", request.Title);
+			Assert.Equal("SylphyHornPlusCon", request.Title);
 			Assert.Equal("Virtual Desktop Switched", request.Header);
 			Assert.Equal("Desktop 3: Work", request.Body);
 			Assert.Equal("Virtual Desktop", request.ResidentHeader);
@@ -105,7 +105,7 @@ namespace SylphyHorn.Tests
 				geometry,
 				CreateSettings(alwaysShow: false, simple: false, useDesktopName: false));
 
-			Assert.Equal("SylphyHornPlus", request.Title);
+			Assert.Equal("SylphyHornPlusCon", request.Title);
 			Assert.Equal("Virtual Desktop", request.Header);
 			Assert.Equal(expectedBody, request.Body);
 			Assert.Equal(4321, request.Duration);
