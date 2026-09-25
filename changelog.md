@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.54 - 25.09.2026
+
+- Updated the About page and assembly metadata to identify the application as `SylphyHornPlusCon` and credit Sueneé Universe for the current modifications.
+- Updated the primary source-code link to `Suenee/SylphyHornPlusCon` while preserving `hwtnb/SylphyHornPlusWin11` as the upstream source and `Grabacr07/SylphyHorn` as the original source.
+- Updated the product description to include external automation support and made the displayed About version follow application version 0.54.
+
+
 ## 0.53 - 23.09.2026
 
 - Restored the native authoritative `desktops` array in every `desktopStateChanged` snapshot while preserving `desktopsJson` as the existing diagnostic Companion variable.
