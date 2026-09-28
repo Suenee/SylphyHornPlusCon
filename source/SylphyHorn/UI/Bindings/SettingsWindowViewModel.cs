@@ -1102,23 +1102,28 @@ namespace SylphyHorn.UI.Bindings
 				await LocalSettingsProvider.Instance.SaveAsync().ConfigureAwait(false);
 				foreach (var item in installedWallpapers) if (item.Backup != null && File.Exists(item.Backup)) File.Delete(item.Backup);
 			}
-			catch
+			catch (Exception importError)
 			{
+				Exception rollbackError = null;
 				try
 				{
 					if (File.Exists(rollbackSettings))
 					{
 						var rollback = await LocalSettingsProvider.Instance.PrepareImportAsync(rollbackSettings).ConfigureAwait(false);
-						await this._desktopRuntime.CommitPreparedImportAsync(rollback, true, default(CancellationToken)).ConfigureAwait(false);
+						var rollbackResult = await this._desktopRuntime.CommitPreparedImportAsync(rollback, true, default(CancellationToken)).ConfigureAwait(false);
+						if (!rollbackResult.Succeeded) rollbackError = new InvalidOperationException("SHPC rejected the automatic settings/desktop rollback.");
 					}
 				}
-				catch (Exception rollbackError)
-				{
-					LoggingService.Instance.Write(LogLevel.Error, "IMPORT", "RollbackFailed", "Portable import failed and the automatic rollback also failed.", details: rollbackError.ToString());
-				}
+				catch (Exception ex) { rollbackError = ex; }
 				foreach (var item in installedWallpapers.AsEnumerable().Reverse())
 				{
-					try { if (item.Backup != null && File.Exists(item.Backup)) { File.Copy(item.Backup, item.Path, true); File.Delete(item.Backup); } else if (File.Exists(item.Path)) File.Delete(item.Path); } catch { }
+					try { if (item.Backup != null && File.Exists(item.Backup)) { File.Copy(item.Backup, item.Path, true); File.Delete(item.Backup); } else if (File.Exists(item.Path)) File.Delete(item.Path); }
+					catch (Exception ex) { rollbackError ??= ex; }
+				}
+				if (rollbackError != null)
+				{
+					LoggingService.Instance.Write(LogLevel.Error, "IMPORT", "RollbackFailed", "Portable import failed and the automatic rollback also failed.", details: rollbackError.ToString());
+					throw new InvalidOperationException("Import failed and SHPC could not completely restore the pre-import state.", new AggregateException(importError, rollbackError));
 				}
 				throw;
 			}
