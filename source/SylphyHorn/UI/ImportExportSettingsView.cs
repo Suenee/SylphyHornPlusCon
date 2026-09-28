@@ -14,13 +14,13 @@ namespace SylphyHorn.UI
 	internal sealed class ImportExportSettingsView : UserControl
 	{
 		private readonly SettingsWindowViewModel _viewModel;
-		private readonly TabControl _tabs = new()
-		{
-			Margin = new Thickness(10),
-			Background = new SolidColorBrush(Color.FromRgb(36, 40, 47)),
-			Foreground = Brushes.White,
-			BorderBrush = new SolidColorBrush(Color.FromRgb(61, 66, 75)),
-		};
+		private readonly Grid _root = new() { Margin = new Thickness(10) };
+		private readonly StackPanel _tabButtons = new() { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 0, 0, 10) };
+		private readonly ContentControl _tabContent = new();
+		private Button _exportTabButton;
+		private Button _importTabButton;
+		private UIElement _exportContent;
+		private UIElement _importContent;
 		private readonly StackPanel _exportDesktops = new() { Margin = new Thickness(24, 4, 0, 8) };
 		private readonly StackPanel _importDesktops = new() { Margin = new Thickness(24, 4, 0, 8) };
 		private readonly CheckBox _exportDesktopSection = Box("Desktop settings and order", true);
@@ -33,12 +33,13 @@ namespace SylphyHorn.UI
 		private readonly CheckBox _importGeneral = Box("General Settings", true);
 		private readonly TextBlock _status = new() { Margin = new Thickness(0, 14, 0, 0), TextWrapping = TextWrapping.Wrap };
 		private string _importPath;
-		private PortablePackageManifest _importManifest;
+		private PortablePackageMetadata _importManifest;
+		private PortablePackageContent _inspectedPackage;
 
 		internal ImportExportSettingsView(SettingsWindowViewModel viewModel)
 		{
 			this._viewModel = viewModel ?? throw new ArgumentNullException(nameof(viewModel));
-			this.Content = this._tabs;
+			this.Content = this._root;
 			this.Build();
 		}
 
@@ -55,7 +56,7 @@ namespace SylphyHorn.UI
 			var exportButton = Button("Export package...");
 			exportButton.Click += async (_, _) => await this.ExportAsync();
 			export.Children.Add(exportButton);
-			this._tabs.Items.Add(CreateTab("Export", export));
+			this._exportContent = export;
 
 			var import = new StackPanel { Margin = new Thickness(18), Background = new SolidColorBrush(Color.FromRgb(36, 40, 47)) };
 			import.Children.Add(Note("Import is all-or-nothing. SHPC validates the complete package first, creates an automatic backup, stages all requested changes, and rolls back if any step fails."));
@@ -71,7 +72,20 @@ namespace SylphyHorn.UI
 			importButton.Click += async (_, _) => await this.ImportAsync();
 			import.Children.Add(importButton);
 			import.Children.Add(this._status);
-			this._tabs.Items.Add(CreateTab("Import", import));
+			this._importContent = import;
+			this._root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+			this._root.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
+			this._exportTabButton = TabButton("Export");
+			this._importTabButton = TabButton("Import");
+			this._exportTabButton.Click += (_, _) => this.SelectTab(false);
+			this._importTabButton.Click += (_, _) => this.SelectTab(true);
+			this._tabButtons.Children.Add(this._exportTabButton);
+			this._tabButtons.Children.Add(this._importTabButton);
+			Grid.SetRow(this._tabButtons, 0);
+			Grid.SetRow(this._tabContent, 1);
+			this._root.Children.Add(this._tabButtons);
+			this._root.Children.Add(this._tabContent);
+			this.SelectTab(false);
 
 			this._exportDesktopSection.Checked += (_, _) => this.UpdateDesktopSectionState(false);
 			this._exportDesktopSection.Unchecked += (_, _) => this.UpdateDesktopSectionState(false);
@@ -123,7 +137,9 @@ namespace SylphyHorn.UI
 			{
 				var dialog = new OpenFileDialog { Filter = PortableSettingsPackageService.Filter, CheckFileExists = true, Multiselect = false };
 				if (dialog.ShowDialog() != true) return;
-				this._importManifest = await this._viewModel.InspectPortablePackageAsync(dialog.FileName);
+				this._inspectedPackage?.Dispose();
+				this._inspectedPackage = await this._viewModel.InspectPortablePackageAsync(dialog.FileName);
+				this._importManifest = this._inspectedPackage.Manifest;
 				this._importPath = dialog.FileName;
 				this._importDesktopSection.IsChecked = this._importManifest.IncludesDesktops;
 				this._importDesktopSection.IsEnabled = this._importManifest.IncludesDesktops;
@@ -138,9 +154,9 @@ namespace SylphyHorn.UI
 				{
 					var row = new StackPanel { Orientation = Orientation.Horizontal };
 					var all = SmallButton("Select all"); all.Click += (_, _) => SetChecks(this._importDesktops, true);
-					var none = SmallButton("Select none"); none.Click += (_, _) => SetChecks(this._importDesktops, false);
+					var none = SmallButton("Unselect"); none.Click += (_, _) => SetChecks(this._importDesktops, false);
 					row.Children.Add(all); row.Children.Add(none); this._importDesktops.Children.Add(row);
-					foreach (var desktop in this._importManifest.Desktops.OrderBy(item => item.Position))
+					foreach (var desktop in this._inspectedPackage.Desktops.OrderBy(item => item.Position))
 						this._importDesktops.Children.Add(new CheckBox { Content = $"{desktop.Position}. {desktop.Title ?? desktop.CName}  [{desktop.CName}]", Tag = desktop.CName, IsChecked = true, Foreground = Brushes.White, Margin = new Thickness(0, 3, 0, 3) });
 				}
 				this.SetImportControls(true);
@@ -172,18 +188,28 @@ namespace SylphyHorn.UI
 			this._importGeneral.IsEnabled = enabled && this._importManifest?.IncludesGeneral == true;
 			this.UpdateDesktopSectionState(true);
 		}
-		private static TabItem CreateTab(string title, UIElement content)
+		private void SelectTab(bool import)
 		{
-			var tab = new TabItem
-			{
-				Header = title,
-				Content = content,
-				Foreground = Brushes.White,
-				Background = new SolidColorBrush(Color.FromRgb(31, 35, 41)),
-				BorderBrush = new SolidColorBrush(Color.FromRgb(61, 66, 75)),
-				Padding = new Thickness(12, 5, 12, 5),
-			};
-			return tab;
+			this._tabContent.Content = import ? this._importContent : this._exportContent;
+			StyleTabButton(this._exportTabButton, !import);
+			StyleTabButton(this._importTabButton, import);
+		}
+
+		private static Button TabButton(string title) => new()
+		{
+			Content = title,
+			Padding = new Thickness(14, 7, 14, 7),
+			Margin = new Thickness(0, 0, 8, 0),
+			BorderThickness = new Thickness(1),
+			Foreground = Brushes.White,
+			Cursor = System.Windows.Input.Cursors.Hand,
+		};
+
+		private static void StyleTabButton(Button button, bool selected)
+		{
+			button.Background = new SolidColorBrush(selected ? Color.FromRgb(40, 91, 136) : Color.FromRgb(31, 35, 41));
+			button.BorderBrush = new SolidColorBrush(selected ? Color.FromRgb(55, 119, 173) : Color.FromRgb(65, 72, 82));
+			button.FontWeight = selected ? FontWeights.SemiBold : FontWeights.Normal;
 		}
 
 		private static void SetChecks(StackPanel panel, bool value) { foreach (var item in panel.Children.OfType<CheckBox>()) item.IsChecked = value; }
