@@ -5,6 +5,8 @@
 - Added a dedicated `Import / Export` page to the primary Settings navigation.
 - Split the Import / Export page into dedicated `Export` and `Import` tabs to avoid unnecessary vertical scrolling.
 - Styled the new Import / Export tabs, content, checkboxes, and buttons to preserve the existing SHPC dark theme instead of inheriting WPF's default light tab appearance.
+- Replaced the system WPF tab template with SHPC-native dark Export / Import switch buttons so Windows theme rendering cannot introduce white tab surfaces.
+- Split portable package data into `package.json` metadata and `settings.json` configuration; `manifest.json` is no longer used by `.shpc` packages to avoid confusion with the separate SUM/VPP application manifest.
 - Desktop controls now behave as one hierarchy: disabling `Desktop settings and order` disables the desktop selection, `Select All` / `Unselect`, and wallpaper options while preserving their selections.
 - Added the portable `.shpc` package format backed by ZIP compression, a versioned JSON manifest, selected settings, and optional embedded wallpaper files.
 - Added per-desktop export and import selection using stable CName identities instead of machine-local virtual-desktop GUIDs.
