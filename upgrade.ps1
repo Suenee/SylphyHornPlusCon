@@ -1,7 +1,7 @@
 $ErrorActionPreference = 'Stop'
 
 $Version = '0.32'
-$Revision = '0.32-ignore-submodule-dirty-state'
+$Revision = '0.33-runtime-signal-restore'
 $Repo = $env:SHPC_UPGRADE_REPO
 $TargetBranch = $env:SHPC_UPGRADE_BRANCH
 $ExpectedRemote = 'https://github.com/Suenee/SylphyHornPlusCon.git'
@@ -27,6 +27,7 @@ $AppWasRunning = $false
 $RuntimeRestored = $false
 $AppExe = Join-Path $Repo 'source\SylphyHorn\bin\x64\Release\net10.0-windows10.0.26100.0\SylphyHorn.exe'
 $AppProject = Join-Path $Repo 'source\SylphyHorn\SylphyHorn.csproj'
+$UpgradeShutdownEventName = 'Local\SylphyHornPlusCon.UpgradeShutdown'
 $LegacyAppLog = if ([string]::IsNullOrWhiteSpace($env:LOCALAPPDATA)) { $null } else { Join-Path $env:LOCALAPPDATA 'hwtnb.net\SylphyHornPlus\Logs\app.log.jsonl' }
 
 function Write-Line([string]$Text, [ConsoleColor]$Color = [ConsoleColor]::Gray) {
@@ -192,16 +193,39 @@ function Get-SylphyHornProcesses {
     $target = [IO.Path]::GetFullPath($script:AppExe)
     return @(Get-Process -ErrorAction SilentlyContinue | Where-Object { try { $_.Path -and ([IO.Path]::GetFullPath($_.Path) -ieq $target) } catch { $false } })
 }
-function Test-SylphyHornRunning { return ((Get-SylphyHornProcesses).Count -gt 0) }
+function Test-SylphyHornUpgradeSignal {
+    try {
+        $event = [Threading.EventWaitHandle]::OpenExisting($script:UpgradeShutdownEventName)
+        $event.Dispose()
+        return $true
+    }
+    catch [Threading.WaitHandleCannotBeOpenedException] { return $false }
+    catch { Warn ("Could not inspect SHPC upgrade shutdown signal: $($_.Exception.Message)"); return $false }
+}
+function Test-SylphyHornRunning { return ((Test-SylphyHornUpgradeSignal) -or ((Get-SylphyHornProcesses).Count -gt 0)) }
 function Stop-SylphyHorn {
-    $running = @(Get-SylphyHornProcesses); if ($running.Count -eq 0) { return }
-    Phase 'STOP-RUNTIME' ("Requesting graceful shutdown of SylphyHorn PID(s): " + (($running | ForEach-Object { $_.Id }) -join ', '))
-    foreach ($proc in $running) { try { [void]$proc.CloseMainWindow() } catch { } }
+    if (-not (Test-SylphyHornRunning)) { return }
+    if (Test-SylphyHornUpgradeSignal) {
+        Phase 'STOP-RUNTIME' 'Requesting graceful shutdown through the SHPC upgrade signal.'
+        try {
+            $event = [Threading.EventWaitHandle]::OpenExisting($script:UpgradeShutdownEventName)
+            [void]$event.Set()
+            $event.Dispose()
+        }
+        catch { Warn ("Could not signal graceful SHPC shutdown: $($_.Exception.Message)") }
+    }
+    else {
+        $running = @(Get-SylphyHornProcesses)
+        Phase 'STOP-RUNTIME' ("Requesting graceful shutdown of project-owned SylphyHorn PID(s): " + (($running | ForEach-Object { $_.Id }) -join ', '))
+        foreach ($proc in $running) { try { [void]$proc.CloseMainWindow() } catch { } }
+    }
     $deadline = [DateTime]::UtcNow.AddSeconds(15)
     while ((Test-SylphyHornRunning) -and [DateTime]::UtcNow -lt $deadline) { Start-Sleep -Milliseconds 250 }
     if (Test-SylphyHornRunning) {
-        Warn 'SylphyHorn did not exit within 15 seconds; forcing project-owned process termination before upgrade.'
-        Get-SylphyHornProcesses | Stop-Process -Force -ErrorAction SilentlyContinue
+        $owned = @(Get-SylphyHornProcesses)
+        if ($owned.Count -eq 0) { Fail 'STOP-RUNTIME' 'SHPC remained active after its shutdown signal, but the process is not owned by this repository path; refusing to force-stop an unrelated executable.' }
+        Warn 'SylphyHorn did not exit within 15 seconds; forcing only the project-owned process termination before upgrade.'
+        $owned | Stop-Process -Force -ErrorAction SilentlyContinue
         $deadline = [DateTime]::UtcNow.AddSeconds(5); while ((Test-SylphyHornRunning) -and [DateTime]::UtcNow -lt $deadline) { Start-Sleep -Milliseconds 250 }
         if (Test-SylphyHornRunning) { Fail 'STOP-RUNTIME' 'SylphyHorn is still running and could keep build artifacts locked.' }
     }
