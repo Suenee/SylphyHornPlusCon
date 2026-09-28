@@ -59,6 +59,16 @@ namespace SylphyHorn.Services
 			WriteList(dictionary, DesktopWallpaperPathsKey, projection.WallpaperPaths.Cast<object>().ToArray());
 			WriteList(dictionary, DesktopPositionsKey, projection.Positions.Select(value => (object)(byte)value).ToArray());
 		}
+		internal static void ApplyPortableDesktopProjection(IDictionary<string, object> dictionary, IReadOnlyList<string> names, IReadOnlyList<string> wallpaperPaths, IReadOnlyList<WallpaperPosition> positions)
+		{
+			if (dictionary == null) throw new ArgumentNullException(nameof(dictionary));
+			if (names == null || wallpaperPaths == null || positions == null || names.Count != wallpaperPaths.Count || names.Count != positions.Count)
+				throw new ArgumentException("Portable desktop projection lists must have the same count.");
+			WriteList(dictionary, DesktopNamesKey, names.Cast<object>().ToArray());
+			WriteList(dictionary, DesktopWallpaperPathsKey, wallpaperPaths.Cast<object>().ToArray());
+			WriteList(dictionary, DesktopPositionsKey, positions.Select(value => (object)(byte)value).ToArray());
+		}
+
 		internal static void StretchShortcutListsTo(int count)
 		{
 			Settings.ShortcutKey.SwitchToIndices.StretchTo(count);
