@@ -25,7 +25,8 @@ namespace SylphyHorn.UI
 		private Button _selectedPrimaryButton;
 		private DesktopSettingsView _desktopSettingsView;
 		private AppLogView _appLogView;
-		private WebSocketSettingsView _webSocketSettingsView;\n\t\tprivate ImportExportSettingsView _importExportSettingsView;
+		private WebSocketSettingsView _webSocketSettingsView;
+		private ImportExportSettingsView _importExportSettingsView;
 
 		public static SettingsWindow Instance { get; set; }
 
@@ -68,7 +69,8 @@ namespace SylphyHorn.UI
 			this.MinHeight = 640;
 			this.WindowStartupLocation = WindowStartupLocation.CenterScreen;
 			this.MoveNotificationBehaviorSettings();
-			this.AddDesktopConfigurationSettings();\n\t\t\tthis.RemoveLegacyImportExportButtons();
+			this.AddDesktopConfigurationSettings();
+			this.RemoveLegacyImportExportButtons();
 			this._desktopSettingsView = new DesktopSettingsView();
 			if (this._legacySettingsTabs.Items[1] is TabItem desktopTab) desktopTab.Content = this._desktopSettingsView;
 			this._appLogView = new AppLogView();
