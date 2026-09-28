@@ -85,9 +85,6 @@ namespace SylphyHorn.Services
 				using (var stream = new FileStream(tempPath, FileMode.CreateNew, FileAccess.ReadWrite, FileShare.None))
 				using (var archive = new ZipArchive(stream, ZipArchiveMode.Create, true))
 				{
-					var manifestEntry = archive.CreateEntry("manifest.json", CompressionLevel.Optimal);
-					using (var writer = new StreamWriter(manifestEntry.Open()))
-						await writer.WriteAsync(JsonSerializer.Serialize(manifest, JsonOptions)).ConfigureAwait(false);
 					if (options.Desktops && options.Wallpapers)
 					{
 						foreach (var desktop in manifest.Desktops)
@@ -103,6 +100,9 @@ namespace SylphyHorn.Services
 							desktop.WallpaperEntry = entryName;
 						}
 					}
+					var manifestEntry = archive.CreateEntry("manifest.json", CompressionLevel.Optimal);
+					using (var writer = new StreamWriter(manifestEntry.Open()))
+						await writer.WriteAsync(JsonSerializer.Serialize(manifest, JsonOptions)).ConfigureAwait(false);
 				}
 				// Re-open with the same validator used by import. Export is successful only when its result is importable.
 				using (var verified = await OpenAndValidateAsync(tempPath).ConfigureAwait(false)) { }
