@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.55 - 28.09.2026
+
+- Added one-time settings migration from the previous `%LOCALAPPDATA%\hwtnb.net\SylphyHornPlus` profile into the current `%LOCALAPPDATA%\Sueneé Universe\SylphyHornPlusCon` profile, preserving per-user/per-machine configuration after the 0.54 branding change.
+- Kept the original `grabacr.net\SylphyHorn` settings location as the secondary migration fallback for older installations.
+- Updated the upgrader to detect a running SHPC instance through its dedicated upgrade shutdown signal instead of relying only on one exact executable path.
+- The upgrader now requests graceful shutdown through the application-owned signal and restores SHPC after upgrade when it was running beforehand, while refusing to force-stop an executable it cannot prove belongs to the current repository.
+
 ## 0.54 - 25.09.2026
 
 - Updated the About page and assembly metadata to identify the application as `SylphyHornPlusCon` and credit Sueneé Universe for the current modifications.
