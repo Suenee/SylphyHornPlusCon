@@ -1039,7 +1039,8 @@ namespace SylphyHorn.UI.Bindings
 			if (options.Desktops && selectedDesktops.Length == 0) throw new InvalidDataException("Select at least one desktop to import.");
 
 			var hookDisposable = this._hookService?.Suspend();
-			var tempSettings = Path.Combine(Path.GetTempPath(), "SHPC-settings-" + Guid.NewGuid().ToString("N") + ".xml");\n\t\t\tvar rollbackSettings = Path.Combine(Path.GetTempPath(), "SHPC-rollback-" + Guid.NewGuid().ToString("N") + ".xml");
+			var tempSettings = Path.Combine(Path.GetTempPath(), "SHPC-settings-" + Guid.NewGuid().ToString("N") + ".xml");
+			var rollbackSettings = Path.Combine(Path.GetTempPath(), "SHPC-rollback-" + Guid.NewGuid().ToString("N") + ".xml");
 			var installedWallpapers = new List<(string Path, string Backup)>();
 			try
 			{
@@ -1130,7 +1131,8 @@ namespace SylphyHorn.UI.Bindings
 			finally
 			{
 				hookDisposable?.Dispose();
-				try { if (File.Exists(tempSettings)) File.Delete(tempSettings); } catch { }\n\t\t\t\ttry { if (File.Exists(rollbackSettings)) File.Delete(rollbackSettings); } catch { }
+				try { if (File.Exists(tempSettings)) File.Delete(tempSettings); } catch { }
+				try { if (File.Exists(rollbackSettings)) File.Delete(rollbackSettings); } catch { }
 			}
 		}
 
