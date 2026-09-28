@@ -68,7 +68,7 @@ namespace SylphyHorn.UI
 			this.MinHeight = 640;
 			this.WindowStartupLocation = WindowStartupLocation.CenterScreen;
 			this.MoveNotificationBehaviorSettings();
-			this.AddDesktopConfigurationSettings();
+			this.AddDesktopConfigurationSettings();\n\t\t\tthis.RemoveLegacyImportExportButtons();
 			this._desktopSettingsView = new DesktopSettingsView();
 			if (this._legacySettingsTabs.Items[1] is TabItem desktopTab) desktopTab.Content = this._desktopSettingsView;
 			this._appLogView = new AppLogView();
@@ -121,6 +121,32 @@ namespace SylphyHorn.UI
 			wallpaper.Click += (_, _) => WallpaperService.Instance.SetManagementEnabled(wallpaper.IsChecked == true);
 			panel.Children.Add(restore); panel.Children.Add(wallpaper);
 			generalRoot.Children.Add(header); generalRoot.Children.Add(panel); generalRoot.Children.Add(new Border { Height = 8 });
+		}
+
+		private void RemoveLegacyImportExportButtons()
+		{
+			if (this._legacySettingsTabs.Items[0] is not TabItem generalTab || generalTab.Content is not ScrollViewer scroll || scroll.Content is not StackPanel root) return;
+			foreach (var grid in FindVisualChildren<Grid>(root).ToArray())
+			{
+				foreach (var button in grid.Children.OfType<Button>().ToArray())
+				{
+					var binding = BindingOperations.GetBinding(button, Button.CommandProperty);
+					var path = binding?.Path?.Path;
+					if (string.Equals(path, "OpenExportPathDialogCommand", StringComparison.Ordinal) || string.Equals(path, "OpenImportPathDialogCommand", StringComparison.Ordinal))
+						grid.Children.Remove(button);
+				}
+			}
+		}
+
+		private static IEnumerable<T> FindVisualChildren<T>(DependencyObject root) where T : DependencyObject
+		{
+			if (root == null) yield break;
+			for (var i = 0; i < VisualTreeHelper.GetChildrenCount(root); i++)
+			{
+				var child = VisualTreeHelper.GetChild(root, i);
+				if (child is T typed) yield return typed;
+				foreach (var nested in FindVisualChildren<T>(child)) yield return nested;
+			}
 		}
 
 		private static bool HasCheckedBinding(StackPanel panel, string bindingPath)
