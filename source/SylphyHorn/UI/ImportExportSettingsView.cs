@@ -137,7 +137,8 @@ namespace SylphyHorn.UI
 					foreach (var desktop in this._importManifest.Desktops.OrderBy(item => item.Position))
 						this._importDesktops.Children.Add(new CheckBox { Content = $"{desktop.Position}. {desktop.Title ?? desktop.CName}  [{desktop.CName}]", Tag = desktop.CName, IsChecked = true, Margin = new Thickness(0, 3, 0, 3) });
 				}
-				this.SetImportControls(true);\n\t\t\t\tthis.UpdateDesktopSectionState(true);
+				this.SetImportControls(true);
+				this.UpdateDesktopSectionState(true);
 				this._status.Text = $"Validated package: {Path.GetFileName(dialog.FileName)}";
 			}
 			catch (Exception ex) { this._importPath = null; this._importManifest = null; this.SetImportControls(false); this._status.Text = "Package validation failed. " + ex.Message; }
