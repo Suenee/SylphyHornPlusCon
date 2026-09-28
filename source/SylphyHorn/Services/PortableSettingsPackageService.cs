@@ -153,7 +153,7 @@ namespace SylphyHorn.Services
 				if (record.Key.EndsWith(".WebSocketApiKeyProtected", StringComparison.Ordinal))
 				{
 					var plain = record.Value.ValueKind == JsonValueKind.String ? record.Value.GetString() : string.Empty;
-					target[record.Key] = WebSocketConnectionService.ProtectApiKeyForStorage(plain);
+					target[record.Key] = WebSocketConnectionService.ProtectApiKey(plain);
 					continue;
 				}
 				var type = current.GetType();
