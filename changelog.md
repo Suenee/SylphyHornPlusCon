@@ -10,6 +10,9 @@
 - Export now reopens and validates the completed package with the same validator used by import before reporting success.
 - Import validates the complete package before changing live state, creates a full automatic `.shpc` backup, stages settings and desktop changes, and rolls back settings, desktop state, and installed wallpaper files when any import step fails.
 - Imported wallpaper files are materialized into the destination SHPC profile so packages remain portable between computers and Windows versions.
+- Fixed malformed literal line-break/tab escape sequences introduced in the initial 0.56 Import / Export implementation.
+- Fixed upgrade bootstrap runtime ordering: `upgrade.cmd` no longer shuts SHPC down before `upgrade.ps1` records whether it was running, allowing the runner to restore the previous runtime state correctly.
+- Added visible bootstrap self-update/fetch progress so potentially slow network Git operations no longer appear as an unexplained blank console.
 
 ## 0.55 - 28.09.2026
 
