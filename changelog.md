@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.56 - 28.09.2026
+
+- Added a dedicated `Import / Export` page to the primary Settings navigation.
+- Added the portable `.shpc` package format backed by ZIP compression, a versioned JSON manifest, selected settings, and optional embedded wallpaper files.
+- Added per-desktop export and import selection using stable CName identities instead of machine-local virtual-desktop GUIDs.
+- Added independent selection for desktop settings/order, wallpaper files/settings, WebSocket connection settings, and General Settings.
+- WebSocket API keys are exported as portable values and protected again with Windows DPAPI when imported on the destination profile; API keys are never written to application logs.
+- Export now reopens and validates the completed package with the same validator used by import before reporting success.
+- Import validates the complete package before changing live state, creates a full automatic `.shpc` backup, stages settings and desktop changes, and rolls back settings, desktop state, and installed wallpaper files when any import step fails.
+- Imported wallpaper files are materialized into the destination SHPC profile so packages remain portable between computers and Windows versions.
+
 ## 0.55 - 28.09.2026
 
 - Added one-time settings migration from the previous `%LOCALAPPDATA%\hwtnb.net\SylphyHornPlus` profile into the current `%LOCALAPPDATA%\Sueneé Universe\SylphyHornPlusCon` profile, preserving per-user/per-machine configuration after the 0.54 branding change. If 0.54 already created a fresh current profile, it is backed up before the previous SHPC profile is restored; a migration marker makes the recovery idempotent.
