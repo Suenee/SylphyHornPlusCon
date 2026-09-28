@@ -25,7 +25,7 @@ namespace SylphyHorn.UI
 		private Button _selectedPrimaryButton;
 		private DesktopSettingsView _desktopSettingsView;
 		private AppLogView _appLogView;
-		private WebSocketSettingsView _webSocketSettingsView;
+		private WebSocketSettingsView _webSocketSettingsView;\n\t\tprivate ImportExportSettingsView _importExportSettingsView;
 
 		public static SettingsWindow Instance { get; set; }
 
@@ -69,6 +69,11 @@ namespace SylphyHorn.UI
 			if (this._legacySettingsTabs.Items[12] is TabItem logTab) logTab.Content = this._appLogView;
 			this._webSocketSettingsView = new WebSocketSettingsView();
 			this._legacySettingsTabs.Items.Add(new TabItem { Header = "WebSocket", Content = this._webSocketSettingsView });
+			if (this.DataContext is SettingsWindowViewModel settingsViewModel)
+			{
+				this._importExportSettingsView = new ImportExportSettingsView(settingsViewModel);
+				this._legacySettingsTabs.Items.Add(new TabItem { Header = "Import / Export", Content = this._importExportSettingsView });
+			}
 			root.Children.Remove(this._legacySettingsTabs);
 			this.HideLegacyTabHeaders();
 			var shell = new Grid { Background = new SolidColorBrush(Color.FromRgb(30, 34, 40)) };
@@ -137,6 +142,7 @@ namespace SylphyHorn.UI
 			this.AddNavigationItem(stack, "Keyboard shortcuts", "Configure global keyboard shortcuts by task instead of numbered pages.", new[] { 4, 5, 6, 7 }, new[] { "Desktop switching", "Move windows", "Reorder desktops", "Window actions" });
 			this.AddNavigationItem(stack, "Mouse gestures", "Configure rocker, wheel and mouse gestures by task.", new[] { 8, 9, 10, 11 }, new[] { "Desktop switching", "Move windows", "Reorder desktops", "Window actions" });
 			this.AddNavigationItem(stack, "WebSocket", "Configure and test the Socket Universe Bridge WebSocket connection.", new[] { 14 });
+			this.AddNavigationItem(stack, "Import / Export", "Create validated portable backups or transactionally import selected SHPC settings.", new[] { 15 });
 			this.AddNavigationItem(stack, "App log", "Search, filter and inspect structured application diagnostics.", new[] { 12 });
 			this.AddNavigationItem(stack, "About", "Version, source code, upstream credits and licenses.", new[] { 13 });
 			scroll.Content = stack; panel.Children.Add(scroll); return new Border { Background = panel.Background, Child = panel };
