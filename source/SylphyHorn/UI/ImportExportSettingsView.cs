@@ -11,10 +11,10 @@ using SylphyHorn.UI.Bindings;
 
 namespace SylphyHorn.UI
 {
-	internal sealed class ImportExportSettingsView : ScrollViewer
+	internal sealed class ImportExportSettingsView : UserControl
 	{
 		private readonly SettingsWindowViewModel _viewModel;
-		private readonly StackPanel _root = new() { Margin = new Thickness(18) };
+		private readonly TabControl _tabs = new() { Margin = new Thickness(10) };
 		private readonly StackPanel _exportDesktops = new() { Margin = new Thickness(24, 4, 0, 8) };
 		private readonly StackPanel _importDesktops = new() { Margin = new Thickness(24, 4, 0, 8) };
 		private readonly CheckBox _exportDesktopSection = Box("Desktop settings and order", true);
@@ -32,42 +32,57 @@ namespace SylphyHorn.UI
 		internal ImportExportSettingsView(SettingsWindowViewModel viewModel)
 		{
 			this._viewModel = viewModel ?? throw new ArgumentNullException(nameof(viewModel));
-			this.VerticalScrollBarVisibility = ScrollBarVisibility.Auto;
-			this.HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled;
-			this.Content = this._root;
+			this.Content = this._tabs;
 			this.Build();
 		}
 
 		private void Build()
 		{
-			this._root.Children.Add(Header("Export"));
-			this._root.Children.Add(Note("Create one portable .shpc package. The package is reopened and fully validated before the export is reported as successful."));
-			this._root.Children.Add(this._exportDesktopSection);
-			this._root.Children.Add(this._exportDesktops);
-			this._root.Children.Add(this._exportWallpapers);
-			this._root.Children.Add(this._exportWebSocket);
-			this._root.Children.Add(this._exportGeneral);
+			var export = new StackPanel { Margin = new Thickness(18) };
+			export.Children.Add(Note("Create one portable .shpc package. The package is reopened and fully validated before the export is reported as successful."));
+			export.Children.Add(this._exportDesktopSection);
+			export.Children.Add(this._exportDesktops);
+			export.Children.Add(this._exportWallpapers);
+			export.Children.Add(this._exportWebSocket);
+			export.Children.Add(this._exportGeneral);
 			this.PopulateExportDesktops();
 			var exportButton = Button("Export package...");
 			exportButton.Click += async (_, _) => await this.ExportAsync();
-			this._root.Children.Add(exportButton);
+			export.Children.Add(exportButton);
+			this._tabs.Items.Add(new TabItem { Header = "Export", Content = export });
 
-			this._root.Children.Add(new Border { Height = 24 });
-			this._root.Children.Add(Header("Import"));
-			this._root.Children.Add(Note("Import is all-or-nothing. SHPC validates the complete package first, creates an automatic backup, stages all requested changes, and rolls back if any step fails."));
+			var import = new StackPanel { Margin = new Thickness(18) };
+			import.Children.Add(Note("Import is all-or-nothing. SHPC validates the complete package first, creates an automatic backup, stages all requested changes, and rolls back if any step fails."));
 			var chooseButton = Button("Choose package...");
 			chooseButton.Click += async (_, _) => await this.ChooseImportAsync();
-			this._root.Children.Add(chooseButton);
-			this._root.Children.Add(this._importDesktopSection);
-			this._root.Children.Add(this._importDesktops);
-			this._root.Children.Add(this._importWallpapers);
-			this._root.Children.Add(this._importWebSocket);
-			this._root.Children.Add(this._importGeneral);
+			import.Children.Add(chooseButton);
+			import.Children.Add(this._importDesktopSection);
+			import.Children.Add(this._importDesktops);
+			import.Children.Add(this._importWallpapers);
+			import.Children.Add(this._importWebSocket);
+			import.Children.Add(this._importGeneral);
 			var importButton = Button("Import selected sections");
 			importButton.Click += async (_, _) => await this.ImportAsync();
-			this._root.Children.Add(importButton);
-			this._root.Children.Add(this._status);
+			import.Children.Add(importButton);
+			import.Children.Add(this._status);
+			this._tabs.Items.Add(new TabItem { Header = "Import", Content = import });
+
+			this._exportDesktopSection.Checked += (_, _) => this.UpdateDesktopSectionState(false);
+			this._exportDesktopSection.Unchecked += (_, _) => this.UpdateDesktopSectionState(false);
+			this._importDesktopSection.Checked += (_, _) => this.UpdateDesktopSectionState(true);
+			this._importDesktopSection.Unchecked += (_, _) => this.UpdateDesktopSectionState(true);
 			this.SetImportControls(false);
+			this.UpdateDesktopSectionState(false);
+		}
+
+		private void UpdateDesktopSectionState(bool import)
+		{
+			var section = import ? this._importDesktopSection : this._exportDesktopSection;
+			var panel = import ? this._importDesktops : this._exportDesktops;
+			var wallpapers = import ? this._importWallpapers : this._exportWallpapers;
+			var enabled = section.IsEnabled && section.IsChecked == true;
+			panel.IsEnabled = enabled;
+			wallpapers.IsEnabled = enabled && (!import || this._importManifest?.IncludesWallpapers == true);
 		}
 
 		private void PopulateExportDesktops()
@@ -75,7 +90,7 @@ namespace SylphyHorn.UI
 			this._exportDesktops.Children.Clear();
 			var row = new StackPanel { Orientation = Orientation.Horizontal };
 			var all = SmallButton("Select all"); all.Click += (_, _) => SetChecks(this._exportDesktops, true);
-			var none = SmallButton("Select none"); none.Click += (_, _) => SetChecks(this._exportDesktops, false);
+			var none = SmallButton("Unselect"); none.Click += (_, _) => SetChecks(this._exportDesktops, false);
 			row.Children.Add(all); row.Children.Add(none); this._exportDesktops.Children.Add(row);
 			foreach (var desktop in this._viewModel.Desktops.OrderBy(item => item.Index))
 				this._exportDesktops.Children.Add(new CheckBox { Content = $"{desktop.Index + 1}. {desktop.Title}  [{desktop.CanonicalName}]", Tag = desktop.CanonicalName, IsChecked = true, Margin = new Thickness(0, 3, 0, 3) });
@@ -122,7 +137,7 @@ namespace SylphyHorn.UI
 					foreach (var desktop in this._importManifest.Desktops.OrderBy(item => item.Position))
 						this._importDesktops.Children.Add(new CheckBox { Content = $"{desktop.Position}. {desktop.Title ?? desktop.CName}  [{desktop.CName}]", Tag = desktop.CName, IsChecked = true, Margin = new Thickness(0, 3, 0, 3) });
 				}
-				this.SetImportControls(true);
+				this.SetImportControls(true);\n\t\t\t\tthis.UpdateDesktopSectionState(true);
 				this._status.Text = $"Validated package: {Path.GetFileName(dialog.FileName)}";
 			}
 			catch (Exception ex) { this._importPath = null; this._importManifest = null; this.SetImportControls(false); this._status.Text = "Package validation failed. " + ex.Message; }
@@ -145,7 +160,10 @@ namespace SylphyHorn.UI
 
 		private void SetImportControls(bool enabled)
 		{
-			if (!enabled) { this._importDesktopSection.IsEnabled = false; this._importWallpapers.IsEnabled = false; this._importWebSocket.IsEnabled = false; this._importGeneral.IsEnabled = false; }
+			this._importDesktopSection.IsEnabled = enabled && this._importManifest?.IncludesDesktops == true;
+			this._importWebSocket.IsEnabled = enabled && this._importManifest?.IncludesWebSocket == true;
+			this._importGeneral.IsEnabled = enabled && this._importManifest?.IncludesGeneral == true;
+			this.UpdateDesktopSectionState(true);
 		}
 		private static void SetChecks(StackPanel panel, bool value) { foreach (var item in panel.Children.OfType<CheckBox>()) item.IsChecked = value; }
 		private static TextBlock Header(string text) => new() { Text = text, Foreground = Brushes.White, FontSize = 20, FontWeight = FontWeights.SemiBold, Margin = new Thickness(0, 4, 0, 8) };
