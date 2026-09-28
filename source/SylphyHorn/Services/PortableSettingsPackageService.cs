@@ -236,13 +236,13 @@ namespace SylphyHorn.Services
 			if (!string.Equals(manifest.Application, "SylphyHornPlusCon", StringComparison.Ordinal)) throw new InvalidDataException("This package was not created by SylphyHornPlusCon.");
 			if (!manifest.IncludesDesktops && !manifest.IncludesWebSocket && !manifest.IncludesGeneral) throw new InvalidDataException("The package contains no importable sections.");
 			var names = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-			foreach (var desktop in package.Desktops)
+			foreach (var desktop in desktops)
 			{
 				if (string.IsNullOrWhiteSpace(desktop.CName) || !names.Add(desktop.CName)) throw new InvalidDataException("Desktop CNames must be present and unique.");
 				if (desktop.Position < 1) throw new InvalidDataException($"Desktop '{desktop.CName}' has an invalid position.");
 				if (!string.IsNullOrWhiteSpace(desktop.WallpaperEntry) && archive.GetEntry(desktop.WallpaperEntry) == null) throw new InvalidDataException($"Wallpaper '{desktop.WallpaperEntry}' is missing.");
 			}
-			if (manifest.IncludesDesktops && package.Desktops.Count == 0) throw new InvalidDataException("The package declares desktops but contains none.");
+			if (manifest.IncludesDesktops && desktops.Count == 0) throw new InvalidDataException("The package declares desktops but contains none.");
 			if (settings.GroupBy(item => item.Key, StringComparer.Ordinal).Any(group => group.Count() > 1)) throw new InvalidDataException("The package contains duplicate settings.");
 		}
 	}
