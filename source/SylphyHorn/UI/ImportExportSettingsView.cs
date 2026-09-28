@@ -14,7 +14,13 @@ namespace SylphyHorn.UI
 	internal sealed class ImportExportSettingsView : UserControl
 	{
 		private readonly SettingsWindowViewModel _viewModel;
-		private readonly TabControl _tabs = new() { Margin = new Thickness(10) };
+		private readonly TabControl _tabs = new()
+		{
+			Margin = new Thickness(10),
+			Background = new SolidColorBrush(Color.FromRgb(36, 40, 47)),
+			Foreground = Brushes.White,
+			BorderBrush = new SolidColorBrush(Color.FromRgb(61, 66, 75)),
+		};
 		private readonly StackPanel _exportDesktops = new() { Margin = new Thickness(24, 4, 0, 8) };
 		private readonly StackPanel _importDesktops = new() { Margin = new Thickness(24, 4, 0, 8) };
 		private readonly CheckBox _exportDesktopSection = Box("Desktop settings and order", true);
@@ -38,7 +44,7 @@ namespace SylphyHorn.UI
 
 		private void Build()
 		{
-			var export = new StackPanel { Margin = new Thickness(18) };
+			var export = new StackPanel { Margin = new Thickness(18), Background = new SolidColorBrush(Color.FromRgb(36, 40, 47)) };
 			export.Children.Add(Note("Create one portable .shpc package. The package is reopened and fully validated before the export is reported as successful."));
 			export.Children.Add(this._exportDesktopSection);
 			export.Children.Add(this._exportDesktops);
@@ -49,9 +55,9 @@ namespace SylphyHorn.UI
 			var exportButton = Button("Export package...");
 			exportButton.Click += async (_, _) => await this.ExportAsync();
 			export.Children.Add(exportButton);
-			this._tabs.Items.Add(new TabItem { Header = "Export", Content = export });
+			this._tabs.Items.Add(CreateTab("Export", export));
 
-			var import = new StackPanel { Margin = new Thickness(18) };
+			var import = new StackPanel { Margin = new Thickness(18), Background = new SolidColorBrush(Color.FromRgb(36, 40, 47)) };
 			import.Children.Add(Note("Import is all-or-nothing. SHPC validates the complete package first, creates an automatic backup, stages all requested changes, and rolls back if any step fails."));
 			var chooseButton = Button("Choose package...");
 			chooseButton.Click += async (_, _) => await this.ChooseImportAsync();
@@ -65,7 +71,7 @@ namespace SylphyHorn.UI
 			importButton.Click += async (_, _) => await this.ImportAsync();
 			import.Children.Add(importButton);
 			import.Children.Add(this._status);
-			this._tabs.Items.Add(new TabItem { Header = "Import", Content = import });
+			this._tabs.Items.Add(CreateTab("Import", import));
 
 			this._exportDesktopSection.Checked += (_, _) => this.UpdateDesktopSectionState(false);
 			this._exportDesktopSection.Unchecked += (_, _) => this.UpdateDesktopSectionState(false);
@@ -93,7 +99,7 @@ namespace SylphyHorn.UI
 			var none = SmallButton("Unselect"); none.Click += (_, _) => SetChecks(this._exportDesktops, false);
 			row.Children.Add(all); row.Children.Add(none); this._exportDesktops.Children.Add(row);
 			foreach (var desktop in this._viewModel.Desktops.OrderBy(item => item.Index))
-				this._exportDesktops.Children.Add(new CheckBox { Content = $"{desktop.Index + 1}. {desktop.Title}  [{desktop.CanonicalName}]", Tag = desktop.CanonicalName, IsChecked = true, Margin = new Thickness(0, 3, 0, 3) });
+				this._exportDesktops.Children.Add(new CheckBox { Content = $"{desktop.Index + 1}. {desktop.Title}  [{desktop.CanonicalName}]", Tag = desktop.CanonicalName, IsChecked = true, Foreground = Brushes.White, Margin = new Thickness(0, 3, 0, 3) });
 		}
 
 		private async System.Threading.Tasks.Task ExportAsync()
@@ -135,7 +141,7 @@ namespace SylphyHorn.UI
 					var none = SmallButton("Select none"); none.Click += (_, _) => SetChecks(this._importDesktops, false);
 					row.Children.Add(all); row.Children.Add(none); this._importDesktops.Children.Add(row);
 					foreach (var desktop in this._importManifest.Desktops.OrderBy(item => item.Position))
-						this._importDesktops.Children.Add(new CheckBox { Content = $"{desktop.Position}. {desktop.Title ?? desktop.CName}  [{desktop.CName}]", Tag = desktop.CName, IsChecked = true, Margin = new Thickness(0, 3, 0, 3) });
+						this._importDesktops.Children.Add(new CheckBox { Content = $"{desktop.Position}. {desktop.Title ?? desktop.CName}  [{desktop.CName}]", Tag = desktop.CName, IsChecked = true, Foreground = Brushes.White, Margin = new Thickness(0, 3, 0, 3) });
 				}
 				this.SetImportControls(true);
 				this.UpdateDesktopSectionState(true);
@@ -166,11 +172,25 @@ namespace SylphyHorn.UI
 			this._importGeneral.IsEnabled = enabled && this._importManifest?.IncludesGeneral == true;
 			this.UpdateDesktopSectionState(true);
 		}
+		private static TabItem CreateTab(string title, UIElement content)
+		{
+			var tab = new TabItem
+			{
+				Header = title,
+				Content = content,
+				Foreground = Brushes.White,
+				Background = new SolidColorBrush(Color.FromRgb(31, 35, 41)),
+				BorderBrush = new SolidColorBrush(Color.FromRgb(61, 66, 75)),
+				Padding = new Thickness(12, 5, 12, 5),
+			};
+			return tab;
+		}
+
 		private static void SetChecks(StackPanel panel, bool value) { foreach (var item in panel.Children.OfType<CheckBox>()) item.IsChecked = value; }
 		private static TextBlock Header(string text) => new() { Text = text, Foreground = Brushes.White, FontSize = 20, FontWeight = FontWeights.SemiBold, Margin = new Thickness(0, 4, 0, 8) };
 		private static TextBlock Note(string text) => new() { Text = text, Foreground = new SolidColorBrush(Color.FromRgb(173, 180, 190)), TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 0, 0, 10) };
-		private static CheckBox Box(string text, bool value) => new() { Content = text, IsChecked = value, Margin = new Thickness(0, 4, 0, 4) };
-		private static Button Button(string text) => new() { Content = text, Padding = new Thickness(14, 7, 14, 7), HorizontalAlignment = HorizontalAlignment.Left, Margin = new Thickness(0, 10, 0, 4) };
-		private static Button SmallButton(string text) => new() { Content = text, Padding = new Thickness(8, 3, 8, 3), Margin = new Thickness(0, 0, 6, 5) };
+		private static CheckBox Box(string text, bool value) => new() { Content = text, IsChecked = value, Foreground = Brushes.White, Margin = new Thickness(0, 4, 0, 4) };
+		private static Button Button(string text) => new() { Content = text, Padding = new Thickness(14, 7, 14, 7), HorizontalAlignment = HorizontalAlignment.Left, Margin = new Thickness(0, 10, 0, 4), Background = new SolidColorBrush(Color.FromRgb(31, 35, 41)), Foreground = Brushes.White, BorderBrush = new SolidColorBrush(Color.FromRgb(65, 72, 82)) };
+		private static Button SmallButton(string text) => new() { Content = text, Padding = new Thickness(8, 3, 8, 3), Margin = new Thickness(0, 0, 6, 5), Background = new SolidColorBrush(Color.FromRgb(31, 35, 41)), Foreground = Brushes.White, BorderBrush = new SolidColorBrush(Color.FromRgb(65, 72, 82)) };
 	}
 }
