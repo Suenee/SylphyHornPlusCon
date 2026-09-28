@@ -39,30 +39,43 @@ namespace SylphyHorn.Serialization
 
 		public async Task LoadOrMigrateAsync()
 		{
-			if (this.Available && File.Exists(this._targetFile.FullName))
+			if (!this.Available)
 			{
 				await this.LoadAsync().ConfigureAwait(false);
 				return;
 			}
 
-			// SHPC 0.54 changed the product identity from hwtnb.net/SylphyHornPlus to
-			// Sueneé Universe/SylphyHornPlusCon. Preserve the immediately previous
-			// per-user/per-machine settings before falling back to the original SylphyHorn path.
 			var localAppData = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
-			var migrationCandidates = new[]
+			var previousShpcPath = Path.Combine(localAppData, "hwtnb.net", "SylphyHornPlus", this.Filename);
+			var migrationMarker = Path.Combine(this._targetFile.DirectoryName, ".profile-migration-0.55");
+			if (File.Exists(previousShpcPath) && !File.Exists(migrationMarker))
 			{
-				Path.Combine(localAppData, "hwtnb.net", "SylphyHornPlus", this.Filename),
-				Path.Combine(localAppData, ProductInfo.OriginalCompany, ProductInfo.OriginalProduct, this.Filename),
-			};
-
-			foreach (var path in migrationCandidates)
-			{
-				if (!File.Exists(path)) continue;
-				await this.ImportAsync(path).ConfigureAwait(false);
+				// 0.54 changed Company/Product and could create a fresh target profile before
+				// the previous SHPC profile was migrated. Preserve that 0.54 file as a backup,
+				// restore the known-good previous SHPC profile once, then mark the migration.
+				if (File.Exists(this._targetFile.FullName))
+				{
+					var backupPath = this._targetFile.FullName + ".pre-0.55.bak";
+					if (!File.Exists(backupPath)) File.Copy(this._targetFile.FullName, backupPath, false);
+				}
+				await this.ImportAsync(previousShpcPath).ConfigureAwait(false);
+				File.WriteAllText(migrationMarker, "Migrated from hwtnb.net/SylphyHornPlus by SHPC 0.55.");
 				return;
 			}
 
-			await this.LoadAsync().ConfigureAwait(false);
+			if (File.Exists(this._targetFile.FullName))
+			{
+				await this.LoadAsync().ConfigureAwait(false);
+				return;
+			}
+
+			var originalPath = Path.Combine(
+				localAppData,
+				ProductInfo.OriginalCompany,
+				ProductInfo.OriginalProduct,
+				this.Filename);
+			if (File.Exists(originalPath)) await this.ImportAsync(originalPath).ConfigureAwait(false);
+			else await this.LoadAsync().ConfigureAwait(false);
 		}
 
 		protected override Task SaveAsyncCore(IDictionary<string, object> dic)
