@@ -26,7 +26,7 @@ namespace SylphyHorn.Services
 		public string Type { get; set; }
 		public JsonElement Value { get; set; }
 	}
-	internal sealed class PortablePackageManifest
+	internal sealed class PortablePackageMetadata
 	{
 		public int FormatVersion { get; set; } = 1;
 		public string Application { get; set; } = "SylphyHornPlusCon";
@@ -38,8 +38,7 @@ namespace SylphyHorn.Services
 		public bool IncludesWallpapers { get; set; }
 		public bool IncludesWebSocket { get; set; }
 		public bool IncludesGeneral { get; set; }
-		public List<PortableDesktopRecord> Desktops { get; set; } = new();
-		public List<PortableSettingRecord> Settings { get; set; } = new();
+		public string SettingsFile { get; set; } = "settings.json";
 	}
 	internal sealed class PortableExportOptions
 	{
@@ -60,7 +59,9 @@ namespace SylphyHorn.Services
 	internal sealed class PortablePackageContent : IDisposable
 	{
 		public string TemporaryDirectory { get; init; }
-		public PortablePackageManifest Manifest { get; init; }
+		public PortablePackageMetadata Manifest { get; init; }
+		public List<PortableDesktopRecord> Desktops { get; init; } = new();
+		public List<PortableSettingRecord> Settings { get; init; } = new();
 		public void Dispose() { try { if (!string.IsNullOrWhiteSpace(this.TemporaryDirectory) && Directory.Exists(this.TemporaryDirectory)) Directory.Delete(this.TemporaryDirectory, true); } catch { } }
 	}
 
@@ -81,13 +82,13 @@ namespace SylphyHorn.Services
 			var tempPath = targetPath + "." + Guid.NewGuid().ToString("N") + ".tmp";
 			try
 			{
-				var manifest = BuildManifest(options, settings, desktops);
+				var package = BuildPackage(options, settings, desktops);
 				using (var stream = new FileStream(tempPath, FileMode.CreateNew, FileAccess.ReadWrite, FileShare.None))
 				using (var archive = new ZipArchive(stream, ZipArchiveMode.Create, true))
 				{
 					if (options.Desktops && options.Wallpapers)
 					{
-						foreach (var desktop in manifest.Desktops)
+						foreach (var desktop in package.Desktops)
 						{
 							var source = desktops.First(item => string.Equals(item.CanonicalName, desktop.CName, StringComparison.OrdinalIgnoreCase)).WallpaperPath;
 							if (string.IsNullOrWhiteSpace(source)) continue;
@@ -100,9 +101,12 @@ namespace SylphyHorn.Services
 							desktop.WallpaperEntry = entryName;
 						}
 					}
-					var manifestEntry = archive.CreateEntry("manifest.json", CompressionLevel.Optimal);
+					var manifestEntry = archive.CreateEntry("package.json", CompressionLevel.Optimal);
 					using (var writer = new StreamWriter(manifestEntry.Open()))
-						await writer.WriteAsync(JsonSerializer.Serialize(manifest, JsonOptions)).ConfigureAwait(false);
+						await writer.WriteAsync(JsonSerializer.Serialize(package.Metadata, JsonOptions)).ConfigureAwait(false);
+					var settingsEntry = archive.CreateEntry("settings.json", CompressionLevel.Optimal);
+					using (var writer = new StreamWriter(settingsEntry.Open()))
+						await writer.WriteAsync(JsonSerializer.Serialize(new PortablePackageSettings { Desktops = package.Desktops, Settings = package.Settings }, JsonOptions)).ConfigureAwait(false);
 				}
 				// Re-open with the same validator used by import. Export is successful only when its result is importable.
 				using (var verified = await OpenAndValidateAsync(tempPath).ConfigureAwait(false)) { }
@@ -118,16 +122,26 @@ namespace SylphyHorn.Services
 			Directory.CreateDirectory(temp);
 			try
 			{
-				PortablePackageManifest manifest;
+				PortablePackageMetadata metadata;
+				List<PortableDesktopRecord> desktops;
+				List<PortableSettingRecord> settings;
 				using (var stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read))
 				using (var archive = new ZipArchive(stream, ZipArchiveMode.Read))
 				{
-					var entry = archive.GetEntry("manifest.json") ?? throw new InvalidDataException("manifest.json is missing.");
-					using var reader = new StreamReader(entry.Open());
-					manifest = JsonSerializer.Deserialize<PortablePackageManifest>(await reader.ReadToEndAsync().ConfigureAwait(false), JsonOptions)
-						?? throw new InvalidDataException("manifest.json is invalid.");
-					ValidateManifest(manifest, archive);
-					foreach (var wallpaper in manifest.Desktops.Where(item => !string.IsNullOrWhiteSpace(item.WallpaperEntry)))
+					var entry = archive.GetEntry("package.json") ?? throw new InvalidDataException("package.json is missing.");
+					using (var reader = new StreamReader(entry.Open()))
+						metadata = JsonSerializer.Deserialize<PortablePackageMetadata>(await reader.ReadToEndAsync().ConfigureAwait(false), JsonOptions)
+							?? throw new InvalidDataException("package.json is invalid.");
+					var settingsEntry = archive.GetEntry(metadata.SettingsFile ?? "settings.json") ?? throw new InvalidDataException("settings.json is missing.");
+					using (var reader = new StreamReader(settingsEntry.Open()))
+					{
+						var payload = JsonSerializer.Deserialize<PortablePackageSettings>(await reader.ReadToEndAsync().ConfigureAwait(false), JsonOptions)
+							?? throw new InvalidDataException("settings.json is invalid.");
+						desktops = payload.Desktops ?? new();
+						settings = payload.Settings ?? new();
+					}
+					ValidatePackage(metadata, desktops, settings, archive);
+					foreach (var wallpaper in desktops.Where(item => !string.IsNullOrWhiteSpace(item.WallpaperEntry)))
 					{
 						var source = archive.GetEntry(wallpaper.WallpaperEntry) ?? throw new InvalidDataException($"Wallpaper '{wallpaper.WallpaperEntry}' is missing.");
 						var target = Path.Combine(temp, Path.GetFileName(wallpaper.WallpaperEntry));
@@ -137,14 +151,14 @@ namespace SylphyHorn.Services
 						wallpaper.WallpaperEntry = target;
 					}
 				}
-				return new PortablePackageContent { TemporaryDirectory = temp, Manifest = manifest };
+				return new PortablePackageContent { TemporaryDirectory = temp, Manifest = metadata, Desktops = desktops, Settings = settings };
 			}
 			catch { try { Directory.Delete(temp, true); } catch { } throw; }
 		}
 
-		internal static void ApplySelectedSettings(IDictionary<string, object> target, PortablePackageManifest manifest, PortableImportOptions options)
+		internal static void ApplySelectedSettings(IDictionary<string, object> target, IReadOnlyList<PortableSettingRecord> settings, PortableImportOptions options)
 		{
-			foreach (var record in manifest.Settings)
+			foreach (var record in settings)
 			{
 				var webSocket = IsWebSocketKey(record.Key);
 				var general = IsGeneralKey(record.Key);
@@ -170,21 +184,35 @@ namespace SylphyHorn.Services
 			return Path.Combine(root, $"SHPC-backup-{DateTime.Now:yyyyMMdd-HHmmss}.shpc");
 		}
 
-		private static PortablePackageManifest BuildManifest(PortableExportOptions options, IReadOnlyDictionary<string, object> settings, IReadOnlyList<VirtualDesktopViewModel> desktops)
+		private sealed class PortablePackageSettings
 		{
-			var manifest = new PortablePackageManifest
+			public List<PortableDesktopRecord> Desktops { get; set; } = new();
+			public List<PortableSettingRecord> Settings { get; set; } = new();
+		}
+		private sealed class PortablePackageBuild
+		{
+			public PortablePackageMetadata Metadata { get; init; }
+			public List<PortableDesktopRecord> Desktops { get; init; }
+			public List<PortableSettingRecord> Settings { get; init; }
+		}
+
+		private static PortablePackageBuild BuildPackage(PortableExportOptions options, IReadOnlyDictionary<string, object> settings, IReadOnlyList<VirtualDesktopViewModel> desktops)
+		{
+			var metadata = new PortablePackageMetadata
 			{
 				ApplicationVersion = ProductInfo.VersionString, CreatedUtc = DateTimeOffset.UtcNow.ToString("O"),
 				SourceMachine = Environment.MachineName, SourceWindows = Environment.OSVersion.VersionString,
 				IncludesDesktops = options.Desktops, IncludesWallpapers = options.Desktops && options.Wallpapers,
 				IncludesWebSocket = options.WebSocket, IncludesGeneral = options.General,
 			};
+			var desktopRecords = new List<PortableDesktopRecord>();
 			if (options.Desktops)
 			{
 				foreach (var desktop in desktops.Where(item => options.DesktopCNames.Contains(item.CanonicalName)).OrderBy(item => item.Index))
-					manifest.Desktops.Add(new PortableDesktopRecord { CName = desktop.CanonicalName, Title = desktop.StoredTitle, Position = desktop.Index + 1, WallpaperOriginalPath = desktop.WallpaperPath, WallpaperPosition = (byte)desktop.WallpaperPosition });
-				if (manifest.Desktops.Count == 0) throw new InvalidDataException("Select at least one desktop to export.");
+					desktopRecords.Add(new PortableDesktopRecord { CName = desktop.CanonicalName, Title = desktop.StoredTitle, Position = desktop.Index + 1, WallpaperOriginalPath = desktop.WallpaperPath, WallpaperPosition = (byte)desktop.WallpaperPosition });
+				if (desktopRecords.Count == 0) throw new InvalidDataException("Select at least one desktop to export.");
 			}
+			var settingRecords = new List<PortableSettingRecord>();
 			foreach (var pair in settings.OrderBy(item => item.Key, StringComparer.Ordinal))
 			{
 				var webSocket = options.WebSocket && IsWebSocketKey(pair.Key);
@@ -193,28 +221,29 @@ namespace SylphyHorn.Services
 				object value = pair.Value;
 				if (pair.Key.EndsWith(".WebSocketApiKeyProtected", StringComparison.Ordinal)) value = WebSocketConnectionService.UnprotectApiKey(value as string);
 				if (value == null) continue;
-				manifest.Settings.Add(new PortableSettingRecord { Key = pair.Key, Type = value.GetType().FullName, Value = JsonSerializer.SerializeToElement(value, value.GetType(), JsonOptions) });
+				settingRecords.Add(new PortableSettingRecord { Key = pair.Key, Type = value.GetType().FullName, Value = JsonSerializer.SerializeToElement(value, value.GetType(), JsonOptions) });
 			}
-			return manifest;
+			return new PortablePackageBuild { Metadata = metadata, Desktops = desktopRecords, Settings = settingRecords };
 		}
+
 		private static bool IsWebSocketKey(string key) => key.StartsWith("GeneralSettings.WebSocket", StringComparison.Ordinal);
 		private static bool IsGeneralKey(string key) => key.StartsWith("GeneralSettings.", StringComparison.Ordinal) && !IsWebSocketKey(key) && !IsDesktopKey(key);
 		private static bool IsDesktopKey(string key) => key.StartsWith(SettingsService.DesktopNamesKey, StringComparison.Ordinal) || key.StartsWith(SettingsService.DesktopWallpaperPathsKey, StringComparison.Ordinal) || key.StartsWith(SettingsService.DesktopPositionsKey, StringComparison.Ordinal) || key.StartsWith("GeneralSettings.DesktopCanonicalNames", StringComparison.Ordinal);
 		private static string SanitizeFileName(string value) { foreach (var c in Path.GetInvalidFileNameChars()) value = value.Replace(c, '_'); return string.IsNullOrWhiteSpace(value) ? "desktop" : value; }
-		private static void ValidateManifest(PortablePackageManifest manifest, ZipArchive archive)
+		private static void ValidatePackage(PortablePackageMetadata manifest, IReadOnlyList<PortableDesktopRecord> desktops, IReadOnlyList<PortableSettingRecord> settings, ZipArchive archive)
 		{
 			if (manifest.FormatVersion != 1) throw new InvalidDataException($"Unsupported SHPC package format {manifest.FormatVersion}.");
 			if (!string.Equals(manifest.Application, "SylphyHornPlusCon", StringComparison.Ordinal)) throw new InvalidDataException("This package was not created by SylphyHornPlusCon.");
 			if (!manifest.IncludesDesktops && !manifest.IncludesWebSocket && !manifest.IncludesGeneral) throw new InvalidDataException("The package contains no importable sections.");
 			var names = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-			foreach (var desktop in manifest.Desktops)
+			foreach (var desktop in package.Desktops)
 			{
 				if (string.IsNullOrWhiteSpace(desktop.CName) || !names.Add(desktop.CName)) throw new InvalidDataException("Desktop CNames must be present and unique.");
 				if (desktop.Position < 1) throw new InvalidDataException($"Desktop '{desktop.CName}' has an invalid position.");
 				if (!string.IsNullOrWhiteSpace(desktop.WallpaperEntry) && archive.GetEntry(desktop.WallpaperEntry) == null) throw new InvalidDataException($"Wallpaper '{desktop.WallpaperEntry}' is missing.");
 			}
-			if (manifest.IncludesDesktops && manifest.Desktops.Count == 0) throw new InvalidDataException("The package declares desktops but contains none.");
-			if (manifest.Settings.GroupBy(item => item.Key, StringComparer.Ordinal).Any(group => group.Count() > 1)) throw new InvalidDataException("The package contains duplicate settings.");
+			if (manifest.IncludesDesktops && package.Desktops.Count == 0) throw new InvalidDataException("The package declares desktops but contains none.");
+			if (settings.GroupBy(item => item.Key, StringComparer.Ordinal).Any(group => group.Count() > 1)) throw new InvalidDataException("The package contains duplicate settings.");
 		}
 	}
 }
