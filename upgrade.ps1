@@ -1,6 +1,6 @@
 $ErrorActionPreference = 'Stop'
 
-$Version = '0.32'
+$Version = '0.33'
 $Revision = '0.33-runtime-signal-restore'
 $Repo = $env:SHPC_UPGRADE_REPO
 $TargetBranch = $env:SHPC_UPGRADE_BRANCH
