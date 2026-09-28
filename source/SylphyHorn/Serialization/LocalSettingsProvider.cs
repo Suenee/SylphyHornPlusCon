@@ -45,13 +45,24 @@ namespace SylphyHorn.Serialization
 				return;
 			}
 
-			var path = Path.Combine(
-				Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-				ProductInfo.OriginalCompany,
-				ProductInfo.OriginalProduct,
-				this.Filename);
-			if (File.Exists(path)) await this.ImportAsync(path).ConfigureAwait(false);
-			else await this.LoadAsync().ConfigureAwait(false);
+			// SHPC 0.54 changed the product identity from hwtnb.net/SylphyHornPlus to
+			// Sueneé Universe/SylphyHornPlusCon. Preserve the immediately previous
+			// per-user/per-machine settings before falling back to the original SylphyHorn path.
+			var localAppData = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
+			var migrationCandidates = new[]
+			{
+				Path.Combine(localAppData, "hwtnb.net", "SylphyHornPlus", this.Filename),
+				Path.Combine(localAppData, ProductInfo.OriginalCompany, ProductInfo.OriginalProduct, this.Filename),
+			};
+
+			foreach (var path in migrationCandidates)
+			{
+				if (!File.Exists(path)) continue;
+				await this.ImportAsync(path).ConfigureAwait(false);
+				return;
+			}
+
+			await this.LoadAsync().ConfigureAwait(false);
 		}
 
 		protected override Task SaveAsyncCore(IDictionary<string, object> dic)
