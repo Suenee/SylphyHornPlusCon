@@ -1018,6 +1018,105 @@ namespace SylphyHorn.UI.Bindings
 			this._compositeDisposable.Dispose();
 		}
 
+		internal async Task ExportPortablePackageAsync(string path, PortableExportOptions options)
+		{
+			await LocalSettingsProvider.Instance.SaveAsync().ConfigureAwait(false);
+			var snapshot = await LocalSettingsProvider.Instance.PrepareImportAsync(LocalSettingsProvider.Instance.FilePath).ConfigureAwait(false);
+			await PortableSettingsPackageService.ExportAsync(path, options, snapshot.Settings, this.Desktops).ConfigureAwait(false);
+		}
+
+		internal async Task<PortablePackageManifest> InspectPortablePackageAsync(string path)
+		{
+			using var package = await PortableSettingsPackageService.OpenAndValidateAsync(path).ConfigureAwait(false);
+			return package.Manifest;
+		}
+
+		internal async Task ImportPortablePackageAsync(string path, PortableImportOptions options)
+		{
+			if (options == null) throw new ArgumentNullException(nameof(options));
+			using var package = await PortableSettingsPackageService.OpenAndValidateAsync(path).ConfigureAwait(false);
+			var selectedDesktops = package.Manifest.Desktops.Where(item => options.DesktopCNames.Contains(item.CName)).OrderBy(item => item.Position).ToArray();
+			if (options.Desktops && selectedDesktops.Length == 0) throw new InvalidDataException("Select at least one desktop to import.");
+
+			var hookDisposable = this._hookService?.Suspend();
+			var tempSettings = Path.Combine(Path.GetTempPath(), "SHPC-settings-" + Guid.NewGuid().ToString("N") + ".xml");
+			var installedWallpapers = new List<(string Path, string Backup)>();
+			try
+			{
+				await LocalSettingsProvider.Instance.SaveAsync().ConfigureAwait(false);
+				var currentStage = await LocalSettingsProvider.Instance.PrepareImportAsync(LocalSettingsProvider.Instance.FilePath).ConfigureAwait(false);
+				var current = new Dictionary<string, object>(currentStage.Settings);
+				var backupOptions = new PortableExportOptions { Desktops = true, Wallpapers = true, WebSocket = true, General = true };
+				foreach (var desktop in this.Desktops) backupOptions.DesktopCNames.Add(desktop.CanonicalName);
+				await PortableSettingsPackageService.ExportAsync(PortableSettingsPackageService.CreateAutomaticBackupPath(), backupOptions, current, this.Desktops).ConfigureAwait(false);
+
+				PortableSettingsPackageService.ApplySelectedSettings(current, package.Manifest, options);
+				var desired = this.Desktops.OrderBy(item => item.Index).Select(item => new PortableDesktopRecord
+				{
+					CName = item.CanonicalName, Title = item.StoredTitle, Position = item.Index + 1,
+					WallpaperOriginalPath = item.WallpaperPath, WallpaperPosition = (byte)item.WallpaperPosition,
+				}).ToList();
+
+				if (options.Desktops)
+				{
+					var wallpaperRoot = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), ProductInfo.Company, ProductInfo.Product, "Wallpapers");
+					Directory.CreateDirectory(wallpaperRoot);
+					foreach (var imported in selectedDesktops)
+					{
+						var existing = desired.FindIndex(item => string.Equals(item.CName, imported.CName, StringComparison.OrdinalIgnoreCase));
+						var record = existing >= 0 ? desired[existing] : new PortableDesktopRecord { CName = imported.CName };
+						record.Title = imported.Title;
+						record.WallpaperPosition = imported.WallpaperPosition;
+						if (options.Wallpapers && !string.IsNullOrWhiteSpace(imported.WallpaperEntry))
+						{
+							var extension = Path.GetExtension(imported.WallpaperEntry);
+							var target = Path.Combine(wallpaperRoot, imported.CName + extension);
+							var backup = File.Exists(target) ? target + "." + Guid.NewGuid().ToString("N") + ".bak" : null;
+							if (backup != null) File.Copy(target, backup, true);
+							File.Copy(imported.WallpaperEntry, target, true);
+							installedWallpapers.Add((target, backup));
+							record.WallpaperOriginalPath = target;
+						}
+						if (existing >= 0) desired[existing] = record;
+						else desired.Insert(Math.Max(0, Math.Min(imported.Position - 1, desired.Count)), record);
+					}
+					SettingsService.ApplyPortableDesktopProjection(current, desired.Select(item => item.Title).ToArray(), desired.Select(item => item.WallpaperOriginalPath).ToArray(), desired.Select(item => (WallpaperPosition)item.WallpaperPosition).ToArray());
+				}
+
+				await LocalSettingsProvider.Instance.WriteSnapshotAsync(current, tempSettings).ConfigureAwait(false);
+				var prepared = await LocalSettingsProvider.Instance.PrepareImportAsync(tempSettings).ConfigureAwait(false);
+				var result = await this._desktopRuntime.CommitPreparedImportAsync(prepared, options.Desktops, default(CancellationToken)).ConfigureAwait(false);
+				if (!result.Succeeded) throw new InvalidOperationException("SHPC rejected the prepared import.");
+
+				if (options.Desktops)
+				{
+					await this._desktopRuntime.RequestReconciliationAsync().ConfigureAwait(false);
+					await Application.Current.Dispatcher.InvokeAsync(() =>
+					{
+						this.UpdateDesktops(this._desktopRuntime.State);
+						if (this.Desktops.Length != desired.Count) throw new InvalidOperationException("Desktop count does not match the validated import.");
+						VirtualDesktopViewModel.ApplyLogicalCanonicalNames(this.Desktops, desired.Select(item => item.CName).ToArray(), desired.Select(_ => false).ToArray());
+						this.NotifyOfAllPropertiesChanged();
+					});
+				}
+				await LocalSettingsProvider.Instance.SaveAsync().ConfigureAwait(false);
+				foreach (var item in installedWallpapers) if (item.Backup != null && File.Exists(item.Backup)) File.Delete(item.Backup);
+			}
+			catch
+			{
+				foreach (var item in installedWallpapers.AsEnumerable().Reverse())
+				{
+					try { if (item.Backup != null && File.Exists(item.Backup)) { File.Copy(item.Backup, item.Path, true); File.Delete(item.Backup); } else if (File.Exists(item.Path)) File.Delete(item.Path); } catch { }
+				}
+				throw;
+			}
+			finally
+			{
+				hookDisposable?.Dispose();
+				try { if (File.Exists(tempSettings)) File.Delete(tempSettings); } catch { }
+			}
+		}
+
 		public void OpenBackgroundPathDialog(int index)
 		{
 			var response = this._dialogService.ShowOpenFileDialog(
