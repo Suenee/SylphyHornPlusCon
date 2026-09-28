@@ -1025,17 +1025,16 @@ namespace SylphyHorn.UI.Bindings
 			await PortableSettingsPackageService.ExportAsync(path, options, snapshot.Settings, this.Desktops).ConfigureAwait(false);
 		}
 
-		internal async Task<PortablePackageManifest> InspectPortablePackageAsync(string path)
+		internal async Task<PortablePackageContent> InspectPortablePackageAsync(string path)
 		{
-			using var package = await PortableSettingsPackageService.OpenAndValidateAsync(path).ConfigureAwait(false);
-			return package.Manifest;
+			return await PortableSettingsPackageService.OpenAndValidateAsync(path).ConfigureAwait(false);
 		}
 
 		internal async Task ImportPortablePackageAsync(string path, PortableImportOptions options)
 		{
 			if (options == null) throw new ArgumentNullException(nameof(options));
 			using var package = await PortableSettingsPackageService.OpenAndValidateAsync(path).ConfigureAwait(false);
-			var selectedDesktops = package.Manifest.Desktops.Where(item => options.DesktopCNames.Contains(item.CName)).OrderBy(item => item.Position).ToArray();
+			var selectedDesktops = package.Desktops.Where(item => options.DesktopCNames.Contains(item.CName)).OrderBy(item => item.Position).ToArray();
 			if (options.Desktops && selectedDesktops.Length == 0) throw new InvalidDataException("Select at least one desktop to import.");
 
 			var hookDisposable = this._hookService?.Suspend();
@@ -1051,7 +1050,7 @@ namespace SylphyHorn.UI.Bindings
 				foreach (var desktop in this.Desktops) backupOptions.DesktopCNames.Add(desktop.CanonicalName);
 				await PortableSettingsPackageService.ExportAsync(PortableSettingsPackageService.CreateAutomaticBackupPath(), backupOptions, current, this.Desktops).ConfigureAwait(false);
 
-				PortableSettingsPackageService.ApplySelectedSettings(current, package.Manifest, options);
+				PortableSettingsPackageService.ApplySelectedSettings(current, package.Settings, options);
 				var desired = this.Desktops.OrderBy(item => item.Index).Select(item => new PortableDesktopRecord
 				{
 					CName = item.CanonicalName, Title = item.StoredTitle, Position = item.Index + 1,
