@@ -1039,7 +1039,7 @@ namespace SylphyHorn.UI.Bindings
 			if (options.Desktops && selectedDesktops.Length == 0) throw new InvalidDataException("Select at least one desktop to import.");
 
 			var hookDisposable = this._hookService?.Suspend();
-			var tempSettings = Path.Combine(Path.GetTempPath(), "SHPC-settings-" + Guid.NewGuid().ToString("N") + ".xml");
+			var tempSettings = Path.Combine(Path.GetTempPath(), "SHPC-settings-" + Guid.NewGuid().ToString("N") + ".xml");\n\t\t\tvar rollbackSettings = Path.Combine(Path.GetTempPath(), "SHPC-rollback-" + Guid.NewGuid().ToString("N") + ".xml");
 			var installedWallpapers = new List<(string Path, string Backup)>();
 			try
 			{
@@ -1104,6 +1104,18 @@ namespace SylphyHorn.UI.Bindings
 			}
 			catch
 			{
+				try
+				{
+					if (File.Exists(rollbackSettings))
+					{
+						var rollback = await LocalSettingsProvider.Instance.PrepareImportAsync(rollbackSettings).ConfigureAwait(false);
+						await this._desktopRuntime.CommitPreparedImportAsync(rollback, true, default(CancellationToken)).ConfigureAwait(false);
+					}
+				}
+				catch (Exception rollbackError)
+				{
+					LoggingService.Instance.Write(LogLevel.Error, "IMPORT", "RollbackFailed", "Portable import failed and the automatic rollback also failed.", details: rollbackError.ToString());
+				}
 				foreach (var item in installedWallpapers.AsEnumerable().Reverse())
 				{
 					try { if (item.Backup != null && File.Exists(item.Backup)) { File.Copy(item.Backup, item.Path, true); File.Delete(item.Backup); } else if (File.Exists(item.Path)) File.Delete(item.Path); } catch { }
@@ -1113,7 +1125,7 @@ namespace SylphyHorn.UI.Bindings
 			finally
 			{
 				hookDisposable?.Dispose();
-				try { if (File.Exists(tempSettings)) File.Delete(tempSettings); } catch { }
+				try { if (File.Exists(tempSettings)) File.Delete(tempSettings); } catch { }\n\t\t\t\ttry { if (File.Exists(rollbackSettings)) File.Delete(rollbackSettings); } catch { }
 			}
 		}
 
