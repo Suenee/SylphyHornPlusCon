@@ -38,7 +38,13 @@ namespace SylphyHorn.UI
 		protected override void OnContentRendered(EventArgs e)
 		{
 			base.OnContentRendered(e);
-			(this.DataContext as SettingsWindowViewModel)?.Initialize();
+			var viewModel = this.DataContext as SettingsWindowViewModel;
+			viewModel?.Initialize();
+			if (viewModel != null && this._importExportSettingsView == null && this._legacySettingsTabs?.Items.Count > 15 && this._legacySettingsTabs.Items[15] is TabItem importExportTab)
+			{
+				this._importExportSettingsView = new ImportExportSettingsView(viewModel);
+				importExportTab.Content = this._importExportSettingsView;
+			}
 			this.Pin();
 		}
 
@@ -69,11 +75,7 @@ namespace SylphyHorn.UI
 			if (this._legacySettingsTabs.Items[12] is TabItem logTab) logTab.Content = this._appLogView;
 			this._webSocketSettingsView = new WebSocketSettingsView();
 			this._legacySettingsTabs.Items.Add(new TabItem { Header = "WebSocket", Content = this._webSocketSettingsView });
-			if (this.DataContext is SettingsWindowViewModel settingsViewModel)
-			{
-				this._importExportSettingsView = new ImportExportSettingsView(settingsViewModel);
-				this._legacySettingsTabs.Items.Add(new TabItem { Header = "Import / Export", Content = this._importExportSettingsView });
-			}
+			this._legacySettingsTabs.Items.Add(new TabItem { Header = "Import / Export" });
 			root.Children.Remove(this._legacySettingsTabs);
 			this.HideLegacyTabHeaders();
 			var shell = new Grid { Background = new SolidColorBrush(Color.FromRgb(30, 34, 40)) };
