@@ -3,7 +3,7 @@ cls
 setlocal EnableExtensions EnableDelayedExpansion
 
 rem SylphyHornPlusCon upgrade/bootstrap launcher
-rem Version: 0.24
+rem Version: 0.25
 rem A lone upgrade.cmd can bootstrap a fresh DEVEL checkout into its own folder.
 rem Existing repositories still use the proven two-stage self-update path.
 
@@ -33,8 +33,10 @@ if errorlevel 1 exit /b 1
 call :read_branch
 if errorlevel 1 exit /b 1
 
+echo [SELF-UPDATE] Checking current SHPC updater...
 git -C "!REPO_DIR!" remote set-url origin "https://github.com/Suenee/SylphyHornPlusCon.git" >NUL 2>NUL
 if errorlevel 1 goto :origin_fail_stage0
+echo [SELF-UPDATE] Fetching origin/!BRANCH!...
 git -C "!REPO_DIR!" fetch --prune origin "!BRANCH!" >NUL 2>NUL
 if errorlevel 1 goto :fetch_fail_stage0
 
@@ -120,7 +122,7 @@ if errorlevel 1 exit /b 1
 
 if not exist "!REPO_DIR!\logs" mkdir "!REPO_DIR!\logs" >NUL 2>NUL
 set "LOG=!REPO_DIR!\logs\upgrade.log"
->"!LOG!" echo SylphyHornPlusCon upgrade bootstrap 0.24
+>"!LOG!" echo SylphyHornPlusCon upgrade bootstrap 0.25
 >>"!LOG!" echo Repository: !REPO_DIR!
 >>"!LOG!" echo Branch: !BRANCH!
 >>"!LOG!" echo Launcher: current origin/!BRANCH!:upgrade.cmd running from TEMP
@@ -138,8 +140,8 @@ if errorlevel 1 goto :origin_fail_stage1
 git -C "!REPO_DIR!" fetch --prune origin "!BRANCH!" >NUL 2>>"!LOG!"
 if errorlevel 1 goto :fetch_fail_stage1
 
-rem Ask SHPC 0.34+ to perform its own graceful shutdown before the runner inspects processes.
-powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "try { $e=[Threading.EventWaitHandle]::OpenExisting('Local\SylphyHornPlusCon.UpgradeShutdown'); [void]$e.Set(); $e.Dispose() } catch { }" >NUL 2>NUL
+rem Runtime state is owned by upgrade.ps1. The bootstrap must never stop SHPC
+rem before the authoritative runner records whether it was running.
 
 set "RUNNER_TEMP=%TEMP%\SHPC-upgrade-%RANDOM%-%RANDOM%.ps1"
 git -C "!REPO_DIR!" show "origin/!BRANCH!:upgrade.ps1" >"!RUNNER_TEMP!" 2>>"!LOG!"
