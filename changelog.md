@@ -3,6 +3,8 @@
 ## 0.56 - 28.09.2026
 
 - Added a dedicated `Import / Export` page to the primary Settings navigation.
+- Split the Import / Export page into dedicated `Export` and `Import` tabs to avoid unnecessary vertical scrolling.
+- Desktop controls now behave as one hierarchy: disabling `Desktop settings and order` disables the desktop selection, `Select All` / `Unselect`, and wallpaper options while preserving their selections.
 - Added the portable `.shpc` package format backed by ZIP compression, a versioned JSON manifest, selected settings, and optional embedded wallpaper files.
 - Added per-desktop export and import selection using stable CName identities instead of machine-local virtual-desktop GUIDs.
 - Added independent selection for desktop settings/order, wallpaper files/settings, WebSocket connection settings, and General Settings.
