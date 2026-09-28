@@ -140,7 +140,7 @@ namespace SylphyHorn.UI
 				this.PopulateExportDesktops();
 				this._status.Text = "Import completed successfully.";
 			}
-			catch (Exception ex) { this._status.Text = "Import failed. SHPC restored the pre-import state. " + ex.Message; }
+			catch (Exception ex) { this._status.Text = "Import failed. " + ex.Message; }
 		}
 
 		private void SetImportControls(bool enabled)
