@@ -6,13 +6,13 @@
     <OutputType>WinExe</OutputType>
     <Title>SylphyHornPlusCon</Title>
     <Product>SylphyHornPlusCon</Product>
-    <Version>0.55.0</Version>
+    <Version>0.56.0</Version>
     <Authors>Sueneé Universe; hwtnb</Authors>
     <Company>Sueneé Universe</Company>
     <Copyright>Copyright © 2015 - 2018 Manato KAMEYA, 2021 - 2022 hwtnb; modifications © Sueneé Universe</Copyright>
     <Description>Virtual desktop tools and external automation for Windows 11 and 10</Description>
     <AssemblyTitle>SylphyHornPlusCon</AssemblyTitle>
-    <AssemblyVersion>0.55.0.0</AssemblyVersion>
+    <AssemblyVersion>0.56.0.0</AssemblyVersion>
     <UseApplicationTrust>false</UseApplicationTrust>
     <UseWPF>true</UseWPF>
     <UseWindowsForms>true</UseWindowsForms>
