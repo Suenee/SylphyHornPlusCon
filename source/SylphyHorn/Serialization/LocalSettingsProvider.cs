@@ -78,7 +78,7 @@ namespace SylphyHorn.Serialization
 			else await this.LoadAsync().ConfigureAwait(false);
 		}
 
-		protected override Task SaveAsyncCore(IDictionary<string, object> dic)
+		internal Task WriteSnapshotAsync(IDictionary<string, object> dictionary, string path) => this.SaveAsyncCore(dictionary, path);\n\n		protected override Task SaveAsyncCore(IDictionary<string, object> dic)
 		{
 			if (!this.Available) throw new InvalidOperationException("The local settings provider is unavailable.");
 			return AtomicSettingsFile.WriteAsync(dic, this._targetFile, this.KnownTypes);
